@@ -6656,6 +6656,10 @@ a:focus-visible {
 .market-margin-panel > footer { padding: 8px 14px 11px; border-top: 1px solid var(--line-soft); color: #8b97a5; font-size: 7px; line-height: 1.6; }
 
 .market-index-selector { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 7px; }
+.taiwan-market-view { display: grid; gap: 12px; }
+.taiwan-search-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 7px; }
+.taiwan-search-results button { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; text-align: left; cursor: pointer; }
+.taiwan-search-results span { color: #7b8797; font-size: 9px; }
 .market-index-selector button { display: grid; gap: 4px; min-width: 0; min-height: 72px; padding: 9px 10px; border: 1px solid #d9e1ea; border-radius: 9px; background: #ffffff; color: #66768b; text-align: left; cursor: pointer; }
 .market-index-selector button:hover { border-color: #a9c5e2; }
 .market-index-selector button.active { border-color: #6fa3da; background: linear-gradient(145deg, #f2f8ff, #ffffff); box-shadow: 0 6px 16px rgba(34, 97, 162, .1); }

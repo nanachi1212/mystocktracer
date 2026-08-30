@@ -52,6 +52,44 @@ func TestLiveOfficialDirectorySmoke(t *testing.T) {
 	}
 }
 
+func TestLiveOfficialMarketSmoke(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query TWSE and TPEx")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	client := NewClient(Config{})
+	items, err := client.Directory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"2330", "2317", "2454", "6488", "0050"} {
+		matches := liveMatches(items, code)
+		if len(matches) != 1 {
+			t.Fatalf("%s identity count=%d", code, len(matches))
+		}
+		security := matches[0]
+		quote, err := client.Quote(ctx, security)
+		if err != nil {
+			t.Fatalf("%s quote: %v", code, err)
+		}
+		if quote.Symbol != security.Canonical || quote.Name != security.Name || quote.Price <= 0 || quote.Meta.SourceURL == "" || quote.Meta.IsRealtime {
+			t.Fatalf("%s quote mismatch: %+v", code, quote)
+		}
+		lines, err := client.KLine(ctx, security, 5)
+		if err != nil || len(lines) != 5 {
+			t.Fatalf("%s kline rows=%d err=%v", code, len(lines), err)
+		}
+		if lines[len(lines)-1].Close != quote.Price {
+			t.Fatalf("%s quote/kline mismatch: quote=%v kline=%v", code, quote.Price, lines[len(lines)-1].Close)
+		}
+	}
+	indexes, _, err := client.Indexes(ctx)
+	if err != nil || len(indexes) != 2 || indexes[0].Index.ID != "taiex" || indexes[1].Index.ID != "tpex" {
+		t.Fatalf("indexes=%+v err=%v", indexes, err)
+	}
+}
+
 func liveMatches(items []foundation.SecurityIdentity, query string) []foundation.SecurityIdentity {
 	query = strings.ToLower(strings.TrimSpace(query))
 	matches := make([]foundation.SecurityIdentity, 0, 1)

@@ -19,8 +19,10 @@ This document tracks the stock-related data sources that form the `easy-stock` d
 | --- | --- | --- | --- |
 | TWSE OpenAPI | `openapi.twse.com.tw` | `/api/v1/tw/securities` | Official listed-company and listed-fund directory. |
 | TPEx OpenAPI | `www.tpex.org.tw` | `/api/v1/tw/securities` | Official OTC-company directory. |
+| TWSE OpenAPI / exchange report | `openapi.twse.com.tw`, `www.twse.com.tw` | `/api/v1/tw/quotes`, `/api/v1/tw/kline`, `/api/v1/tw/indexes` | Official TWSE close quote, monthly daily bars, and TAIEX history. |
+| TPEx OpenAPI / after trading | `www.tpex.org.tw` | `/api/v1/tw/quotes`, `/api/v1/tw/kline`, `/api/v1/tw/indexes` | Official TPEx close quote, monthly daily bars, and TPEx index history. |
 
-The Taiwan directory is cached for 12 hours. It exposes identity metadata only; quote, K-line, institutional-flow, margin and fundamental capabilities remain unsupported until their roadmap phases. Provider failures return an error or an explicitly stale cached directory, never zero-valued market data.
+The Taiwan directory is cached for 12 hours. Phase 2 quote and index values are official close data and explicitly set `is_realtime=false`; monthly daily bars are limited to 240 rows. Quote failures fall back only to the same exchange's official monthly report. Institutional-flow, margin and fundamental capabilities remain unsupported until later phases. Provider failures return an error or an explicitly stale cached directory, never zero-valued market data.
 
 ## Trend Theme Radar Priority
 

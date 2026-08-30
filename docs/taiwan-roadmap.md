@@ -39,9 +39,19 @@
 ## Phase 2 — Quote & K-Line
 
 - Quote、daily bars、TAIEX、TPEx index。
-- 資料類型各自定義 TWSE/TPEx → FinMind → Yahoo fallback。
-- cache/TTL/rate limit、stale/fallback/last updated UI state。
+- Quote 使用 TWSE/TPEx OpenAPI，失敗時降級至同一官方交易所的月成交端點。
+- 每筆資料保留 source URL、trade date、stale、fallback、status 與 `is_realtime=false`。
+- 台股搜尋、收盤行情、日 K 與兩市場指數最小 UI 接入。
 - 以官方資料交叉驗證 2330、2317、2454、6488、0050。
+
+**狀態：本輪完成。**
+
+**已知限制**
+
+- 官方端點提供的是收盤資料，不宣稱盤中即時行情。
+- 日 K 以官方月資料逐月讀取，單次最多 240 根；目前沒有引入 FinMind token 或非官方 Yahoo 資料。
+- provider fallback 是官方當日 OpenAPI → 官方月成交資料；若兩者都失敗，回傳明確錯誤，不補零值或硬編行情。
+- HTTP 層沿用證券目錄 12 小時 cache；行情本身不做長時間持久化，避免把舊收盤價誤標成即時資料。
 
 ## Phase 3 — Taiwan Chip Data
 

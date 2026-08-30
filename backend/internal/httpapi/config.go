@@ -75,6 +75,12 @@ type TaiwanDirectoryProvider interface {
 	Directory(ctx context.Context) ([]foundation.SecurityIdentity, error)
 }
 
+type TaiwanMarketProvider interface {
+	Quote(ctx context.Context, security foundation.SecurityIdentity) (foundation.Quote, error)
+	KLine(ctx context.Context, security foundation.SecurityIdentity, limit int) ([]foundation.KLine, error)
+	Indexes(ctx context.Context) ([]foundation.MarketIndexSeries, foundation.SourceMeta, error)
+}
+
 type HotStockProvider interface {
 	HotStockRanks(ctx context.Context, limit int) []foundation.HotStockRankList
 }
@@ -114,6 +120,7 @@ type Config struct {
 	StockBusiness        StockBusinessProfileProvider
 	StockDirectory       StockDirectoryProvider
 	TaiwanDirectory      TaiwanDirectoryProvider
+	TaiwanMarket         TaiwanMarketProvider
 	HotStocks            HotStockProvider
 	MarketOverview       MarketOverviewProvider
 	Inflection           InflectionEvaluator

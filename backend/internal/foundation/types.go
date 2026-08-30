@@ -14,6 +14,8 @@ type SourceMeta struct {
 	NextRefreshAt   *time.Time `json:"next_refresh_at,omitempty"`
 	FallbackReason  string     `json:"fallback_reason,omitempty"`
 	CarryForward    bool       `json:"carry_forward,omitempty"`
+	Status          string     `json:"status,omitempty"`
+	IsRealtime      bool       `json:"is_realtime"`
 }
 
 type Quote struct {

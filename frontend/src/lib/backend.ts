@@ -204,7 +204,24 @@ export type SourceMeta = {
   snapshot_id?: string;
   next_refresh_at?: string;
   fallback_reason?: string;
-  carry_forward?: boolean;
+	carry_forward?: boolean;
+	status?: string;
+	is_realtime?: boolean;
+};
+
+export type SecurityIdentity = {
+	canonical: string;
+	code: string;
+	name: string;
+	full_name?: string;
+	market: string;
+	exchange: 'TWSE' | 'TPEX' | string;
+	security_type: 'stock' | 'etf' | 'index' | string;
+	currency: string;
+	timezone: string;
+	provider: string;
+	source_url: string;
+	retrieved_at: string;
 };
 
 export type Quote = {

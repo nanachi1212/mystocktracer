@@ -16,6 +16,7 @@ import { BILLBOARD_SEAT_MAPPINGS } from '../data/billboard-seat-mappings';
 export type MarketOverviewView =
 	| 'pulse'
 	| 'core-indexes'
+	| 'taiwan-market'
 	| 'industry-momentum'
 	| 'industry-flow'
 	| 'theme-flow'
@@ -46,6 +47,7 @@ export const marketOverviewGroups: MarketOverviewGroup[] = [
 		modules: [
 			{ id: 'pulse', name: '新闻快讯', description: '市场新闻、题材与数据源状态', status: 'ready' },
 			{ id: 'core-indexes', name: '市场核心指数', description: 'A/H/美核心指数走势与强弱', status: 'ready' },
+			{ id: 'taiwan-market', name: '台股行情', description: '台股搜尋、收盤行情、日 K 與大盤指數', status: 'ready' },
 		],
 	},
 	{

@@ -57,6 +57,7 @@ import {
 	ModuleState,
 	ResearchView,
 } from './market/MarketDataViews';
+import { TaiwanMarketView } from './market/TaiwanMarketView';
 
 type Props = {
 	config: BackendConfig | null;
@@ -68,6 +69,7 @@ type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 const moduleIcons = {
 	pulse: Newspaper,
 	'core-indexes': ChartCandlestick,
+	'taiwan-market': Landmark,
 	'industry-momentum': TrendingUp,
 	'industry-flow': Building2,
 	'theme-flow': Sparkles,
@@ -145,6 +147,7 @@ export function MarketOverviewWorkspace({ config, refreshKey, onAskAI }: Props) 
 
 	const loadModule = useCallback(async () => {
 		if (!config || activeView === 'pulse') return;
+		if (activeView === 'taiwan-market') { setModuleState('ready'); return; }
 		setModuleState('loading');
 		setModuleError('');
 		try {
@@ -325,6 +328,7 @@ export function MarketOverviewWorkspace({ config, refreshKey, onAskAI }: Props) 
 
 			{activeView === 'pulse' ? <PulseView news={news} themes={themes} themeMeta={themeMeta} sources={sources} state={pulseState} error={pulseError} lastUpdated={lastUpdated} /> : <ModuleState state={moduleState} error={moduleError}>
 				{activeView === 'core-indexes' && <CoreIndexView indexes={indexes} selectedID={selectedIndexID} onSelect={setSelectedIndexID} series={indexSeries} seriesLoading={seriesLoading} meta={moduleMeta} />}
+				{activeView === 'taiwan-market' && <TaiwanMarketView config={config} refreshKey={refreshKey} />}
 				{activeView === 'industry-momentum' && <IndustryMomentumView items={industries} meta={moduleMeta} />}
 				{isFlowView(activeView) && <FundFlowView key={activeView} items={flows} dimension={flowDimension(activeView)} meta={moduleMeta} />}
 				{activeView === 'margin-balance' && <MarginBalanceView items={margins} limit={marginLimit} onLimit={setMarginLimit} meta={moduleMeta} />}
