@@ -160,12 +160,30 @@ func (c *Client) month(ctx context.Context, security foundation.SecurityIdentity
 			continue
 		}
 		change, _ := number(row[7])
-		volume, _ := number(row[1])
-		amount, _ := number(row[2])
+		volume, amount, err := monthlyVolumeAmount(row[1], row[2], security.Exchange)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s monthly volume/amount on %s: %w", security.Exchange, row[0], err)
+		}
 		previous := closeValue - change
 		lines = append(lines, foundation.KLine{Symbol: security.Canonical, Time: marketClose(date), Open: open, High: high, Low: low, Close: closeValue, PreviousClose: previous, Volume: volume, Amount: amount, ChangePercent: percent(change, previous), Meta: officialMeta(source, sourceURL, date)})
 	}
 	return lines, nil
+}
+
+func monthlyVolumeAmount(rawVolume, rawAmount, exchange string) (float64, float64, error) {
+	volume, err := number(rawVolume)
+	if err != nil {
+		return 0, 0, fmt.Errorf("volume %q: %w", rawVolume, err)
+	}
+	amount, err := number(rawAmount)
+	if err != nil {
+		return 0, 0, fmt.Errorf("amount %q: %w", rawAmount, err)
+	}
+	if exchange == "TPEX" {
+		volume *= 1000
+		amount *= 1000
+	}
+	return volume, amount, nil
 }
 
 func (c *Client) Indexes(ctx context.Context) ([]foundation.MarketIndexSeries, foundation.SourceMeta, error) {

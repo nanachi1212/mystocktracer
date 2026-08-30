@@ -56,3 +56,28 @@ func TestQuoteFallsBackToOfficialMonthlyReport(t *testing.T) {
 		t.Fatalf("unexpected fallback quote: %#v, %v", quote, err)
 	}
 }
+
+func TestMonthlyVolumeAmountUnits(t *testing.T) {
+	volume, amount, err := monthlyVolumeAmount("123", "456", "TPEX")
+	if err != nil || volume != 123000 || amount != 456000 {
+		t.Fatalf("TPEx units: volume=%v amount=%v err=%v", volume, amount, err)
+	}
+	volume, amount, err = monthlyVolumeAmount("123", "456", "TWSE")
+	if err != nil || volume != 123 || amount != 456 {
+		t.Fatalf("TWSE units changed: volume=%v amount=%v err=%v", volume, amount, err)
+	}
+	volume, amount, err = monthlyVolumeAmount("0", "0.0", "TPEX")
+	if err != nil || volume != 0 || amount != 0 {
+		t.Fatalf("explicit zero: volume=%v amount=%v err=%v", volume, amount, err)
+	}
+	for _, test := range []struct{ volume, amount string }{
+		{"--", "456"},
+		{"123", ""},
+		{"12x3", "456"},
+		{"123", "abc"},
+	} {
+		if _, _, err := monthlyVolumeAmount(test.volume, test.amount, "TPEX"); err == nil {
+			t.Fatalf("invalid values must fail: volume=%q amount=%q", test.volume, test.amount)
+		}
+	}
+}

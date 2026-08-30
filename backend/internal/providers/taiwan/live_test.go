@@ -98,6 +98,27 @@ func TestLiveOfficialMarketSmoke(t *testing.T) {
 	}
 }
 
+func TestLiveTPExMonthlyKLineUnits(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query TPEx")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	security := foundation.SecurityIdentity{Canonical: "6488.TPEX", Code: "6488", Name: "環球晶", Exchange: "TPEX"}
+	lines, err := NewClient(Config{}).KLine(ctx, security, 1)
+	if err != nil || len(lines) != 1 {
+		t.Fatalf("6488 monthly K-line: rows=%d err=%v", len(lines), err)
+	}
+	line := lines[0]
+	if line.Symbol != security.Canonical || line.Time.IsZero() || line.Open <= 0 || line.High <= 0 || line.Low <= 0 || line.Close <= 0 {
+		t.Fatalf("6488 monthly K-line identity/OHLC: %+v", line)
+	}
+	if line.Volume <= 0 || line.Amount <= 0 || int64(line.Volume)%1000 != 0 || int64(line.Amount)%1000 != 0 {
+		t.Fatalf("6488 monthly K-line units are not normalized shares/TWD: %+v", line)
+	}
+	t.Logf("6488 date=%s OHLC=%v/%v/%v/%v volume_shares=%.0f amount_TWD=%.0f source=%s", line.Time.Format("2006-01-02"), line.Open, line.High, line.Low, line.Close, line.Volume, line.Amount, line.Meta.Source)
+}
+
 func TestLiveOfficialFundamentalsSmoke(t *testing.T) {
 	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
 		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query official fundamentals and FinMind history")
