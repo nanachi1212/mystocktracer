@@ -84,13 +84,66 @@ func TestLiveOfficialMarketSmoke(t *testing.T) {
 			t.Fatalf("%s quote/kline mismatch: quote=%v kline=%v", code, quote.Price, lines[len(lines)-1].Close)
 		}
 		institutional, err := client.Institutional(ctx, security, 1)
-		if err != nil || len(institutional.Data) != 1 || institutional.Data[0].Canonical != security.Canonical || institutional.Data[0].Unit != "shares" { t.Fatalf("%s institutional: %+v err=%v", code, institutional, err) }
+		if err != nil || len(institutional.Data) != 1 || institutional.Data[0].Canonical != security.Canonical || institutional.Data[0].Unit != "shares" {
+			t.Fatalf("%s institutional: %+v err=%v", code, institutional, err)
+		}
 		margin, err := client.Margin(ctx, security, 1)
-		if err != nil || len(margin.Data) != 1 || margin.Data[0].Canonical != security.Canonical || margin.Data[0].Unit != "shares" { t.Fatalf("%s margin: %+v err=%v", code, margin, err) }
+		if err != nil || len(margin.Data) != 1 || margin.Data[0].Canonical != security.Canonical || margin.Data[0].Unit != "shares" {
+			t.Fatalf("%s margin: %+v err=%v", code, margin, err)
+		}
 	}
 	indexes, _, err := client.Indexes(ctx)
 	if err != nil || len(indexes) != 2 || indexes[0].Index.ID != "taiex" || indexes[1].Index.ID != "tpex" {
 		t.Fatalf("indexes=%+v err=%v", indexes, err)
+	}
+}
+
+func TestLiveOfficialFundamentalsSmoke(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query official fundamentals and FinMind history")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	client := NewClient(Config{})
+	items, err := client.Directory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"2330", "6488", "2881", "0050"} {
+		matches := liveMatches(items, code)
+		if len(matches) != 1 {
+			t.Fatalf("%s identity count=%d", code, len(matches))
+		}
+		got, err := client.Fundamentals(ctx, matches[0], 24)
+		if err != nil {
+			t.Fatalf("%s fundamentals: %v", code, err)
+		}
+		if got.Security.Canonical != matches[0].Canonical {
+			t.Fatalf("%s canonical mismatch: %+v", code, got.Security)
+		}
+		if code == "0050" {
+			if got.Capabilities["monthly_revenue"].Status != "unsupported" || got.Capabilities["financial_statement"].Status != "unsupported" {
+				t.Fatalf("0050 capabilities=%+v", got.Capabilities)
+			}
+			t.Logf("%s canonical=%s capabilities=%+v", code, got.Security.Canonical, got.Capabilities)
+			continue
+		}
+		if len(got.Revenue) == 0 || got.Revenue[len(got.Revenue)-1].Provider != officialProvider(matches[0]) {
+			t.Fatalf("%s revenue=%+v", code, got.Revenue)
+		}
+		if got.Statement == nil || got.Statement.CumulativeEPS == nil || got.Valuation == nil {
+			t.Fatalf("%s incomplete fundamentals=%+v", code, got)
+		}
+		if code == "2330" && got.Capabilities["dividends"].Status != "official" {
+			t.Fatalf("2330 dividend capability=%+v", got.Capabilities["dividends"])
+		}
+		if code == "6488" && got.Statement.AccountingCategory != "ci" {
+			t.Fatalf("6488 category=%s", got.Statement.AccountingCategory)
+		}
+		if code == "2881" && got.Statement.AccountingCategory != "fh" {
+			t.Fatalf("2881 category=%s", got.Statement.AccountingCategory)
+		}
+		t.Logf("%s canonical=%s revenue=%s category=%s valuation=%s dividends=%s", code, got.Security.Canonical, got.Revenue[len(got.Revenue)-1].Period, got.Statement.AccountingCategory, got.Capabilities["valuation"].Status, got.Capabilities["dividends"].Status)
 	}
 }
 

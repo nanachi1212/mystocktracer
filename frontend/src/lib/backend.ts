@@ -228,6 +228,12 @@ export type InstitutionalFlow = { canonical:string; trade_date:string; unit:stri
 export type InstitutionalHistory = { security:SecurityIdentity; data:InstitutionalFlow[]; summary:{ foreign_net_5d:number; foreign_net_20d:number; investment_trust_net_5d:number; investment_trust_net_20d:number; dealer_net_5d:number; dealer_net_20d:number; foreign_consecutive_buy_days:number; foreign_consecutive_sell_days:number; investment_trust_consecutive_buy_days:number; investment_trust_consecutive_sell_days:number }; meta:SourceMeta };
 export type MarginTrading = { canonical:string; trade_date:string; unit:string; margin_balance?:number; margin_buy?:number; margin_sell?:number; margin_change?:number; short_balance?:number; short_sell?:number; short_cover?:number; short_change?:number; short_margin_ratio?:number; meta:SourceMeta };
 export type MarginHistory = { security:SecurityIdentity; data:MarginTrading[]; meta:SourceMeta };
+export type FundamentalCapability = { status:string; provider?:string; source?:string; source_url?:string; retrieved_at:string; reason?:string };
+export type MonthlyRevenue = { canonical:string; period:string; revenue:number; computed_mom_percent?:number; computed_yoy_percent?:number; provider:string; source:string; source_url:string; status:string };
+export type FinancialStatementPeriod = { fiscal_year:number; fiscal_quarter:number; period_end:string; revenue?:number; gross_profit?:number; operating_income?:number; net_income_attributable_to_parent?:number; cumulative_eps?:number; published_at?:string; available_at?:string; provider:string; status:string };
+export type ValuationSnapshot = { data_date:string; pe?:number; pb?:number; dividend_yield_percent?:number; provider:string; status:string };
+export type DividendRecord = { year:number; cash_dividend?:number; stock_dividend?:number; ex_dividend_date?:string; raw_status?:string; normalized_status:string; provider:string; status:string };
+export type TaiwanFundamentals = { security:SecurityIdentity; monthly_revenue:MonthlyRevenue[]; financial_statement?:FinancialStatementPeriod; valuation?:ValuationSnapshot; dividends:DividendRecord[]; capabilities:Record<string,FundamentalCapability>; meta:SourceMeta };
 
 export type Quote = {
   symbol: string;

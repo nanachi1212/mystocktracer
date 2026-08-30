@@ -23,10 +23,15 @@ This document tracks the stock-related data sources that form the `easy-stock` d
 | TPEx OpenAPI / after trading | `www.tpex.org.tw` | `/api/v1/tw/quotes`, `/api/v1/tw/kline`, `/api/v1/tw/indexes` | Official TPEx close quote, monthly daily bars, and TPEx index history. |
 | TWSE T86 / MI_MARGN | `www.twse.com.tw` | `/api/v1/tw/institutional`, `/api/v1/tw/margin` | Official listed-security institutional trading in shares and margin/short balances in trading lots. |
 | TPEx dailyTrade / margin balance | `www.tpex.org.tw` | `/api/v1/tw/institutional`, `/api/v1/tw/margin` | Official OTC institutional trading in shares and margin/short balances in lots. |
+| TWSE MOPS OpenAPI | `openapi.twse.com.tw` | `/api/v1/tw/fundamentals` | Official latest listed-company monthly revenue, six accounting-category income/balance feeds, valuation, and dividend decisions. Financial amounts are published in thousand TWD. |
+| TPEx MOPS OpenAPI | `www.tpex.org.tw/openapi` | `/api/v1/tw/fundamentals` | Official latest OTC-company monthly revenue, six accounting-category income/balance feeds, valuation, and dividend decisions. Financial amounts are published in thousand TWD. |
+| FinMind | `api.finmindtrade.com` | `/api/v1/tw/fundamentals` | Third-party monthly-revenue history supplement only; every record is marked `third_party_fallback`, and an overlapping official month takes precedence. |
 
 The Taiwan directory is cached for 12 hours. Phase 2 quote and index values are official close data and explicitly set `is_realtime=false`; monthly daily bars are limited to 240 rows. Quote failures fall back only to the same exchange's official monthly report. Fundamental capabilities remain unsupported until later phases. Provider failures return an error or an explicitly stale cached directory, never zero-valued market data.
 
 Phase 3 normalizes institutional flows to shares without scaling. TWSE and TPEx margin reports publish trading lots, so every margin/short count is multiplied by 1,000 and exposed as shares; metadata records `raw_unit:lots` and `lot_multiplier:1000`. The short-margin ratio is `short balance / margin balance * 100`. Daily official responses are cached in memory by exact source URL for six hours; a restart also clears the cache.
+
+Phase 4 normalizes official financial amounts from thousand TWD to TWD while retaining `raw_unit` and raw values. Record-level provenance distinguishes official TWSE/TPEx rows from FinMind history. Official OpenAPI snapshots do not reliably expose each company's announcement time, so `published_at` and `available_at` remain null instead of equating them with `period_end` or the feed export date. Company revenue and financial statements are unsupported for ETFs; official valuation feeds may also omit ETFs such as 0050, which is reported as `data_insufficient` without failing the full bundle. Fundamentals snapshots use a process-local cache (one day for revenue/valuation and seven days for statements/dividends); network fetches occur without holding the cache mutex.
 
 ## Trend Theme Radar Priority
 

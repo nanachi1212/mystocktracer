@@ -16,6 +16,7 @@ import (
 const (
 	defaultTWSEBaseURL = "https://openapi.twse.com.tw/v1"
 	defaultTPExBaseURL = "https://www.tpex.org.tw/openapi/v1"
+	defaultFinMindURL  = "https://api.finmindtrade.com/api/v4/data"
 	maxDirectoryBytes  = 16 << 20
 )
 
@@ -23,14 +24,18 @@ type Client struct {
 	httpClient  *http.Client
 	twseBaseURL string
 	tpexBaseURL string
+	finMindURL  string
 	chipMu      sync.Mutex
 	chipDays    map[string]chipSnapshot
+	fundMu      sync.Mutex
+	fundRows    map[string]fundSnapshot
 }
 
 type Config struct {
 	HTTPClient  *http.Client
 	TWSEBaseURL string
 	TPExBaseURL string
+	FinMindURL  string
 }
 
 func NewClient(config Config) *Client {
@@ -42,7 +47,9 @@ func NewClient(config Config) *Client {
 		httpClient:  httpClient,
 		twseBaseURL: first(config.TWSEBaseURL, defaultTWSEBaseURL),
 		tpexBaseURL: first(config.TPExBaseURL, defaultTPExBaseURL),
+		finMindURL:  first(config.FinMindURL, defaultFinMindURL),
 		chipDays:    map[string]chipSnapshot{},
+		fundRows:    map[string]fundSnapshot{},
 	}
 }
 

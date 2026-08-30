@@ -67,10 +67,19 @@
 
 ## Phase 4 — Fundamentals
 
-- 月營收、EPS、PE、dividend 優先。
-- 後續補 revenue、margin、ROE、PB。
-- 保存 event_date、published_at、available_at、retrieved_at。
-- MOPS 不穩定時只建立明確 unsupported 的 provider boundary，不寫脆弱假爬蟲。
+- TWSE/TPEx 官方月營收、六類財報 category resolver、PE/PB/殖利率與股利決議；FinMind 只補月營收歷史並逐筆標示第三方來源。
+- 官方財報仟元統一轉為 TWD，保留 raw unit/value；EPS 明確為 cumulative EPS，statement type 無法證明時為 unknown。
+- 保存 period start/end、published/available/retrieved time；官方未提供可靠公告日時 published/available 保持 null，strict available-date helper 防止公告當日及 revision look-ahead。
+- ETF 公司月營收/財報為 unsupported；官方估值缺 ETF 時為 data_insufficient，不造成整包 API 失敗。
+- 單一 `/api/v1/tw/fundamentals` bundle、section capabilities 與最小基本面 UI。
+
+**狀態：本輪完成。**
+
+**已知限制**
+
+- 官方 OpenAPI 月營收是最新月份市場快照，較長歷史由 FinMind 補充，不描述成官方資料。
+- 官方 feed export date 不等於公司公告/可用日；缺少可靠 company-level timestamp 時不支援 historical as-of 使用。
+- 尚無涵蓋 0050 的可靠官方 ETF valuation/NAV Provider。
 
 ## Phase 5 — Market Intelligence
 

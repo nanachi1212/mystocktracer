@@ -50,6 +50,7 @@ type Server struct {
 	taiwanDirectory       TaiwanDirectoryProvider
 	taiwanMarket          TaiwanMarketProvider
 	taiwanChip            TaiwanChipProvider
+	taiwanFundamentals    TaiwanFundamentalsProvider
 	hotStockProvider      HotStockProvider
 	marketOverview        MarketOverviewProvider
 	inflection            InflectionEvaluator
@@ -132,7 +133,7 @@ func NewServer(config any) *Server {
 	if cfg.StockDirectory == nil {
 		cfg.StockDirectory = eastMoneyClient
 	}
-	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil {
+	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil {
 		taiwanClient := taiwan.NewClient(taiwan.Config{})
 		if cfg.TaiwanDirectory == nil {
 			cfg.TaiwanDirectory = taiwanClient
@@ -142,6 +143,9 @@ func NewServer(config any) *Server {
 		}
 		if cfg.TaiwanChip == nil {
 			cfg.TaiwanChip = taiwanClient
+		}
+		if cfg.TaiwanFundamentals == nil {
+			cfg.TaiwanFundamentals = taiwanClient
 		}
 	}
 	if cfg.MarketOverview == nil {
@@ -282,6 +286,7 @@ func NewServer(config any) *Server {
 		taiwanDirectory:       cfg.TaiwanDirectory,
 		taiwanMarket:          cfg.TaiwanMarket,
 		taiwanChip:            cfg.TaiwanChip,
+		taiwanFundamentals:    cfg.TaiwanFundamentals,
 		hotStockProvider:      cfg.HotStocks,
 		marketOverview:        cfg.MarketOverview,
 		inflection:            cfg.Inflection,
@@ -467,6 +472,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/tw/indexes", s.taiwanIndexesHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/institutional", s.taiwanInstitutionalHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/margin", s.taiwanMarginHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/fundamentals", s.taiwanFundamentalsHandler)
 	s.mux.HandleFunc("GET /api/v1/stocks/hot-ranks", s.hotStockRanksHandler)
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections", s.portfolioInspectionList)
 	s.mux.HandleFunc("POST /api/v1/portfolio-inspections", s.portfolioInspectionCreate)

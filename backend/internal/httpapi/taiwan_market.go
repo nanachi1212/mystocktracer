@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -139,6 +140,34 @@ func (s *Server) taiwanMarginHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 	data, err := s.taiwanChip.Margin(ctx, security, limit)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+}
+
+func (s *Server) taiwanFundamentalsHandler(w http.ResponseWriter, r *http.Request) {
+	if s.taiwanFundamentals == nil {
+		writeError(w, http.StatusServiceUnavailable, "Taiwan fundamentals provider is unavailable")
+		return
+	}
+	security, err := s.taiwanSecurity(r.URL.Query().Get("symbol"), r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	months := 24
+	if raw := strings.TrimSpace(r.URL.Query().Get("months")); raw != "" {
+		months, err = strconv.Atoi(raw)
+		if err != nil || months < 1 || months > 36 {
+			writeError(w, http.StatusBadRequest, "months must be between 1 and 36")
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	data, err := s.taiwanFundamentals.Fundamentals(ctx, security, months)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
