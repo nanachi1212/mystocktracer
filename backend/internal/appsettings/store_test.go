@@ -57,3 +57,21 @@ func TestStoreMigratesSingleLLMToSelectableProfiles(t *testing.T) {
 		t.Fatalf("response timeout = %d, want default %d", values.LLM.ResponseTimeoutSeconds, DefaultLLMResponseTimeoutSeconds)
 	}
 }
+
+func TestStorePersistsBrokerSpecificCommissionWithoutInventingDefault(t *testing.T) {
+	store, err := Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Snapshot().BrokerCommission.Rate != nil {
+		t.Fatal("unset broker rate must remain nil")
+	}
+	rate, minimum := .001425, 20.0
+	values, err := store.Update(func(values *Values) error {
+		values.BrokerCommission = BrokerCommission{Rate: &rate, Discount: .6, Minimum: &minimum, Source: "broker_config"}
+		return nil
+	})
+	if err != nil || values.BrokerCommission.Rate == nil || *values.BrokerCommission.Rate != rate {
+		t.Fatalf("commission = %+v, %v", values.BrokerCommission, err)
+	}
+}

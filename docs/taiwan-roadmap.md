@@ -81,6 +81,17 @@
 - 官方 feed export date 不等於公司公告/可用日；缺少可靠 company-level timestamp 時不支援 historical as-of 使用。
 - 尚無涵蓋 0050 的可靠官方 ETF valuation/NAV Provider。
 
+## Phase 5B — Taiwan Security Market Rules Integration
+
+- `SecurityIdentity` 可附帶 TWSE 官方基金類型、成分範圍及 rule profile；資料流維持 Directory metadata → identity → selector → pure rule。
+- 普通股票自動套用股票 tick、10% 漲跌幅、股票稅別、1,000 股整張與 T+2。
+- TWSE 普通國內成分 ETF 與官方明示國外成分 ETF 分別套用 10% 與 no-limit；ETF 使用 ETF tick。
+- TWSE `槓桿/反向指數股票型基金` feed 未提供方向與 multiplier，00631L／00632R 因此回報 `data_insufficient`，不解析代號或基金名稱。
+- 官方 feed 未提供特殊 ETF 交易單位時不推測；只有 Contract 明確涵蓋的普通股票／普通新台幣 ETF 使用 1,000 預設。
+- 手續費是 broker-specific；未設定 rate 時不計算成本，0.1425% 只能是明確使用者設定而非官方費率。
+
+**狀態：本輪完成。**
+
 ## Phase 5 — Market Intelligence
 
 - TaiwanMarketSnapshot：TAIEX、TPEx、turnover、advance/decline/flat、limit counts、法人、融資變化。

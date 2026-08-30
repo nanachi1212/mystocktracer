@@ -147,6 +147,31 @@ func TestLiveOfficialFundamentalsSmoke(t *testing.T) {
 	}
 }
 
+func TestLiveOfficialSecurityRuleProfiles(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query TWSE and TPEx")
+	}
+	items, err := NewClient(Config{}).Directory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	byCode := map[string]foundation.SecurityIdentity{}
+	for _, item := range items {
+		byCode[item.Code] = item
+	}
+	expected := map[string]string{"2330": "official", "6488": "official", "0050": "official", "00646": "official", "00631L": "data_insufficient", "00632R": "data_insufficient"}
+	for code, status := range expected {
+		item, ok := byCode[code]
+		if !ok || item.RuleProfile == nil {
+			t.Fatalf("%s official identity/profile unavailable", code)
+		}
+		if item.RuleProfile.Status != status {
+			t.Fatalf("%s profile=%+v", code, item.RuleProfile)
+		}
+		t.Logf("%s canonical=%s type=%s metadata=%+v profile=%+v", code, item.Canonical, item.Type, item.TaiwanMetadata, item.RuleProfile)
+	}
+}
+
 func liveMatches(items []foundation.SecurityIdentity, query string) []foundation.SecurityIdentity {
 	query = strings.ToLower(strings.TrimSpace(query))
 	matches := make([]foundation.SecurityIdentity, 0, 1)

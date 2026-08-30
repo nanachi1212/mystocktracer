@@ -18,11 +18,12 @@ type twseCompany struct {
 }
 
 type twseFund struct {
-	Code     string `json:"基金代號"`
-	Name     string `json:"基金簡稱"`
-	FullName string `json:"基金中文名稱"`
-	FundType string `json:"基金類型"`
-	ListedAt string `json:"上市日期"`
+	Code            string `json:"基金代號"`
+	Name            string `json:"基金簡稱"`
+	FullName        string `json:"基金中文名稱"`
+	FundType        string `json:"基金類型"`
+	ListedAt        string `json:"上市日期"`
+	ContainsForeign string `json:"是否包含國外成分股"`
 }
 
 type tpexCompany struct {
@@ -55,14 +56,38 @@ func (c *Client) twseETFs(ctx context.Context) ([]foundation.SecurityIdentity, e
 		if code == "" || name == "" || !taiwanSecurityCode(code) {
 			continue
 		}
-		items = append(items, foundation.SecurityIdentity{
+		metadata := officialTWSEFundMetadata(row)
+		identity := foundation.SecurityIdentity{
 			Canonical: code + ".TWSE", Code: code, Name: name, FullName: strings.TrimSpace(row.FullName),
 			Market: "TW", Exchange: "TWSE", Type: foundation.SecurityTypeETF,
 			Currency: "TWD", Timezone: "Asia/Taipei", ListedAt: strings.TrimSpace(row.ListedAt),
-			Industry: strings.TrimSpace(row.FundType), Provider: "twse", SourceURL: url, RetrievedAt: now,
-		})
+			Industry: strings.TrimSpace(row.FundType), Provider: "twse", SourceURL: url, RetrievedAt: now, TaiwanMetadata: metadata,
+		}
+		profile := foundation.TaiwanRuleProfile(identity)
+		identity.RuleProfile = &profile
+		items = append(items, identity)
 	}
 	return items, nil
+}
+
+func officialTWSEFundMetadata(row twseFund) *foundation.TaiwanSecurityMetadata {
+	fundType := strings.TrimSpace(row.FundType)
+	metadata := &foundation.TaiwanSecurityMetadata{OfficialFundType: fundType}
+	switch strings.TrimSpace(row.ContainsForeign) {
+	case "是":
+		metadata.ComponentScope = "foreign"
+	case "否":
+		metadata.ComponentScope = "domestic"
+	}
+	switch fundType {
+	case "國內成分證券指數股票型基金", "國外成分證券指數股票型基金":
+		metadata.Strategy = "ordinary"
+	case "槓桿/反向指數股票型基金":
+		metadata.Strategy = "leveraged_or_inverse"
+	case "債券指數股票型基金":
+		metadata.Strategy = "passive_bond"
+	}
+	return metadata
 }
 
 func (c *Client) tpexStocks(ctx context.Context) ([]foundation.SecurityIdentity, error) {
@@ -78,12 +103,15 @@ func (c *Client) tpexStocks(ctx context.Context) ([]foundation.SecurityIdentity,
 		if code == "" || name == "" || !taiwanSecurityCode(code) {
 			continue
 		}
-		items = append(items, foundation.SecurityIdentity{
+		identity := foundation.SecurityIdentity{
 			Canonical: code + ".TPEX", Code: code, Name: name, FullName: strings.TrimSpace(row.FullName),
 			Market: "TW", Exchange: "TPEX", Type: foundation.SecurityTypeStock,
 			Currency: "TWD", Timezone: "Asia/Taipei", ListedAt: strings.TrimSpace(row.ListedAt),
 			Industry: strings.TrimSpace(row.Industry), Provider: "tpex", SourceURL: url, RetrievedAt: now,
-		})
+		}
+		profile := foundation.TaiwanRuleProfile(identity)
+		identity.RuleProfile = &profile
+		items = append(items, identity)
 	}
 	return items, nil
 }
@@ -96,12 +124,15 @@ func companyIdentities(rows []twseCompany, exchange, provider, sourceURL string)
 		if code == "" || name == "" || !taiwanSecurityCode(code) {
 			continue
 		}
-		items = append(items, foundation.SecurityIdentity{
+		identity := foundation.SecurityIdentity{
 			Canonical: fmt.Sprintf("%s.%s", code, exchange), Code: code, Name: name, FullName: strings.TrimSpace(row.FullName),
 			Market: "TW", Exchange: exchange, Type: foundation.SecurityTypeStock,
 			Currency: "TWD", Timezone: "Asia/Taipei", ListedAt: strings.TrimSpace(row.ListedAt),
 			Industry: strings.TrimSpace(row.Industry), Provider: provider, SourceURL: sourceURL, RetrievedAt: now,
-		})
+		}
+		profile := foundation.TaiwanRuleProfile(identity)
+		identity.RuleProfile = &profile
+		items = append(items, identity)
 	}
 	return items
 }

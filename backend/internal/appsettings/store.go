@@ -78,7 +78,15 @@ type Values struct {
 	ActiveLLMProfileID string           `json:"active_llm_profile_id,omitempty"`
 	Credentials        Credentials      `json:"credentials"`
 	ReviewAutomation   ReviewAutomation `json:"review_automation"`
+	BrokerCommission   BrokerCommission `json:"broker_commission,omitempty"`
 	UpdatedAt          time.Time        `json:"updated_at,omitempty"`
+}
+
+type BrokerCommission struct {
+	Rate     *float64 `json:"commission_rate,omitempty"`
+	Discount float64  `json:"commission_discount,omitempty"`
+	Minimum  *float64 `json:"minimum_commission,omitempty"`
+	Source   string   `json:"source,omitempty"`
 }
 
 type Store struct {
