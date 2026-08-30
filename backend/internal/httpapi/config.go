@@ -81,6 +81,11 @@ type TaiwanMarketProvider interface {
 	Indexes(ctx context.Context) ([]foundation.MarketIndexSeries, foundation.SourceMeta, error)
 }
 
+type TaiwanChipProvider interface {
+	Institutional(ctx context.Context, security foundation.SecurityIdentity, limit int) (foundation.InstitutionalHistory, error)
+	Margin(ctx context.Context, security foundation.SecurityIdentity, limit int) (foundation.MarginHistory, error)
+}
+
 type HotStockProvider interface {
 	HotStockRanks(ctx context.Context, limit int) []foundation.HotStockRankList
 }
@@ -121,6 +126,7 @@ type Config struct {
 	StockDirectory       StockDirectoryProvider
 	TaiwanDirectory      TaiwanDirectoryProvider
 	TaiwanMarket         TaiwanMarketProvider
+	TaiwanChip           TaiwanChipProvider
 	HotStocks            HotStockProvider
 	MarketOverview       MarketOverviewProvider
 	Inflection           InflectionEvaluator

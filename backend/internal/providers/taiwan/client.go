@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"easy-stock/backend/internal/foundation"
@@ -22,6 +23,8 @@ type Client struct {
 	httpClient  *http.Client
 	twseBaseURL string
 	tpexBaseURL string
+	chipMu      sync.Mutex
+	chipDays    map[string]chipSnapshot
 }
 
 type Config struct {
@@ -39,6 +42,7 @@ func NewClient(config Config) *Client {
 		httpClient:  httpClient,
 		twseBaseURL: first(config.TWSEBaseURL, defaultTWSEBaseURL),
 		tpexBaseURL: first(config.TPExBaseURL, defaultTPExBaseURL),
+		chipDays:    map[string]chipSnapshot{},
 	}
 }
 

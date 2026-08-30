@@ -49,6 +49,7 @@ type Server struct {
 	stockDirectory        StockDirectoryProvider
 	taiwanDirectory       TaiwanDirectoryProvider
 	taiwanMarket          TaiwanMarketProvider
+	taiwanChip            TaiwanChipProvider
 	hotStockProvider      HotStockProvider
 	marketOverview        MarketOverviewProvider
 	inflection            InflectionEvaluator
@@ -131,13 +132,16 @@ func NewServer(config any) *Server {
 	if cfg.StockDirectory == nil {
 		cfg.StockDirectory = eastMoneyClient
 	}
-	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil {
+	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil {
 		taiwanClient := taiwan.NewClient(taiwan.Config{})
 		if cfg.TaiwanDirectory == nil {
 			cfg.TaiwanDirectory = taiwanClient
 		}
 		if cfg.TaiwanMarket == nil {
 			cfg.TaiwanMarket = taiwanClient
+		}
+		if cfg.TaiwanChip == nil {
+			cfg.TaiwanChip = taiwanClient
 		}
 	}
 	if cfg.MarketOverview == nil {
@@ -277,6 +281,7 @@ func NewServer(config any) *Server {
 		stockDirectory:        cfg.StockDirectory,
 		taiwanDirectory:       cfg.TaiwanDirectory,
 		taiwanMarket:          cfg.TaiwanMarket,
+		taiwanChip:            cfg.TaiwanChip,
 		hotStockProvider:      cfg.HotStocks,
 		marketOverview:        cfg.MarketOverview,
 		inflection:            cfg.Inflection,
@@ -460,6 +465,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/tw/quotes", s.taiwanQuotesHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/kline", s.taiwanKLineHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/indexes", s.taiwanIndexesHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/institutional", s.taiwanInstitutionalHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/margin", s.taiwanMarginHandler)
 	s.mux.HandleFunc("GET /api/v1/stocks/hot-ranks", s.hotStockRanksHandler)
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections", s.portfolioInspectionList)
 	s.mux.HandleFunc("POST /api/v1/portfolio-inspections", s.portfolioInspectionCreate)

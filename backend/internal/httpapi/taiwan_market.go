@@ -95,3 +95,53 @@ func (s *Server) taiwanIndexesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": data, "meta": meta})
 }
+
+func (s *Server) taiwanInstitutionalHandler(w http.ResponseWriter, r *http.Request) {
+	if s.taiwanChip == nil {
+		writeError(w, http.StatusServiceUnavailable, "Taiwan chip provider is unavailable")
+		return
+	}
+	security, err := s.taiwanSecurity(r.URL.Query().Get("symbol"), r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit, err := marketLimitQuery(r, 20, 60)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	data, err := s.taiwanChip.Institutional(ctx, security, limit)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+}
+
+func (s *Server) taiwanMarginHandler(w http.ResponseWriter, r *http.Request) {
+	if s.taiwanChip == nil {
+		writeError(w, http.StatusServiceUnavailable, "Taiwan chip provider is unavailable")
+		return
+	}
+	security, err := s.taiwanSecurity(r.URL.Query().Get("symbol"), r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit, err := marketLimitQuery(r, 20, 60)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	data, err := s.taiwanChip.Margin(ctx, security, limit)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+}

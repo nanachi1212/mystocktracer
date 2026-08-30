@@ -224,6 +224,11 @@ export type SecurityIdentity = {
 	retrieved_at: string;
 };
 
+export type InstitutionalFlow = { canonical:string; trade_date:string; unit:string; foreign_buy:number; foreign_sell:number; foreign_net:number; investment_trust_buy:number; investment_trust_sell:number; investment_trust_net:number; dealer_buy:number; dealer_sell:number; dealer_net:number; meta:SourceMeta };
+export type InstitutionalHistory = { security:SecurityIdentity; data:InstitutionalFlow[]; summary:{ foreign_net_5d:number; foreign_net_20d:number; investment_trust_net_5d:number; investment_trust_net_20d:number; dealer_net_5d:number; dealer_net_20d:number; foreign_consecutive_buy_days:number; foreign_consecutive_sell_days:number; investment_trust_consecutive_buy_days:number; investment_trust_consecutive_sell_days:number }; meta:SourceMeta };
+export type MarginTrading = { canonical:string; trade_date:string; unit:string; margin_balance?:number; margin_buy?:number; margin_sell?:number; margin_change?:number; short_balance?:number; short_sell?:number; short_cover?:number; short_change?:number; short_margin_ratio?:number; meta:SourceMeta };
+export type MarginHistory = { security:SecurityIdentity; data:MarginTrading[]; meta:SourceMeta };
+
 export type Quote = {
   symbol: string;
   name: string;

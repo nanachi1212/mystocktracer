@@ -83,6 +83,10 @@ func TestLiveOfficialMarketSmoke(t *testing.T) {
 		if lines[len(lines)-1].Close != quote.Price {
 			t.Fatalf("%s quote/kline mismatch: quote=%v kline=%v", code, quote.Price, lines[len(lines)-1].Close)
 		}
+		institutional, err := client.Institutional(ctx, security, 1)
+		if err != nil || len(institutional.Data) != 1 || institutional.Data[0].Canonical != security.Canonical || institutional.Data[0].Unit != "shares" { t.Fatalf("%s institutional: %+v err=%v", code, institutional, err) }
+		margin, err := client.Margin(ctx, security, 1)
+		if err != nil || len(margin.Data) != 1 || margin.Data[0].Canonical != security.Canonical || margin.Data[0].Unit != "shares" { t.Fatalf("%s margin: %+v err=%v", code, margin, err) }
 	}
 	indexes, _, err := client.Indexes(ctx)
 	if err != nil || len(indexes) != 2 || indexes[0].Index.ID != "taiex" || indexes[1].Index.ID != "tpex" {

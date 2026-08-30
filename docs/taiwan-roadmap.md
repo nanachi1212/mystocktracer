@@ -55,9 +55,15 @@
 
 ## Phase 3 — Taiwan Chip Data
 
-- 外資及陸資、投信、自營商 buy/sell/net。
-- 連買賣、5/20 日累積與成交量占比，防 look-ahead bias。
+- 外資及陸資、投信、自營商 buy/sell/net，保留自行買賣與避險細項及官方 net discrepancy。
+- 最近 5/20 日累積、外資與投信連買/連賣；不加入未驗證 scoring。
 - 融資餘額/增減、融券餘額/增減、券資比。
+- 法人官方單位為股；融資融券官方單位為張，Provider 統一乘 1,000 正規化為 shares，UI 再顯示為張。
+- 歷史日期取自同一 canonical 的官方 K-Line，所有資料以 `trade_date` 對齊，不使用 array index 或未來資料。
+
+**狀態：本輪完成。**
+
+券資比公式為 `融券餘額股數 / 融資餘額股數 × 100`；僅在兩者存在且融資餘額大於零時計算。官方頁面未提供 `published_at`，因此保持空值，不捏造時間。當特定標的／日期沒有官方資料時不補零；只有官方 row 中明確的 `0` 才視為真實零。
 
 ## Phase 4 — Fundamentals
 
