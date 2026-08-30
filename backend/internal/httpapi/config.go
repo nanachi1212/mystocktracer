@@ -71,6 +71,10 @@ type StockDirectoryProvider interface {
 	StockCatalog(ctx context.Context) ([]foundation.StockCatalogEntry, error)
 }
 
+type TaiwanDirectoryProvider interface {
+	Directory(ctx context.Context) ([]foundation.SecurityIdentity, error)
+}
+
 type HotStockProvider interface {
 	HotStockRanks(ctx context.Context, limit int) []foundation.HotStockRankList
 }
@@ -109,6 +113,7 @@ type Config struct {
 	StockConcept         StockConceptProvider
 	StockBusiness        StockBusinessProfileProvider
 	StockDirectory       StockDirectoryProvider
+	TaiwanDirectory      TaiwanDirectoryProvider
 	HotStocks            HotStockProvider
 	MarketOverview       MarketOverviewProvider
 	Inflection           InflectionEvaluator

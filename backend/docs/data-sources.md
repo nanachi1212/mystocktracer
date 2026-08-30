@@ -13,6 +13,15 @@ This document tracks the stock-related data sources that form the `easy-stock` d
 | CLS | `www.cls.cn` | `/api/v1/market/news` | Market telegraph news. |
 | 短线侠 / 开盘啦 | `duanxianxia.com`, `ds.duanxianxia.com` | `/api/v1/themes/overview`, `/api/v1/themes/screen`, `/api/v1/short-term/limit-up-ladder` | 开盘啦题材排名、龙一至龙五、涨停/连板池与逐股炒作题材。 |
 
+## Taiwan Market Foundation
+
+| Source | Domain | Current API | Data |
+| --- | --- | --- | --- |
+| TWSE OpenAPI | `openapi.twse.com.tw` | `/api/v1/tw/securities` | Official listed-company and listed-fund directory. |
+| TPEx OpenAPI | `www.tpex.org.tw` | `/api/v1/tw/securities` | Official OTC-company directory. |
+
+The Taiwan directory is cached for 12 hours. It exposes identity metadata only; quote, K-line, institutional-flow, margin and fundamental capabilities remain unsupported until their roadmap phases. Provider failures return an error or an explicitly stale cached directory, never zero-valued market data.
+
 ## Trend Theme Radar Priority
 
 - 开盘啦当天快照优先，题材榜和领涨股作为同一来源快照使用。

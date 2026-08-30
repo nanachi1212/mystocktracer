@@ -25,6 +25,7 @@ import (
 	"easy-stock/backend/internal/providers/hotstock"
 	marketoverviewprovider "easy-stock/backend/internal/providers/marketoverview"
 	"easy-stock/backend/internal/providers/sina"
+	"easy-stock/backend/internal/providers/taiwan"
 	"easy-stock/backend/internal/providers/tencent"
 	"easy-stock/backend/internal/review"
 	"easy-stock/backend/internal/runtimelog"
@@ -46,12 +47,14 @@ type Server struct {
 	stockConcepts         StockConceptProvider
 	stockBusiness         StockBusinessProfileProvider
 	stockDirectory        StockDirectoryProvider
+	taiwanDirectory       TaiwanDirectoryProvider
 	hotStockProvider      HotStockProvider
 	marketOverview        MarketOverviewProvider
 	inflection            InflectionEvaluator
 	themeSnapshots        *themeSnapshotCache
 	limitUpSnapshots      *limitUpLadderCache
 	stockDirectories      *stockDirectoryCache
+	taiwanDirectories     *taiwanDirectoryCache
 	hotStockRanks         *hotStockRankCache
 	marketSnapshots       *marketOverviewCache
 	marketEmotion         *marketEmotionEngine
@@ -126,6 +129,9 @@ func NewServer(config any) *Server {
 	}
 	if cfg.StockDirectory == nil {
 		cfg.StockDirectory = eastMoneyClient
+	}
+	if cfg.TaiwanDirectory == nil {
+		cfg.TaiwanDirectory = taiwan.NewClient(taiwan.Config{})
 	}
 	if cfg.MarketOverview == nil {
 		cfg.MarketOverview = marketoverviewprovider.New(eastMoneyClient, tencentClient, tencentClient, sinaClient)
@@ -262,12 +268,14 @@ func NewServer(config any) *Server {
 		stockConcepts:         cfg.StockConcept,
 		stockBusiness:         cfg.StockBusiness,
 		stockDirectory:        cfg.StockDirectory,
+		taiwanDirectory:       cfg.TaiwanDirectory,
 		hotStockProvider:      cfg.HotStocks,
 		marketOverview:        cfg.MarketOverview,
 		inflection:            cfg.Inflection,
 		themeSnapshots:        newThemeSnapshotCache(30 * time.Second),
 		limitUpSnapshots:      newLimitUpLadderCache(30 * time.Second),
 		stockDirectories:      newStockDirectoryCache(6 * time.Hour),
+		taiwanDirectories:     newTaiwanDirectoryCache(12 * time.Hour),
 		hotStockRanks:         newHotStockRankCache(2 * time.Minute),
 		marketSnapshots:       newMarketOverviewCache(45 * time.Second),
 		marketEmotionIntraday: newMarketEmotionIntradayCache(marketEmotionIntradayTTL),
@@ -440,6 +448,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/short-term/mastery/refresh", s.masteryRefresh)
 	s.mux.HandleFunc("POST /api/v1/stocks/ai-analysis", s.stockAIAnalysis)
 	s.mux.HandleFunc("GET /api/v1/stocks/directory", s.stockDirectoryHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/securities", s.taiwanDirectoryHandler)
 	s.mux.HandleFunc("GET /api/v1/stocks/hot-ranks", s.hotStockRanksHandler)
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections", s.portfolioInspectionList)
 	s.mux.HandleFunc("POST /api/v1/portfolio-inspections", s.portfolioInspectionCreate)

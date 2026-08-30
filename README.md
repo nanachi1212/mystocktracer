@@ -4,6 +4,8 @@
 
 <h1 align="center">easy-stock：A股 AI 智能投研工作台</h1>
 
+> `easy-stock-TW` 台股化工作以 [jundizhou/easy-stock](https://github.com/jundizhou/easy-stock) 為基礎；原作者、Git 歷史與 [PolyForm Noncommercial License 1.0.0](./LICENSE) 均予保留。目前完成範圍請見 [台股化 Roadmap](./docs/taiwan-roadmap.md)。
+
 <p align="center"><strong>面向个人投资者的 A股行情分析、股票分析与 AI投研桌面应用</strong></p>
 
 <p align="center">
