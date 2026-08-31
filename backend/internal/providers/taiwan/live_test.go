@@ -80,8 +80,18 @@ func TestLiveOfficialMarketSmoke(t *testing.T) {
 		if err != nil || len(lines) != 5 {
 			t.Fatalf("%s kline rows=%d err=%v", code, len(lines), err)
 		}
-		if lines[len(lines)-1].Close != quote.Price {
-			t.Fatalf("%s quote/kline mismatch: quote=%v kline=%v", code, quote.Price, lines[len(lines)-1].Close)
+		latest := lines[len(lines)-1]
+		if quote.Meta.TradeDate == "" || latest.Meta.TradeDate == "" {
+			t.Fatalf("%s quote/kline trade date unavailable: quote=%+v kline=%+v", code, quote.Meta, latest.Meta)
+		}
+		if quote.TradeTime.Format("2006-01-02") != quote.Meta.TradeDate || latest.Time.Format("2006-01-02") != latest.Meta.TradeDate {
+			t.Fatalf("%s quote/kline time metadata mismatch: quote=%+v kline=%+v", code, quote, latest)
+		}
+		if quote.Meta.TradeDate == latest.Meta.TradeDate && latest.Close != quote.Price {
+			t.Fatalf("%s same-date quote/kline mismatch on %s: quote=%v kline=%v", code, quote.Meta.TradeDate, quote.Price, latest.Close)
+		}
+		if quote.Meta.TradeDate != latest.Meta.TradeDate {
+			t.Logf("%s official publication lag: quote date=%s close=%v source=%s; kline date=%s close=%v source=%s", code, quote.Meta.TradeDate, quote.Price, quote.Meta.Source, latest.Meta.TradeDate, latest.Close, latest.Meta.Source)
 		}
 		institutional, err := client.Institutional(ctx, security, 1)
 		if err != nil || len(institutional.Data) != 1 || institutional.Data[0].Canonical != security.Canonical || institutional.Data[0].Unit != "shares" {
@@ -191,6 +201,72 @@ func TestLiveOfficialSecurityRuleProfiles(t *testing.T) {
 		}
 		t.Logf("%s canonical=%s type=%s metadata=%+v profile=%+v", code, item.Canonical, item.Type, item.TaiwanMetadata, item.RuleProfile)
 	}
+}
+
+func TestLiveOfficialM11SixSymbolFreshness(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query TWSE and TPEx")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	client := NewClient(Config{})
+	target := client.calendar.LatestCompleted(time.Now(), marketCutoffHour, marketCutoffMinute)
+	result := client.RefreshMarketWide(ctx, target)
+	items, err := client.Directory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byCode := make(map[string]foundation.SecurityIdentity, len(items))
+	for _, item := range items {
+		byCode[item.Code] = item
+	}
+	asOf := func(value *string) string {
+		if value == nil {
+			return "unavailable"
+		}
+		return *value
+	}
+	for _, code := range []string{"2330", "6488", "2881", "0050", "00631L", "00632R"} {
+		identity, ok := byCode[code]
+		if !ok {
+			t.Fatalf("%s official identity unavailable", code)
+		}
+		t.Logf("%s identity=%s exchange=%s instrument=%s daily_as_of=%s daily=%s institutional_as_of=%s institutional=%s margin_as_of=%s margin=%s target=%s", code, identity.Canonical, identity.Exchange, identity.Type, asOf(result.Freshness.DailyAsOf), result.Freshness.DailyStatus, asOf(result.Freshness.InstitutionalAsOf), result.Freshness.InstitutionalStatus, asOf(result.Freshness.MarginAsOf), result.Freshness.MarginStatus, result.Freshness.TargetLatestTradingDate)
+	}
+	if result.Freshness.TargetLatestTradingDate != target.Format("2006-01-02") {
+		t.Fatalf("target trading date=%s want=%s", result.Freshness.TargetLatestTradingDate, target.Format("2006-01-02"))
+	}
+	if result.OverallStatus == "success" && (result.Freshness.DailyStatus != "current" || result.Freshness.InstitutionalStatus != "current" || result.Freshness.MarginStatus != "current") {
+		t.Fatalf("successful refresh reported non-current freshness: %+v", result)
+	}
+}
+
+func TestLiveOfficialM11QuoteKLineEvidence(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query TWSE")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	client := NewClient(Config{})
+	items, err := client.Directory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches := liveMatches(items, "2330")
+	if len(matches) != 1 {
+		t.Fatalf("2330 identity count=%d", len(matches))
+	}
+	quote, err := client.Quote(ctx, matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, err := client.KLine(ctx, matches[0], 1)
+	if err != nil || len(lines) != 1 {
+		t.Fatalf("2330 kline rows=%d err=%v", len(lines), err)
+	}
+	line := lines[0]
+	t.Logf("QUOTE source=%s url=%s fetched_at=%s trade_date=%s trade_time=%s close=%v open=%v high=%v low=%v", quote.Meta.Source, quote.Meta.SourceURL, quote.Meta.FetchedAt.Format(time.RFC3339Nano), quote.Meta.TradeDate, quote.TradeTime.Format(time.RFC3339), quote.Price, quote.Open, quote.High, quote.Low)
+	t.Logf("KLINE source=%s url=%s fetched_at=%s trade_date=%s time=%s close=%v open=%v high=%v low=%v volume=%.0f amount=%.0f", line.Meta.Source, line.Meta.SourceURL, line.Meta.FetchedAt.Format(time.RFC3339Nano), line.Meta.TradeDate, line.Time.Format(time.RFC3339), line.Close, line.Open, line.High, line.Low, line.Volume, line.Amount)
 }
 
 func liveMatches(items []foundation.SecurityIdentity, query string) []foundation.SecurityIdentity {

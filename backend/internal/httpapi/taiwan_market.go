@@ -147,6 +147,14 @@ func (s *Server) taiwanMarginHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
+func (s *Server) taiwanDataStatusHandler(w http.ResponseWriter, _ *http.Request) {
+	if s.taiwanSnapshot == nil {
+		writeError(w, http.StatusServiceUnavailable, "Taiwan snapshot provider is unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": s.taiwanSnapshot.Freshness(time.Now())})
+}
+
 func (s *Server) taiwanFundamentalsHandler(w http.ResponseWriter, r *http.Request) {
 	if s.taiwanFundamentals == nil {
 		writeError(w, http.StatusServiceUnavailable, "Taiwan fundamentals provider is unavailable")

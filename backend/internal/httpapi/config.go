@@ -86,6 +86,10 @@ type TaiwanChipProvider interface {
 	Margin(ctx context.Context, security foundation.SecurityIdentity, limit int) (foundation.MarginHistory, error)
 }
 
+type TaiwanSnapshotProvider interface {
+	Freshness(now time.Time) foundation.TaiwanFreshness
+}
+
 type TaiwanFundamentalsProvider interface {
 	Fundamentals(ctx context.Context, security foundation.SecurityIdentity, months int) (foundation.TaiwanFundamentals, error)
 }
@@ -131,6 +135,7 @@ type Config struct {
 	TaiwanDirectory      TaiwanDirectoryProvider
 	TaiwanMarket         TaiwanMarketProvider
 	TaiwanChip           TaiwanChipProvider
+	TaiwanSnapshot       TaiwanSnapshotProvider
 	TaiwanFundamentals   TaiwanFundamentalsProvider
 	HotStocks            HotStockProvider
 	MarketOverview       MarketOverviewProvider

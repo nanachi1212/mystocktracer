@@ -21,21 +21,33 @@ const (
 )
 
 type Client struct {
-	httpClient  *http.Client
-	twseBaseURL string
-	tpexBaseURL string
-	finMindURL  string
-	chipMu      sync.Mutex
-	chipDays    map[string]chipSnapshot
-	fundMu      sync.Mutex
-	fundRows    map[string]fundSnapshot
+	httpClient        *http.Client
+	twseBaseURL       string
+	tpexBaseURL       string
+	finMindURL        string
+	twseReportBaseURL string
+	tpexReportBaseURL string
+	chipMu            sync.Mutex
+	chipDays          map[string]chipSnapshot
+	fundMu            sync.Mutex
+	fundRows          map[string]fundSnapshot
+	snapshotMu        sync.RWMutex
+	dailyDays         map[string][]foundation.TaiwanDailySnapshot
+	instDays          map[string][]foundation.InstitutionalFlow
+	marginDays        map[string][]foundation.MarginTrading
+	calendar          foundation.TaiwanTradingCalendar
+	now               func() time.Time
 }
 
 type Config struct {
-	HTTPClient  *http.Client
-	TWSEBaseURL string
-	TPExBaseURL string
-	FinMindURL  string
+	HTTPClient        *http.Client
+	TWSEBaseURL       string
+	TPExBaseURL       string
+	FinMindURL        string
+	TWSEReportBaseURL string
+	TPExReportBaseURL string
+	Holidays          map[string]bool
+	Now               func() time.Time
 }
 
 func NewClient(config Config) *Client {
@@ -43,13 +55,24 @@ func NewClient(config Config) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
 	}
+	now := config.Now
+	if now == nil {
+		now = time.Now
+	}
 	return &Client{
-		httpClient:  httpClient,
-		twseBaseURL: first(config.TWSEBaseURL, defaultTWSEBaseURL),
-		tpexBaseURL: first(config.TPExBaseURL, defaultTPExBaseURL),
-		finMindURL:  first(config.FinMindURL, defaultFinMindURL),
-		chipDays:    map[string]chipSnapshot{},
-		fundRows:    map[string]fundSnapshot{},
+		httpClient:        httpClient,
+		twseBaseURL:       first(config.TWSEBaseURL, defaultTWSEBaseURL),
+		tpexBaseURL:       first(config.TPExBaseURL, defaultTPExBaseURL),
+		finMindURL:        first(config.FinMindURL, defaultFinMindURL),
+		twseReportBaseURL: first(config.TWSEReportBaseURL, "https://www.twse.com.tw"),
+		tpexReportBaseURL: first(config.TPExReportBaseURL, "https://www.tpex.org.tw"),
+		chipDays:          map[string]chipSnapshot{},
+		fundRows:          map[string]fundSnapshot{},
+		dailyDays:         map[string][]foundation.TaiwanDailySnapshot{},
+		instDays:          map[string][]foundation.InstitutionalFlow{},
+		marginDays:        map[string][]foundation.MarginTrading{},
+		calendar:          foundation.TaiwanTradingCalendar{Holidays: config.Holidays},
+		now:               now,
 	}
 }
 
