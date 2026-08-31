@@ -269,6 +269,35 @@ func TestLiveOfficialM11QuoteKLineEvidence(t *testing.T) {
 	t.Logf("KLINE source=%s url=%s fetched_at=%s trade_date=%s time=%s close=%v open=%v high=%v low=%v volume=%.0f amount=%.0f", line.Meta.Source, line.Meta.SourceURL, line.Meta.FetchedAt.Format(time.RFC3339Nano), line.Meta.TradeDate, line.Time.Format(time.RFC3339), line.Close, line.Open, line.High, line.Low, line.Volume, line.Amount)
 }
 
+func TestLiveOfficialM12QuoteFreshness(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query TWSE and TPEx")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	client := NewClient(Config{})
+	items, err := client.Directory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := client.calendar.LatestCompleted(client.now(), marketCutoffHour, marketCutoffMinute).Format("2006-01-02")
+	for _, code := range []string{"2330", "2881", "0050", "6488", "00631L", "00632R"} {
+		matches := liveMatches(items, code)
+		if len(matches) != 1 {
+			t.Fatalf("%s identity count=%d", code, len(matches))
+		}
+		quote, err := client.Quote(ctx, matches[0])
+		if err != nil {
+			t.Logf("%s canonical=%s source=unavailable target_latest_trading_date=%s freshness=unavailable error=%v", code, matches[0].Canonical, target, err)
+			continue
+		}
+		t.Logf("%s canonical=%s source=%s url=%s fetched_at=%s trade_date=%s target_latest_trading_date=%s price=%v freshness=%s fallback=%t", code, matches[0].Canonical, quote.Meta.Source, quote.Meta.SourceURL, quote.Meta.FetchedAt.Format(time.RFC3339Nano), quote.Meta.TradeDate, target, quote.Price, quote.Meta.Freshness, quote.Meta.FallbackReason != "")
+		if quote.Meta.Freshness == "" {
+			t.Fatalf("%s quote freshness unavailable: %+v", code, quote)
+		}
+	}
+}
+
 func liveMatches(items []foundation.SecurityIdentity, query string) []foundation.SecurityIdentity {
 	query = strings.ToLower(strings.TrimSpace(query))
 	matches := make([]foundation.SecurityIdentity, 0, 1)

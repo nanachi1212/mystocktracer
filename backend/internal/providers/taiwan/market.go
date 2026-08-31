@@ -2,7 +2,10 @@ package taiwan
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -45,22 +48,76 @@ func (c *Client) Quote(ctx context.Context, security foundation.SecurityIdentity
 		quote.Meta.FallbackReason = err.Error()
 		quote.Meta.Status = "official_monthly_fallback"
 	}
+	quote.Meta.Freshness = quoteFreshness(quote.Meta.TradeDate, c.calendar.LatestCompleted(c.now(), marketCutoffHour, marketCutoffMinute))
+	quote.Meta.Stale = quote.Meta.Freshness == "stale"
 	quote.Meta.LatencyMS = time.Since(started).Milliseconds()
 	return quote, nil
 }
 
 func (c *Client) twseQuote(ctx context.Context, security foundation.SecurityIdentity) (foundation.Quote, error) {
-	sourceURL := c.twseBaseURL + "/exchangeReport/STOCK_DAY_ALL"
+	openAPIURL := c.twseBaseURL + "/exchangeReport/STOCK_DAY_ALL"
 	var rows []twseDailyRow
-	if err := c.getJSON(ctx, sourceURL, &rows); err != nil {
-		return foundation.Quote{}, err
+	openAPIQuote, openAPIErr := foundation.Quote{}, c.getJSON(ctx, openAPIURL, &rows)
+	if openAPIErr == nil {
+		openAPIQuote, openAPIErr = quoteFromTWSEDailyRows(rows, security, "twse:STOCK_DAY_ALL", openAPIURL)
 	}
+	reportURL := c.twseReportBaseURL + "/exchangeReport/STOCK_DAY_ALL"
+	reportQuote, reportErr := c.twseCSVQuote(ctx, security, reportURL)
+	if openAPIErr != nil && reportErr != nil {
+		return foundation.Quote{}, fmt.Errorf("OpenAPI: %v; www: %v", openAPIErr, reportErr)
+	}
+	if openAPIErr != nil {
+		return reportQuote, nil
+	}
+	if reportErr != nil {
+		return openAPIQuote, nil
+	}
+	if reportQuote.Meta.TradeDate > openAPIQuote.Meta.TradeDate {
+		return reportQuote, nil
+	}
+	return openAPIQuote, nil
+}
+
+func quoteFromTWSEDailyRows(rows []twseDailyRow, security foundation.SecurityIdentity, source, sourceURL string) (foundation.Quote, error) {
 	for _, row := range rows {
-		if row.Code == security.Code {
-			return buildQuote(security, row.Name, row.Date, row.OpeningPrice, row.HighestPrice, row.LowestPrice, row.ClosingPrice, row.Change, row.TradeVolume, row.TradeValue, "twse:STOCK_DAY_ALL", sourceURL)
+		if strings.TrimSpace(row.Code) == security.Code {
+			return buildQuote(security, row.Name, row.Date, row.OpeningPrice, row.HighestPrice, row.LowestPrice, row.ClosingPrice, row.Change, row.TradeVolume, row.TradeValue, source, sourceURL)
 		}
 	}
 	return foundation.Quote{}, fmt.Errorf("%s not found in TWSE daily quote", security.Code)
+}
+
+func (c *Client) twseCSVQuote(ctx context.Context, security foundation.SecurityIdentity, sourceURL string) (foundation.Quote, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return foundation.Quote{}, err
+	}
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return foundation.Quote{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return foundation.Quote{}, fmt.Errorf("HTTP status %d", response.StatusCode)
+	}
+	reader := csv.NewReader(io.LimitReader(response.Body, maxDirectoryBytes))
+	if _, err := reader.Read(); err != nil {
+		return foundation.Quote{}, fmt.Errorf("read CSV header: %w", err)
+	}
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return foundation.Quote{}, fmt.Errorf("read CSV: %w", err)
+		}
+		if len(row) < 10 || strings.TrimSpace(row[1]) != security.Code {
+			continue
+		}
+		return buildQuote(security, row[2], row[0], row[5], row[6], row[7], row[8], row[9], row[3], row[4], "twse:www:STOCK_DAY_ALL", sourceURL)
+	}
+	return foundation.Quote{}, fmt.Errorf("%s not found in TWSE daily quote CSV", security.Code)
 }
 
 func (c *Client) tpexQuote(ctx context.Context, security foundation.SecurityIdentity) (foundation.Quote, error) {
@@ -127,10 +184,10 @@ func (c *Client) KLine(ctx context.Context, security foundation.SecurityIdentity
 func (c *Client) month(ctx context.Context, security foundation.SecurityIdentity, month time.Time) ([]foundation.KLine, error) {
 	var sourceURL, source string
 	if security.Exchange == "TWSE" {
-		sourceURL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=" + month.Format("20060102") + "&stockNo=" + url.QueryEscape(security.Code)
+		sourceURL = c.twseReportBaseURL + "/exchangeReport/STOCK_DAY?response=json&date=" + month.Format("20060102") + "&stockNo=" + url.QueryEscape(security.Code)
 		source = "twse:STOCK_DAY"
 	} else if security.Exchange == "TPEX" {
-		sourceURL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock?response=json&date=" + month.Format("2006/01/02") + "&code=" + url.QueryEscape(security.Code)
+		sourceURL = c.tpexReportBaseURL + "/www/zh-tw/afterTrading/tradingStock?response=json&date=" + month.Format("2006/01/02") + "&code=" + url.QueryEscape(security.Code)
 		source = "tpex:tradingStock"
 	} else {
 		return nil, fmt.Errorf("unsupported Taiwan exchange %q", security.Exchange)
@@ -249,6 +306,16 @@ func quoteFromLine(security foundation.SecurityIdentity, line foundation.KLine) 
 }
 func officialMeta(source, sourceURL string, date time.Time) foundation.SourceMeta {
 	return foundation.SourceMeta{Source: source, SourceURL: sourceURL, FetchedAt: time.Now(), TradeDate: date.Format("2006-01-02"), Stale: time.Since(date) > 96*time.Hour, Status: "official_close", IsRealtime: false}
+}
+func quoteFreshness(tradeDate string, target time.Time) string {
+	date, err := time.ParseInLocation("2006-01-02", tradeDate, taipei())
+	if err != nil || date.After(target) {
+		return "unavailable"
+	}
+	if date.Equal(target) {
+		return "current"
+	}
+	return "stale"
 }
 func number(raw string) (float64, error) {
 	cleaned := strings.NewReplacer(",", "", "+", "", "−", "-").Replace(strings.TrimSpace(raw))

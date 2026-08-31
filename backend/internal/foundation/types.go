@@ -15,6 +15,7 @@ type SourceMeta struct {
 	FallbackReason  string     `json:"fallback_reason,omitempty"`
 	CarryForward    bool       `json:"carry_forward,omitempty"`
 	Status          string     `json:"status,omitempty"`
+	Freshness       string     `json:"freshness,omitempty"`
 	IsRealtime      bool       `json:"is_realtime"`
 }
 
