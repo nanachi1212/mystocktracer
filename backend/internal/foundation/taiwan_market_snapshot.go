@@ -13,6 +13,8 @@ type TaiwanDailySnapshot struct {
 	High      *float64     `json:"high"`
 	Low       *float64     `json:"low"`
 	Close     *float64     `json:"close"`
+	Change    *float64     `json:"change"`
+	NoTrade   bool         `json:"no_trade"`
 	Volume    *int64       `json:"volume"`
 	Amount    *float64     `json:"amount"`
 	Unit      string       `json:"unit"`

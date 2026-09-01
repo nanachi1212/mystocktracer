@@ -3,6 +3,7 @@ package taiwan
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -72,7 +73,7 @@ func parseTWSEDailySnapshot(payload monthlyResponse, target time.Time, allow map
 			}
 		}
 	}
-	return parseDailyRows(rows, target, allow, "TWSE", sourceURL, 0, 8, 5, 6, 7, 2, 4)
+	return parseDailyRows(rows, target, allow, "TWSE", sourceURL, 0, 8, 5, 6, 7, 2, 4, 10, 9)
 }
 
 func parseTPExDailySnapshot(payload monthlyResponse, target time.Time, allow map[string]foundation.SecurityIdentity, sourceURL string) []foundation.TaiwanDailySnapshot {
@@ -85,10 +86,10 @@ func parseTPExDailySnapshot(payload monthlyResponse, target time.Time, allow map
 			}
 		}
 	}
-	return parseDailyRows(rows, target, allow, "TPEX", sourceURL, 0, 2, 4, 5, 6, 8, 9)
+	return parseDailyRows(rows, target, allow, "TPEX", sourceURL, 0, 2, 4, 5, 6, 8, 9, 3, -1)
 }
 
-func parseDailyRows(rows [][]string, target time.Time, allow map[string]foundation.SecurityIdentity, exchange, sourceURL string, codeAt, closeAt, openAt, highAt, lowAt, volumeAt, amountAt int) []foundation.TaiwanDailySnapshot {
+func parseDailyRows(rows [][]string, target time.Time, allow map[string]foundation.SecurityIdentity, exchange, sourceURL string, codeAt, closeAt, openAt, highAt, lowAt, volumeAt, amountAt, changeAt, signAt int) []foundation.TaiwanDailySnapshot {
 	out := make([]foundation.TaiwanDailySnapshot, 0, len(rows))
 	max := amountAt
 	for _, row := range rows {
@@ -105,20 +106,36 @@ func parseDailyRows(rows [][]string, target time.Time, allow map[string]foundati
 		closeValue, closeOK := optionalNumber(row[closeAt])
 		volume, volumeOK := optionalInteger(row[volumeAt])
 		amount, amountOK := optionalNumber(row[amountAt])
-		if !openOK && !highOK && !lowOK && !closeOK && !volumeOK && !amountOK {
+		var change *float64
+		if changeAt >= 0 && len(row) > changeAt {
+			change, _ = optionalNumber(row[changeAt])
+			if change != nil && signAt >= 0 && len(row) > signAt {
+				sign := strings.NewReplacer("−", "-", "－", "-", "﹣", "-").Replace(row[signAt])
+				if strings.Contains(sign, "-") {
+					value := -math.Abs(*change)
+					change = &value
+				} else if strings.Contains(sign, "+") {
+					value := math.Abs(*change)
+					change = &value
+				}
+			}
+		}
+		noTrade := !openOK && !highOK && !lowOK && !closeOK && !volumeOK && !amountOK && change == nil &&
+			missingToken(row[openAt]) && missingToken(row[highAt]) && missingToken(row[lowAt]) && missingToken(row[closeAt]) && missingToken(row[volumeAt]) && missingToken(row[amountAt])
+		if !openOK && !highOK && !lowOK && !closeOK && !volumeOK && !amountOK && !noTrade {
 			continue
 		}
 		meta := officialMeta(strings.ToLower(exchange)+":market-wide-daily", sourceURL, target)
 		meta.Status = "official"
-		meta.AvailableFields = []string{"volume:shares", "amount:TWD", "price:raw"}
-		out = append(out, foundation.TaiwanDailySnapshot{Canonical: identity.Canonical, Code: identity.Code, Name: identity.Name, Exchange: exchange, Type: identity.Type, TradeDate: target.Format("2006-01-02"), Open: open, High: high, Low: low, Close: closeValue, Volume: volume, Amount: amount, Unit: "shares", Currency: "TWD", Meta: meta})
+		meta.AvailableFields = []string{"volume:shares", "amount:TWD", "price:raw", "change:official"}
+		out = append(out, foundation.TaiwanDailySnapshot{Canonical: identity.Canonical, Code: identity.Code, Name: identity.Name, Exchange: exchange, Type: identity.Type, TradeDate: target.Format("2006-01-02"), Open: open, High: high, Low: low, Close: closeValue, Change: change, NoTrade: noTrade, Volume: volume, Amount: amount, Unit: "shares", Currency: "TWD", Meta: meta})
 	}
 	return out
 }
 
 func optionalNumber(raw string) (*float64, bool) {
-	value := strings.TrimSpace(raw)
-	if value == "" || value == "-" || value == "--" || value == "N/A" {
+	value := strings.NewReplacer("－", "-", "﹣", "-").Replace(strings.TrimSpace(raw))
+	if missingToken(value) {
 		return nil, false
 	}
 	parsed, err := number(value)
@@ -126,6 +143,11 @@ func optionalNumber(raw string) (*float64, bool) {
 		return nil, false
 	}
 	return &parsed, true
+}
+
+func missingToken(raw string) bool {
+	value := strings.TrimSpace(raw)
+	return value == "" || value == "-" || value == "--" || value == "N/A"
 }
 
 func optionalInteger(raw string) (*int64, bool) {
@@ -372,6 +394,12 @@ func (c *Client) DailyAsOf(query time.Time) ([]foundation.TaiwanDailySnapshot, e
 		return nil, fmt.Errorf("daily snapshot unavailable as of %s", query.Format("2006-01-02"))
 	}
 	return append([]foundation.TaiwanDailySnapshot(nil), c.dailyDays[key]...), nil
+}
+
+func (c *Client) dailyOn(query time.Time) []foundation.TaiwanDailySnapshot {
+	c.snapshotMu.RLock()
+	defer c.snapshotMu.RUnlock()
+	return append([]foundation.TaiwanDailySnapshot(nil), c.dailyDays[query.Format("2006-01-02")]...)
 }
 func latestNotAfter[T any](values map[string][]T, query time.Time) string {
 	limit := query.Format("2006-01-02")

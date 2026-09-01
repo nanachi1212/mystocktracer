@@ -2,6 +2,7 @@ package taiwan
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -296,6 +297,55 @@ func TestLiveOfficialM12QuoteFreshness(t *testing.T) {
 			t.Fatalf("%s quote freshness unavailable: %+v", code, quote)
 		}
 	}
+}
+
+func TestLiveOfficialM2AMarketBreadth(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query official Taiwan market breadth")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	client := NewClient(Config{})
+	result, err := client.MarketBreadth(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []foundation.TaiwanBreadthScope{result.TWSE, result.TPEX, result.Combined} {
+		if scope.Advancers+scope.Decliners+scope.Unchanged+scope.NoTrade+scope.Unknown != scope.UniverseCount {
+			t.Fatalf("%s sanity equation failed: %+v", scope.Scope, scope)
+		}
+		bucketAmount := scope.AdvancingAmountTWD + scope.DecliningAmountTWD + scope.UnchangedAmountTWD + scope.NoTradeAmountTWD + scope.UnknownAmountTWD
+		if bucketAmount > scope.TotalAmountTWD+0.01 {
+			t.Fatalf("%s amount buckets exceed total: %+v", scope.Scope, scope)
+		}
+		t.Logf("scope=%s as_of=%s target=%s freshness=%s status=%s universe=%s universe_count=%d traded_count=%d advancers=%d decliners=%d unchanged=%d no_trade=%d unknown=%d advance_decline_diff=%d advance_ratio=%s total_amount_twd=%.0f included=%v missing=%v", scope.Scope, liveString(scope.AsOf), scope.TargetLatestTradingDate, scope.Freshness, scope.Status, scope.Universe, scope.UniverseCount, scope.TradedCount, scope.Advancers, scope.Decliners, scope.Unchanged, scope.NoTrade, scope.Unknown, scope.AdvanceDeclineDiff, liveRatio(scope.AdvanceRatio), scope.TotalAmountTWD, scope.IncludedExchanges, scope.MissingExchanges)
+	}
+	items, err := client.Directory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"2330", "2881", "6488", "0050", "00631L", "00632R"} {
+		matches := liveMatches(items, code)
+		if len(matches) != 1 {
+			t.Fatalf("%s identity count=%d", code, len(matches))
+		}
+		included := matches[0].Type == foundation.SecurityTypeStock
+		t.Logf("code=%s canonical=%s exchange=%s type=%s included=%t reason=%s", code, matches[0].Canonical, matches[0].Exchange, matches[0].Type, included, map[bool]string{true: "SecurityTypeStock", false: "stock_breadth excludes non-stock"}[included])
+	}
+}
+
+func liveString(value *string) string {
+	if value == nil {
+		return "unavailable"
+	}
+	return *value
+}
+
+func liveRatio(value *float64) string {
+	if value == nil {
+		return "unavailable"
+	}
+	return fmt.Sprintf("%.6f", *value)
 }
 
 func liveMatches(items []foundation.SecurityIdentity, query string) []foundation.SecurityIdentity {

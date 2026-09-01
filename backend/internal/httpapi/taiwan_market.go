@@ -155,6 +155,35 @@ func (s *Server) taiwanDataStatusHandler(w http.ResponseWriter, _ *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"data": s.taiwanSnapshot.Freshness(time.Now())})
 }
 
+func (s *Server) taiwanMarketBreadthHandler(w http.ResponseWriter, r *http.Request) {
+	if s.taiwanBreadth == nil {
+		writeError(w, http.StatusServiceUnavailable, "Taiwan market breadth provider is unavailable")
+		return
+	}
+	scope := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("scope")))
+	if scope != "" && scope != "twse" && scope != "tpex" && scope != "combined" {
+		writeError(w, http.StatusBadRequest, "scope must be twse, tpex, or combined")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	data, err := s.taiwanBreadth.MarketBreadth(ctx, time.Now())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	switch scope {
+	case "":
+		writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	case "twse":
+		writeJSON(w, http.StatusOK, map[string]any{"data": data.TWSE})
+	case "tpex":
+		writeJSON(w, http.StatusOK, map[string]any{"data": data.TPEX})
+	case "combined":
+		writeJSON(w, http.StatusOK, map[string]any{"data": data.Combined})
+	}
+}
+
 func (s *Server) taiwanFundamentalsHandler(w http.ResponseWriter, r *http.Request) {
 	if s.taiwanFundamentals == nil {
 		writeError(w, http.StatusServiceUnavailable, "Taiwan fundamentals provider is unavailable")

@@ -90,6 +90,10 @@ type TaiwanSnapshotProvider interface {
 	Freshness(now time.Time) foundation.TaiwanFreshness
 }
 
+type TaiwanBreadthProvider interface {
+	MarketBreadth(ctx context.Context, now time.Time) (foundation.TaiwanMarketBreadth, error)
+}
+
 type TaiwanFundamentalsProvider interface {
 	Fundamentals(ctx context.Context, security foundation.SecurityIdentity, months int) (foundation.TaiwanFundamentals, error)
 }
@@ -136,6 +140,7 @@ type Config struct {
 	TaiwanMarket         TaiwanMarketProvider
 	TaiwanChip           TaiwanChipProvider
 	TaiwanSnapshot       TaiwanSnapshotProvider
+	TaiwanBreadth        TaiwanBreadthProvider
 	TaiwanFundamentals   TaiwanFundamentalsProvider
 	HotStocks            HotStockProvider
 	MarketOverview       MarketOverviewProvider

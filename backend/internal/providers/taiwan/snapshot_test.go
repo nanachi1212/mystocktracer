@@ -15,24 +15,61 @@ func snapshotAllowlist() map[string]foundation.SecurityIdentity {
 	return map[string]foundation.SecurityIdentity{
 		"2330": {Canonical: "2330.TWSE", Code: "2330", Name: "台積電", Exchange: "TWSE", Type: foundation.SecurityTypeStock},
 		"0050": {Canonical: "0050.TWSE", Code: "0050", Name: "ETF", Exchange: "TWSE", Type: foundation.SecurityTypeETF},
+		"1101": {Canonical: "1101.TWSE", Code: "1101", Name: "台泥", Exchange: "TWSE", Type: foundation.SecurityTypeStock},
 	}
 }
 
 func TestMarketWideDailyParsersAllowlistUnitsAndMissing(t *testing.T) {
 	day := time.Date(2026, 8, 28, 0, 0, 0, 0, taipei())
 	twse := monthlyResponse{Data: [][]string{
-		{"2330", "台積電", "1,000", "10", "2,420,000", "2,400", "2,445", "2,390", "2,420"},
+		{"2330", "台積電", "1,000", "10", "2,420,000", "2,400", "2,445", "2,390", "2,420", "<p>-</p>", "15"},
 		{"0050", "ETF", "0", "0", "0", "--", "--", "--", "--"},
+		{"1101", "台泥", "--", "--", "--", "--", "--", "--", "--", "", "--"},
 		{"9999", "not allowed", "1", "1", "1", "1", "1", "1", "1"},
 	}}
 	rows := parseTWSEDailySnapshot(twse, day, snapshotAllowlist(), "https://official.test")
-	if len(rows) != 2 || rows[0].Volume == nil || *rows[0].Volume != 1000 || rows[0].Amount == nil || *rows[0].Amount != 2420000 {
+	if len(rows) != 3 || rows[0].Volume == nil || *rows[0].Volume != 1000 || rows[0].Amount == nil || *rows[0].Amount != 2420000 {
 		t.Fatalf("unexpected rows: %#v", rows)
 	}
-	if rows[1].Close != nil || rows[1].Volume == nil || *rows[1].Volume != 0 {
+	if rows[0].Change == nil || *rows[0].Change != -15 || rows[1].Change != nil {
+		t.Fatalf("official signed change and missing change must be preserved: %#v", rows)
+	}
+	if rows[1].Close != nil || rows[1].Volume == nil || *rows[1].Volume != 0 || !rows[2].NoTrade {
 		t.Fatalf("missing must stay nil and explicit zero must stay zero: %#v", rows[1])
 	}
 }
+
+func TestOfficialSignedChangeParsing(t *testing.T) {
+	day := time.Date(2026, 8, 28, 0, 0, 0, 0, taipei())
+	allow := map[string]foundation.SecurityIdentity{}
+	expected := map[string]*float64{"1001": floatPointer(1.5), "1002": floatPointer(-1.5), "1003": floatPointer(-1.5), "1004": floatPointer(0), "1005": floatPointer(1500), "1006": nil}
+	for code := range expected {
+		allow[code] = foundation.SecurityIdentity{Canonical: code + ".TWSE", Code: code, Exchange: "TWSE", Type: foundation.SecurityTypeStock}
+	}
+	payload := monthlyResponse{Data: [][]string{
+		{"1001", "A", "1", "1", "1", "1", "1", "1", "1", "+", "+1.5"},
+		{"1002", "B", "1", "1", "1", "1", "1", "1", "1", "-", "-1.5"},
+		{"1003", "C", "1", "1", "1", "1", "1", "1", "1", "−", "1.5"},
+		{"1004", "D", "1", "1", "1", "1", "1", "1", "1", "+", "0"},
+		{"1005", "E", "1", "1", "1", "1", "1", "1", "1", "+", "1,500"},
+		{"1006", "F", "1", "1", "1", "1", "1", "1", "1", "", "--"},
+	}}
+	rows := parseTWSEDailySnapshot(payload, day, allow, "https://official.test")
+	if len(rows) != len(expected) {
+		t.Fatalf("rows=%d want=%d", len(rows), len(expected))
+	}
+	for _, row := range rows {
+		want := expected[row.Code]
+		if want == nil && row.Change != nil || want != nil && (row.Change == nil || *row.Change != *want) {
+			t.Fatalf("code=%s change=%v want=%v", row.Code, row.Change, want)
+		}
+	}
+	if value, ok := optionalNumber("－1.5"); !ok || value == nil || *value != -1.5 {
+		t.Fatalf("full-width minus parsed as %v ok=%t", value, ok)
+	}
+}
+
+func floatPointer(value float64) *float64 { return &value }
 
 func TestFreshnessUnavailableCurrentStaleAndIdempotent(t *testing.T) {
 	zone := taipei()
@@ -55,6 +92,16 @@ func TestFreshnessUnavailableCurrentStaleAndIdempotent(t *testing.T) {
 	}
 	if rows, err := client.DailyAsOf(day); err != nil || len(rows) != 1 {
 		t.Fatalf("as-of rows=%v err=%v", rows, err)
+	}
+}
+
+func TestDailyAsOfNeverFutureBackwardFills(t *testing.T) {
+	client := NewClient(Config{})
+	future := time.Date(2026, 8, 31, 0, 0, 0, 0, taipei())
+	client.storeDaily(future, []foundation.TaiwanDailySnapshot{{Canonical: "2330.TWSE"}}, nil)
+	query := time.Date(2026, 8, 28, 0, 0, 0, 0, taipei())
+	if _, err := client.DailyAsOf(query); err == nil {
+		t.Fatal("future snapshot must not backward-fill an earlier as-of query")
 	}
 }
 
@@ -86,5 +133,37 @@ func TestRefreshMarketWidePartialFailureAndOneRequestPerDatasetExchange(t *testi
 	}
 	if result.Daily.Rows != 2 || dailyCalls.Load() != 2 {
 		t.Fatalf("daily=%#v calls=%d", result.Daily, dailyCalls.Load())
+	}
+}
+
+func TestMarketBreadthUsesOneBulkDailyRequestPerExchange(t *testing.T) {
+	var dailyCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			_, _ = w.Write([]byte(`[{"公司代號":"2330","公司簡稱":"台積電"}]`))
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[{"基金代號":"0050","基金簡稱":"元大台灣50"}]`))
+		case "/mopsfin_t187ap03_O":
+			_, _ = w.Write([]byte(`[{"SecuritiesCompanyCode":"6488","CompanyAbbreviation":"環球晶"}]`))
+		case "/rwd/zh/afterTrading/MI_INDEX":
+			dailyCalls.Add(1)
+			_, _ = w.Write([]byte(`{"data":[["2330","台積電","1000","1","2420000","2400","2445","2390","2420","+","20"],["0050","ETF","100","1","10000","100","101","99","100","+","1"]]}`))
+		case "/www/zh-tw/afterTrading/dailyQuotes":
+			dailyCalls.Add(1)
+			_, _ = w.Write([]byte(`{"data":[["6488","環球晶","100","-2","102","103","99","100","2000","200000"]]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, TWSEReportBaseURL: server.URL, TPExReportBaseURL: server.URL, HTTPClient: server.Client(), Now: func() time.Time { return now }})
+	got, err := client.MarketBreadth(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dailyCalls.Load() != 2 || got.TWSE.UniverseCount != 1 || got.TWSE.Advancers != 1 || got.TPEX.Decliners != 1 || got.Combined.UniverseCount != 2 {
+		t.Fatalf("calls=%d breadth=%+v", dailyCalls.Load(), got)
 	}
 }
