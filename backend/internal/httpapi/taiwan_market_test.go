@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"easy-stock/backend/internal/foundation"
 	"easy-stock/backend/internal/marketemotion"
 	"easy-stock/backend/internal/sector"
+	"easy-stock/backend/internal/stockanalysis"
 )
 
 type fixedTaiwanMarket struct{}
@@ -25,6 +27,7 @@ func (fixedTaiwanMarket) Quote(_ context.Context, security foundation.SecurityId
 type fixedTaiwanBreadth struct{}
 type fixedTaiwanEmotion struct{}
 type fixedTaiwanIndustryRadar struct{}
+type fixedTaiwanIntelligence struct{}
 
 func (fixedTaiwanBreadth) MarketBreadth(context.Context, time.Time) (foundation.TaiwanMarketBreadth, error) {
 	return foundation.TaiwanMarketBreadth{
@@ -44,6 +47,13 @@ func (fixedTaiwanIndustryRadar) IndustryRadar(context.Context, time.Time) (secto
 		TPEX:     sector.TaiwanIndustryScope{Scope: "TPEX", ModelVersion: sector.TaiwanIndustryRadarVersion},
 		Combined: sector.TaiwanIndustryScope{Scope: "COMBINED", ModelVersion: sector.TaiwanIndustryRadarVersion},
 	}, nil
+}
+
+func (fixedTaiwanIntelligence) StockIntelligence(_ context.Context, canonical string, _ time.Time) (stockanalysis.TaiwanStockIntelligence, error) {
+	if canonical != "2330.TWSE" {
+		return stockanalysis.TaiwanStockIntelligence{}, fmt.Errorf("unknown canonical Taiwan security %q", canonical)
+	}
+	return stockanalysis.TaiwanStockIntelligence{ModelVersion: stockanalysis.TaiwanStockIntelligenceVersion, Symbol: canonical}, nil
 }
 
 func TestTaiwanMarketBreadthScopesAndValidation(t *testing.T) {
@@ -91,6 +101,20 @@ func TestTaiwanIndustryRadarScopesAndValidation(t *testing.T) {
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/industry-radar?scope=invalid", nil))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid scope status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestTaiwanStockIntelligenceRequiresCanonicalIdentity(t *testing.T) {
+	server := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}})
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/stocks/2330.TWSE/intelligence", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"model_version":"taiwan_stock_intelligence_v1"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/stocks/2330/intelligence", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("raw code status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 func (fixedTaiwanMarket) KLine(_ context.Context, security foundation.SecurityIdentity, _ int) ([]foundation.KLine, error) {

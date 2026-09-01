@@ -3,14 +3,18 @@ package taiwan
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"easy-stock/backend/internal/foundation"
 	"easy-stock/backend/internal/marketemotion"
 	"easy-stock/backend/internal/sector"
+	"easy-stock/backend/internal/stockanalysis"
 )
 
 func TestLiveOfficialDirectorySmoke(t *testing.T) {
@@ -391,6 +395,80 @@ func TestLiveOfficialM3IndustryRadar(t *testing.T) {
 		}
 		item := matches[0]
 		t.Logf("code=%s canonical=%s exchange=%s type=%s official_industry_code=%s included=%t source=%s", code, item.Canonical, item.Exchange, item.Type, item.Industry, item.Type == foundation.SecurityTypeStock, item.SourceURL)
+	}
+}
+
+func TestLiveOfficialM4AStockIntelligence(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query official Taiwan stock intelligence")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	client := NewClient(Config{})
+	for _, symbol := range []string{"2330.TWSE", "2881.TWSE", "6488.TPEX", "0050.TWSE"} {
+		got, err := client.StockIntelligence(ctx, symbol, time.Now())
+		if err != nil {
+			t.Fatalf("%s: %v", symbol, err)
+		}
+		if got.ModelVersion != stockanalysis.TaiwanStockIntelligenceVersion || got.Symbol != symbol {
+			t.Fatalf("%s identity/version=%+v", symbol, got)
+		}
+		if got.Quote.Data != nil && got.Quote.Data.Symbol != symbol {
+			t.Fatalf("%s quote identity changed", symbol)
+		}
+		if symbol == "0050.TWSE" && (got.Identity.SecurityType != foundation.SecurityTypeETF || got.Fundamentals.Status != "not_applicable" || got.IndustryContext.Industry != nil) {
+			t.Fatalf("ETF semantics=%+v", got)
+		}
+		t.Logf("symbol=%s type=%s industry=%s quote_date=%s target_completed=%s quote_status=%s quote_freshness=%s quote_source=%s kline_latest=%s bars=%d return5_available=%t return20_available=%t fundamentals=%s institutional=%s margin=%s market=%s market_as_of=%s industry_context=%s industry_as_of=%s", symbol, got.Identity.SecurityType, got.Identity.IndustryID, got.Quote.AsOf, got.Quote.TargetLatestCompletedTradingDate, got.Quote.Status, got.Quote.Freshness, got.Quote.Source, got.PriceHistory.LatestBarDate, got.PriceHistory.AvailableWindow, got.PriceHistory.Return5D != nil, got.PriceHistory.Return20D != nil, got.Fundamentals.Status, got.Institutional.Status, got.Margin.Status, got.MarketContext.Status, got.MarketContext.AsOf, got.IndustryContext.Status, got.IndustryContext.AsOf)
+	}
+}
+
+func TestIntelligenceDirectoryIsolatesIrrelevantExchangeFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/opendata/t187ap03_L" {
+			_, _ = w.Write([]byte(`[{"公司代號":"2330","公司簡稱":"台積電","產業別":"24"}]`))
+			return
+		}
+		if r.URL.Path == "/opendata/t187ap47_L" {
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		http.Error(w, "TPEx unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	items, err := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL}).intelligenceDirectory(context.Background(), "2330.TWSE")
+	if err != nil || len(items) != 1 || items[0].Canonical != "2330.TWSE" {
+		t.Fatalf("TWSE identity blocked by TPEx: items=%+v err=%v", items, err)
+	}
+}
+
+func TestIntelligenceMarketContextFetchesEachBulkMarketOnce(t *testing.T) {
+	var mu sync.Mutex
+	counts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		counts[r.URL.Path]++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer server.Close()
+	client := NewClient(Config{TWSEReportBaseURL: server.URL, TPExReportBaseURL: server.URL})
+	identity := foundation.SecurityIdentity{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", Type: foundation.SecurityTypeStock, Industry: "24"}
+	now := time.Date(2026, 9, 1, 18, 0, 0, 0, time.FixedZone("Asia/Taipei", 8*60*60))
+	target := client.calendar.LatestCompleted(now, marketCutoffHour, marketCutoffMinute)
+	client.intelligenceMarketContext(context.Background(), []foundation.SecurityIdentity{identity}, target, now)
+	if counts["/rwd/zh/afterTrading/MI_INDEX"] != 1 || counts["/www/zh-tw/afterTrading/dailyQuotes"] != 1 {
+		t.Fatalf("bulk request counts=%+v", counts)
+	}
+}
+
+func TestCompletedIntelligenceLinesExcludeUnfinishedFutureBar(t *testing.T) {
+	location := time.FixedZone("Asia/Taipei", 8*60*60)
+	target := time.Date(2026, 8, 31, 0, 0, 0, 0, location)
+	lines := []foundation.KLine{{Time: time.Date(2026, 8, 31, 13, 30, 0, 0, location), Close: 100}, {Time: time.Date(2026, 9, 1, 13, 30, 0, 0, location), Close: 200}}
+	got := completedIntelligenceLines(lines, target)
+	if len(got) != 1 || got[0].Close != 100 {
+		t.Fatalf("unfinished bar included: %+v", got)
 	}
 }
 

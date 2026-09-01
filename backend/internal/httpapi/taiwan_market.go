@@ -242,6 +242,26 @@ func (s *Server) taiwanIndustryRadarHandler(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+func (s *Server) taiwanStockIntelligenceHandler(w http.ResponseWriter, r *http.Request) {
+	if s.taiwanIntelligence == nil {
+		writeError(w, http.StatusServiceUnavailable, "Taiwan stock intelligence provider is unavailable")
+		return
+	}
+	symbol := strings.TrimSpace(r.PathValue("symbol"))
+	if symbol == "" {
+		writeError(w, http.StatusBadRequest, "canonical Taiwan symbol is required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	data, err := s.taiwanIntelligence.StockIntelligence(ctx, symbol, time.Now())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+}
+
 func (s *Server) taiwanFundamentalsHandler(w http.ResponseWriter, r *http.Request) {
 	if s.taiwanFundamentals == nil {
 		writeError(w, http.StatusServiceUnavailable, "Taiwan fundamentals provider is unavailable")

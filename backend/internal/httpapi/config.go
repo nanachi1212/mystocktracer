@@ -14,6 +14,7 @@ import (
 	"easy-stock/backend/internal/portfolioinspection"
 	"easy-stock/backend/internal/review"
 	"easy-stock/backend/internal/sector"
+	"easy-stock/backend/internal/stockanalysis"
 	"easy-stock/backend/internal/strategy/inflection"
 )
 
@@ -103,6 +104,10 @@ type TaiwanIndustryRadarProvider interface {
 	IndustryRadar(ctx context.Context, now time.Time) (sector.TaiwanIndustryRadar, error)
 }
 
+type TaiwanStockIntelligenceProvider interface {
+	StockIntelligence(ctx context.Context, canonical string, now time.Time) (stockanalysis.TaiwanStockIntelligence, error)
+}
+
 type TaiwanFundamentalsProvider interface {
 	Fundamentals(ctx context.Context, security foundation.SecurityIdentity, months int) (foundation.TaiwanFundamentals, error)
 }
@@ -152,6 +157,7 @@ type Config struct {
 	TaiwanBreadth        TaiwanBreadthProvider
 	TaiwanEmotion        TaiwanEmotionProvider
 	TaiwanIndustryRadar  TaiwanIndustryRadarProvider
+	TaiwanIntelligence   TaiwanStockIntelligenceProvider
 	TaiwanFundamentals   TaiwanFundamentalsProvider
 	HotStocks            HotStockProvider
 	MarketOverview       MarketOverviewProvider
