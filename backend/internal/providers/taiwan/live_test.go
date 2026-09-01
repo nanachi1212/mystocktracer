@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"easy-stock/backend/internal/foundation"
+	"easy-stock/backend/internal/marketemotion"
 )
 
 func TestLiveOfficialDirectorySmoke(t *testing.T) {
@@ -331,6 +332,24 @@ func TestLiveOfficialM2AMarketBreadth(t *testing.T) {
 		}
 		included := matches[0].Type == foundation.SecurityTypeStock
 		t.Logf("code=%s canonical=%s exchange=%s type=%s included=%t reason=%s", code, matches[0].Canonical, matches[0].Exchange, matches[0].Type, included, map[bool]string{true: "SecurityTypeStock", false: "stock_breadth excludes non-stock"}[included])
+	}
+}
+
+func TestLiveOfficialM2BMarketEmotion(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query official Taiwan market emotion")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	result, err := NewClient(Config{}).MarketEmotion(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []marketemotion.TaiwanEmotionScope{result.TWSE, result.TPEX, result.Combined} {
+		if scope.ModelVersion != marketemotion.TaiwanEmotionModelVersion {
+			t.Fatalf("%s model version=%s", scope.Scope, scope.ModelVersion)
+		}
+		t.Logf("scope=%s model_version=%s as_of=%s target=%s status=%s freshness=%s confidence=%s advance_ratio=%s advancing_amount_ratio=%s advance_decline_diff=%d advancers=%d decliners=%d unknown=%d universe_count=%d missing_amount_count=%d breadth=%s capital=%s relationship=%s state=%s included=%v missing=%v", scope.Scope, scope.ModelVersion, liveString(scope.AsOf), scope.TargetLatestTradingDate, scope.Status, scope.Freshness, scope.Confidence, liveRatio(scope.Raw.AdvanceRatio), liveRatio(scope.Raw.AdvancingAmountRatio), scope.Raw.AdvanceDeclineDiff, scope.Raw.Advancers, scope.Raw.Decliners, scope.Raw.Unknown, scope.Raw.UniverseCount, scope.Raw.MissingAmountCount, scope.Components.BreadthParticipation, scope.Components.CapitalParticipation, scope.Components.BreadthCapitalRelationship, scope.State, scope.IncludedExchanges, scope.MissingExchanges)
 	}
 }
 

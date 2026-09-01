@@ -94,6 +94,10 @@ type TaiwanBreadthProvider interface {
 	MarketBreadth(ctx context.Context, now time.Time) (foundation.TaiwanMarketBreadth, error)
 }
 
+type TaiwanEmotionProvider interface {
+	MarketEmotion(ctx context.Context, now time.Time) (marketemotion.TaiwanMarketEmotion, error)
+}
+
 type TaiwanFundamentalsProvider interface {
 	Fundamentals(ctx context.Context, security foundation.SecurityIdentity, months int) (foundation.TaiwanFundamentals, error)
 }
@@ -141,6 +145,7 @@ type Config struct {
 	TaiwanChip           TaiwanChipProvider
 	TaiwanSnapshot       TaiwanSnapshotProvider
 	TaiwanBreadth        TaiwanBreadthProvider
+	TaiwanEmotion        TaiwanEmotionProvider
 	TaiwanFundamentals   TaiwanFundamentalsProvider
 	HotStocks            HotStockProvider
 	MarketOverview       MarketOverviewProvider

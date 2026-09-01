@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"easy-stock/backend/internal/foundation"
+	"easy-stock/backend/internal/marketemotion"
 )
 
 type fixedTaiwanMarket struct{}
@@ -21,6 +22,7 @@ func (fixedTaiwanMarket) Quote(_ context.Context, security foundation.SecurityId
 }
 
 type fixedTaiwanBreadth struct{}
+type fixedTaiwanEmotion struct{}
 
 func (fixedTaiwanBreadth) MarketBreadth(context.Context, time.Time) (foundation.TaiwanMarketBreadth, error) {
 	return foundation.TaiwanMarketBreadth{
@@ -28,6 +30,10 @@ func (fixedTaiwanBreadth) MarketBreadth(context.Context, time.Time) (foundation.
 		TPEX:     foundation.TaiwanBreadthScope{Scope: "TPEX", Status: "current"},
 		Combined: foundation.TaiwanBreadthScope{Scope: "COMBINED", Status: "current"},
 	}, nil
+}
+
+func (fixedTaiwanEmotion) MarketEmotion(context.Context, time.Time) (marketemotion.TaiwanMarketEmotion, error) {
+	return marketemotion.TaiwanMarketEmotion{TWSE: marketemotion.TaiwanEmotionScope{Scope: "TWSE", ModelVersion: marketemotion.TaiwanEmotionModelVersion, Status: "current"}, TPEX: marketemotion.TaiwanEmotionScope{Scope: "TPEX", ModelVersion: marketemotion.TaiwanEmotionModelVersion, Status: "current"}, Combined: marketemotion.TaiwanEmotionScope{Scope: "COMBINED", ModelVersion: marketemotion.TaiwanEmotionModelVersion, Status: "current"}}, nil
 }
 
 func TestTaiwanMarketBreadthScopesAndValidation(t *testing.T) {
@@ -41,6 +47,22 @@ func TestTaiwanMarketBreadthScopesAndValidation(t *testing.T) {
 	}
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/market-breadth?scope=invalid", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid scope status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestTaiwanMarketEmotionScopesEvidenceAndValidation(t *testing.T) {
+	server := NewServer(Config{TaiwanEmotion: fixedTaiwanEmotion{}})
+	for _, test := range []struct{ scope, want string }{{"twse", `"scope":"TWSE"`}, {"tpex", `"scope":"TPEX"`}, {"combined", `"scope":"COMBINED"`}} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/market-emotion?scope="+test.scope, nil))
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), test.want) || !strings.Contains(response.Body.String(), `"model_version":"taiwan_emotion_v1"`) {
+			t.Fatalf("scope=%s status=%d body=%s", test.scope, response.Code, response.Body.String())
+		}
+	}
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/market-emotion?scope=invalid", nil))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid scope status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -65,8 +87,8 @@ func (fixedTaiwanSnapshot) Freshness(time.Time) foundation.TaiwanFreshness {
 }
 
 func TestTaiwanMarketRoutesResolveCanonicalIdentity(t *testing.T) {
-	server := NewServer(Config{TaiwanDirectory: fixedTaiwanDirectory{}, TaiwanMarket: fixedTaiwanMarket{}, TaiwanChip: fixedTaiwanChip{}, TaiwanFundamentals: fixedTaiwanFundamentals{}, TaiwanSnapshot: fixedTaiwanSnapshot{}, TaiwanBreadth: fixedTaiwanBreadth{}})
-	for _, path := range []string{"/api/v1/tw/quotes?symbols=2330", "/api/v1/tw/kline?symbol=台積電&limit=5", "/api/v1/tw/indexes", "/api/v1/tw/institutional?symbol=2330&limit=20", "/api/v1/tw/margin?symbol=台積電&limit=20", "/api/v1/tw/fundamentals?symbol=2330&months=24", "/api/v1/tw/data-status", "/api/v1/tw/market-breadth"} {
+	server := NewServer(Config{TaiwanDirectory: fixedTaiwanDirectory{}, TaiwanMarket: fixedTaiwanMarket{}, TaiwanChip: fixedTaiwanChip{}, TaiwanFundamentals: fixedTaiwanFundamentals{}, TaiwanSnapshot: fixedTaiwanSnapshot{}, TaiwanBreadth: fixedTaiwanBreadth{}, TaiwanEmotion: fixedTaiwanEmotion{}})
+	for _, path := range []string{"/api/v1/tw/quotes?symbols=2330", "/api/v1/tw/kline?symbol=台積電&limit=5", "/api/v1/tw/indexes", "/api/v1/tw/institutional?symbol=2330&limit=20", "/api/v1/tw/margin?symbol=台積電&limit=20", "/api/v1/tw/fundamentals?symbol=2330&months=24", "/api/v1/tw/data-status", "/api/v1/tw/market-breadth", "/api/v1/tw/market-emotion"} {
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusOK {
