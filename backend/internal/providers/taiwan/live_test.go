@@ -10,6 +10,7 @@ import (
 
 	"easy-stock/backend/internal/foundation"
 	"easy-stock/backend/internal/marketemotion"
+	"easy-stock/backend/internal/sector"
 )
 
 func TestLiveOfficialDirectorySmoke(t *testing.T) {
@@ -350,6 +351,46 @@ func TestLiveOfficialM2BMarketEmotion(t *testing.T) {
 			t.Fatalf("%s model version=%s", scope.Scope, scope.ModelVersion)
 		}
 		t.Logf("scope=%s model_version=%s as_of=%s target=%s status=%s freshness=%s confidence=%s advance_ratio=%s advancing_amount_ratio=%s advance_decline_diff=%d advancers=%d decliners=%d unknown=%d universe_count=%d missing_amount_count=%d breadth=%s capital=%s relationship=%s state=%s included=%v missing=%v", scope.Scope, scope.ModelVersion, liveString(scope.AsOf), scope.TargetLatestTradingDate, scope.Status, scope.Freshness, scope.Confidence, liveRatio(scope.Raw.AdvanceRatio), liveRatio(scope.Raw.AdvancingAmountRatio), scope.Raw.AdvanceDeclineDiff, scope.Raw.Advancers, scope.Raw.Decliners, scope.Raw.Unknown, scope.Raw.UniverseCount, scope.Raw.MissingAmountCount, scope.Components.BreadthParticipation, scope.Components.CapitalParticipation, scope.Components.BreadthCapitalRelationship, scope.State, scope.IncludedExchanges, scope.MissingExchanges)
+	}
+}
+
+func TestLiveOfficialM3IndustryRadar(t *testing.T) {
+	if os.Getenv("EASY_STOCK_TW_LIVE_TEST") != "1" {
+		t.Skip("set EASY_STOCK_TW_LIVE_TEST=1 to query official Taiwan industry radar")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	client := NewClient(Config{})
+	result, err := client.IndustryRadar(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []sector.TaiwanIndustryScope{result.TWSE, result.TPEX, result.Combined} {
+		if scope.ModelVersion != sector.TaiwanIndustryRadarVersion || scope.ClassifiedCount+scope.UnclassifiedCount != scope.EligibleUniverseCount {
+			t.Fatalf("scope conservation/version: %+v", scope)
+		}
+		for _, industry := range scope.Industries {
+			if industry.Advancers+industry.Decliners+industry.Unchanged+industry.NoTrade+industry.Unknown != industry.ConstituentCount {
+				t.Fatalf("%s conservation: %+v", industry.IndustryID, industry)
+			}
+		}
+		limit := 5
+		if len(scope.Industries) < limit {
+			limit = len(scope.Industries)
+		}
+		t.Logf("scope=%s model=%s as_of=%s target=%s status=%s freshness=%s industries=%d classified=%d unclassified=%d coverage=%s included=%v missing=%v top_by_relative_breadth=%+v", scope.Scope, scope.ModelVersion, liveString(scope.AsOf), scope.TargetLatestTradingDate, scope.Status, scope.Freshness, len(scope.Industries), scope.ClassifiedCount, scope.UnclassifiedCount, liveRatio(scope.IndustryCoverage), scope.IncludedExchanges, scope.MissingExchanges, scope.Industries[:limit])
+	}
+	items, err := client.Directory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"2330", "2881", "6488", "0050", "00631L", "00632R"} {
+		matches := liveMatches(items, code)
+		if len(matches) != 1 {
+			t.Fatalf("%s identity count=%d", code, len(matches))
+		}
+		item := matches[0]
+		t.Logf("code=%s canonical=%s exchange=%s type=%s official_industry_code=%s included=%t source=%s", code, item.Canonical, item.Exchange, item.Type, item.Industry, item.Type == foundation.SecurityTypeStock, item.SourceURL)
 	}
 }
 

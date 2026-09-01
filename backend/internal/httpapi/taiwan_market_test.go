@@ -10,6 +10,7 @@ import (
 
 	"easy-stock/backend/internal/foundation"
 	"easy-stock/backend/internal/marketemotion"
+	"easy-stock/backend/internal/sector"
 )
 
 type fixedTaiwanMarket struct{}
@@ -23,6 +24,7 @@ func (fixedTaiwanMarket) Quote(_ context.Context, security foundation.SecurityId
 
 type fixedTaiwanBreadth struct{}
 type fixedTaiwanEmotion struct{}
+type fixedTaiwanIndustryRadar struct{}
 
 func (fixedTaiwanBreadth) MarketBreadth(context.Context, time.Time) (foundation.TaiwanMarketBreadth, error) {
 	return foundation.TaiwanMarketBreadth{
@@ -34,6 +36,14 @@ func (fixedTaiwanBreadth) MarketBreadth(context.Context, time.Time) (foundation.
 
 func (fixedTaiwanEmotion) MarketEmotion(context.Context, time.Time) (marketemotion.TaiwanMarketEmotion, error) {
 	return marketemotion.TaiwanMarketEmotion{TWSE: marketemotion.TaiwanEmotionScope{Scope: "TWSE", ModelVersion: marketemotion.TaiwanEmotionModelVersion, Status: "current"}, TPEX: marketemotion.TaiwanEmotionScope{Scope: "TPEX", ModelVersion: marketemotion.TaiwanEmotionModelVersion, Status: "current"}, Combined: marketemotion.TaiwanEmotionScope{Scope: "COMBINED", ModelVersion: marketemotion.TaiwanEmotionModelVersion, Status: "current"}}, nil
+}
+
+func (fixedTaiwanIndustryRadar) IndustryRadar(context.Context, time.Time) (sector.TaiwanIndustryRadar, error) {
+	return sector.TaiwanIndustryRadar{
+		TWSE:     sector.TaiwanIndustryScope{Scope: "TWSE", ModelVersion: sector.TaiwanIndustryRadarVersion},
+		TPEX:     sector.TaiwanIndustryScope{Scope: "TPEX", ModelVersion: sector.TaiwanIndustryRadarVersion},
+		Combined: sector.TaiwanIndustryScope{Scope: "COMBINED", ModelVersion: sector.TaiwanIndustryRadarVersion},
+	}, nil
 }
 
 func TestTaiwanMarketBreadthScopesAndValidation(t *testing.T) {
@@ -67,6 +77,22 @@ func TestTaiwanMarketEmotionScopesEvidenceAndValidation(t *testing.T) {
 		t.Fatalf("invalid scope status=%d body=%s", response.Code, response.Body.String())
 	}
 }
+
+func TestTaiwanIndustryRadarScopesAndValidation(t *testing.T) {
+	server := NewServer(Config{TaiwanIndustryRadar: fixedTaiwanIndustryRadar{}})
+	for _, test := range []struct{ scope, want string }{{"twse", `"scope":"TWSE"`}, {"tpex", `"scope":"TPEX"`}, {"combined", `"scope":"COMBINED"`}} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/industry-radar?scope="+test.scope, nil))
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), test.want) || !strings.Contains(response.Body.String(), `"model_version":"taiwan_industry_radar_v1"`) {
+			t.Fatalf("scope=%s status=%d body=%s", test.scope, response.Code, response.Body.String())
+		}
+	}
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/industry-radar?scope=invalid", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid scope status=%d body=%s", response.Code, response.Body.String())
+	}
+}
 func (fixedTaiwanMarket) KLine(_ context.Context, security foundation.SecurityIdentity, _ int) ([]foundation.KLine, error) {
 	return []foundation.KLine{{Symbol: security.Canonical, Close: 100, Time: time.Now()}}, nil
 }
@@ -87,8 +113,8 @@ func (fixedTaiwanSnapshot) Freshness(time.Time) foundation.TaiwanFreshness {
 }
 
 func TestTaiwanMarketRoutesResolveCanonicalIdentity(t *testing.T) {
-	server := NewServer(Config{TaiwanDirectory: fixedTaiwanDirectory{}, TaiwanMarket: fixedTaiwanMarket{}, TaiwanChip: fixedTaiwanChip{}, TaiwanFundamentals: fixedTaiwanFundamentals{}, TaiwanSnapshot: fixedTaiwanSnapshot{}, TaiwanBreadth: fixedTaiwanBreadth{}, TaiwanEmotion: fixedTaiwanEmotion{}})
-	for _, path := range []string{"/api/v1/tw/quotes?symbols=2330", "/api/v1/tw/kline?symbol=台積電&limit=5", "/api/v1/tw/indexes", "/api/v1/tw/institutional?symbol=2330&limit=20", "/api/v1/tw/margin?symbol=台積電&limit=20", "/api/v1/tw/fundamentals?symbol=2330&months=24", "/api/v1/tw/data-status", "/api/v1/tw/market-breadth", "/api/v1/tw/market-emotion"} {
+	server := NewServer(Config{TaiwanDirectory: fixedTaiwanDirectory{}, TaiwanMarket: fixedTaiwanMarket{}, TaiwanChip: fixedTaiwanChip{}, TaiwanFundamentals: fixedTaiwanFundamentals{}, TaiwanSnapshot: fixedTaiwanSnapshot{}, TaiwanBreadth: fixedTaiwanBreadth{}, TaiwanEmotion: fixedTaiwanEmotion{}, TaiwanIndustryRadar: fixedTaiwanIndustryRadar{}})
+	for _, path := range []string{"/api/v1/tw/quotes?symbols=2330", "/api/v1/tw/kline?symbol=台積電&limit=5", "/api/v1/tw/indexes", "/api/v1/tw/institutional?symbol=2330&limit=20", "/api/v1/tw/margin?symbol=台積電&limit=20", "/api/v1/tw/fundamentals?symbol=2330&months=24", "/api/v1/tw/data-status", "/api/v1/tw/market-breadth", "/api/v1/tw/market-emotion", "/api/v1/tw/industry-radar"} {
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusOK {

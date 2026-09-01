@@ -53,6 +53,7 @@ type Server struct {
 	taiwanSnapshot        TaiwanSnapshotProvider
 	taiwanBreadth         TaiwanBreadthProvider
 	taiwanEmotion         TaiwanEmotionProvider
+	taiwanIndustryRadar   TaiwanIndustryRadarProvider
 	taiwanFundamentals    TaiwanFundamentalsProvider
 	hotStockProvider      HotStockProvider
 	marketOverview        MarketOverviewProvider
@@ -136,7 +137,7 @@ func NewServer(config any) *Server {
 	if cfg.StockDirectory == nil {
 		cfg.StockDirectory = eastMoneyClient
 	}
-	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanEmotion == nil {
+	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanEmotion == nil || cfg.TaiwanIndustryRadar == nil {
 		taiwanClient := taiwan.NewClient(taiwan.Config{})
 		if cfg.TaiwanDirectory == nil {
 			cfg.TaiwanDirectory = taiwanClient
@@ -158,6 +159,9 @@ func NewServer(config any) *Server {
 		}
 		if cfg.TaiwanEmotion == nil {
 			cfg.TaiwanEmotion = taiwanClient
+		}
+		if cfg.TaiwanIndustryRadar == nil {
+			cfg.TaiwanIndustryRadar = taiwanClient
 		}
 	}
 	if cfg.MarketOverview == nil {
@@ -301,6 +305,7 @@ func NewServer(config any) *Server {
 		taiwanSnapshot:        cfg.TaiwanSnapshot,
 		taiwanBreadth:         cfg.TaiwanBreadth,
 		taiwanEmotion:         cfg.TaiwanEmotion,
+		taiwanIndustryRadar:   cfg.TaiwanIndustryRadar,
 		taiwanFundamentals:    cfg.TaiwanFundamentals,
 		hotStockProvider:      cfg.HotStocks,
 		marketOverview:        cfg.MarketOverview,
@@ -490,6 +495,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/tw/data-status", s.taiwanDataStatusHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/market-breadth", s.taiwanMarketBreadthHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/market-emotion", s.taiwanMarketEmotionHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/industry-radar", s.taiwanIndustryRadarHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/fundamentals", s.taiwanFundamentalsHandler)
 	s.mux.HandleFunc("GET /api/v1/stocks/hot-ranks", s.hotStockRanksHandler)
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections", s.portfolioInspectionList)
