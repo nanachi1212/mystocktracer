@@ -53,7 +53,8 @@ func (fixedTaiwanIntelligence) StockIntelligence(_ context.Context, canonical st
 	if canonical != "2330.TWSE" {
 		return stockanalysis.TaiwanStockIntelligence{}, fmt.Errorf("unknown canonical Taiwan security %q", canonical)
 	}
-	return stockanalysis.TaiwanStockIntelligence{ModelVersion: stockanalysis.TaiwanStockIntelligenceVersion, Symbol: canonical}, nil
+	interpretation := stockanalysis.CalculateTaiwanStockInterpretation(stockanalysis.TaiwanStockIntelligence{Symbol: canonical})
+	return stockanalysis.TaiwanStockIntelligence{ModelVersion: stockanalysis.TaiwanStockIntelligenceVersion, Symbol: canonical, Interpretation: &interpretation}, nil
 }
 
 func TestTaiwanMarketBreadthScopesAndValidation(t *testing.T) {
@@ -108,7 +109,7 @@ func TestTaiwanStockIntelligenceRequiresCanonicalIdentity(t *testing.T) {
 	server := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}})
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/stocks/2330.TWSE/intelligence", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"model_version":"taiwan_stock_intelligence_v1"`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"model_version":"taiwan_stock_intelligence_v1"`) || !strings.Contains(response.Body.String(), `"model_version":"taiwan_stock_interpretation_v1"`) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	response = httptest.NewRecorder()

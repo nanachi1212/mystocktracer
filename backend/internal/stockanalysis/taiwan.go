@@ -91,6 +91,7 @@ type TaiwanStockIntelligence struct {
 	Margin          TaiwanMarginEvidence          `json:"margin"`
 	MarketContext   TaiwanMarketContextEvidence   `json:"market_context"`
 	IndustryContext TaiwanIndustryContextEvidence `json:"industry_context"`
+	Interpretation  *TaiwanStockInterpretation    `json:"interpretation,omitempty"`
 }
 
 func NewTaiwanStockIntelligence(identity foundation.SecurityIdentity, quote *foundation.Quote, lines []foundation.KLine, fundamentals *foundation.TaiwanFundamentals, institutional *foundation.InstitutionalHistory, margin *foundation.MarginHistory, breadth foundation.TaiwanBreadthScope, emotion marketemotion.TaiwanEmotionScope, radar sector.TaiwanIndustryScope) TaiwanStockIntelligence {
@@ -121,6 +122,8 @@ func NewTaiwanStockIntelligence(identity foundation.SecurityIdentity, quote *fou
 			result.IndustryContext.Reason = "official industry classification is unavailable"
 		}
 	}
+	interpretation := CalculateTaiwanStockInterpretation(result)
+	result.Interpretation = &interpretation
 	return result
 }
 

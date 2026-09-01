@@ -410,7 +410,7 @@ func TestLiveOfficialM4AStockIntelligence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", symbol, err)
 		}
-		if got.ModelVersion != stockanalysis.TaiwanStockIntelligenceVersion || got.Symbol != symbol {
+		if got.ModelVersion != stockanalysis.TaiwanStockIntelligenceVersion || got.Symbol != symbol || got.Interpretation == nil || got.Interpretation.ModelVersion != stockanalysis.TaiwanStockInterpretationVersion {
 			t.Fatalf("%s identity/version=%+v", symbol, got)
 		}
 		if got.Quote.Data != nil && got.Quote.Data.Symbol != symbol {
@@ -420,6 +420,8 @@ func TestLiveOfficialM4AStockIntelligence(t *testing.T) {
 			t.Fatalf("ETF semantics=%+v", got)
 		}
 		t.Logf("symbol=%s type=%s industry=%s quote_date=%s target_completed=%s quote_status=%s quote_freshness=%s quote_source=%s kline_latest=%s bars=%d return5_available=%t return20_available=%t fundamentals=%s institutional=%s margin=%s market=%s market_as_of=%s industry_context=%s industry_as_of=%s", symbol, got.Identity.SecurityType, got.Identity.IndustryID, got.Quote.AsOf, got.Quote.TargetLatestCompletedTradingDate, got.Quote.Status, got.Quote.Freshness, got.Quote.Source, got.PriceHistory.LatestBarDate, got.PriceHistory.AvailableWindow, got.PriceHistory.Return5D != nil, got.PriceHistory.Return20D != nil, got.Fundamentals.Status, got.Institutional.Status, got.Margin.Status, got.MarketContext.Status, got.MarketContext.AsOf, got.IndustryContext.Status, got.IndustryContext.AsOf)
+		components := got.Interpretation.Components
+		t.Logf("symbol=%s interpretation=%s price=%s price_status=%s price_reasons=%v market=%s market_status=%s market_reasons=%v relationship=%s relationship_reasons=%v industry=%s industry_status=%s industry_reasons=%v institutional=%s institutional_status=%s institutional_reasons=%v margin=%s margin_status=%s margin_reasons=%v fundamentals=%s fundamentals_status=%s fundamentals_reasons=%v data_quality=%+v", symbol, got.Interpretation.ModelVersion, components.Price.State, components.Price.Status, components.Price.Reasons, components.Market.State, components.Market.Status, components.Market.Reasons, components.PriceMarketRelationship.State, components.PriceMarketRelationship.Reasons, components.Industry.State, components.Industry.Status, components.Industry.Reasons, components.Institutional.State, components.Institutional.Status, components.Institutional.Reasons, components.Margin.State, components.Margin.Status, components.Margin.Reasons, components.Fundamentals.State, components.Fundamentals.Status, components.Fundamentals.Reasons, got.Interpretation.DataQuality)
 	}
 }
 
