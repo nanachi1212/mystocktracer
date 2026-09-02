@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"easy-stock/backend/internal/foundation"
+	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/stockanalysis"
 )
 
 func (s *Server) taiwanSecurity(ctxQuery string, r *http.Request) (foundation.SecurityIdentity, error) {
@@ -260,6 +262,31 @@ func (s *Server) taiwanStockIntelligenceHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+}
+
+func (s *Server) taiwanStockResearchHandler(w http.ResponseWriter, r *http.Request) {
+	if s.taiwanIntelligence == nil {
+		writeError(w, http.StatusServiceUnavailable, "Taiwan stock intelligence provider is unavailable")
+		return
+	}
+	symbol := strings.TrimSpace(r.PathValue("symbol"))
+	if symbol == "" {
+		writeError(w, http.StatusBadRequest, "canonical Taiwan symbol is required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+	intelligence, err := s.taiwanIntelligence.StockIntelligence(ctx, symbol, time.Now())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var prompter hermes.IsolatedPrompter
+	if value, ok := s.hermesGateway.(hermes.IsolatedPrompter); ok {
+		prompter = value
+	}
+	research := stockanalysis.GenerateTaiwanResearch(ctx, prompter, intelligence, time.Now())
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"intelligence": intelligence, "ai_research": research}})
 }
 
 func (s *Server) taiwanFundamentalsHandler(w http.ResponseWriter, r *http.Request) {

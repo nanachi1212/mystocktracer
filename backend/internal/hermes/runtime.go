@@ -60,6 +60,13 @@ type Prompter interface {
 	Prompt(ctx context.Context, prompt string) (PromptResult, error)
 }
 
+// IsolatedPrompter runs one prompt with an explicit system context in a
+// temporary Hermes home that does not inherit memory, skills, MCP servers, or
+// browser state. Existing Prompt callers keep the normal A-share profile.
+type IsolatedPrompter interface {
+	PromptIsolated(ctx context.Context, systemContext, prompt string) (PromptResult, error)
+}
+
 type BrowserStatePrompter interface {
 	PromptWithBrowserState(ctx context.Context, prompt, storageStatePath string) (PromptResult, error)
 }
@@ -136,6 +143,7 @@ type Runtime struct {
 	home        string
 	workDir     string
 	pythonPath  string
+	isolated    bool
 
 	mu         sync.RWMutex
 	configMu   sync.Mutex
@@ -546,7 +554,17 @@ func (r *Runtime) processEnvironment(browserStatePath string) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	values := hermesEnvironment(os.Environ(), r.home, r.workDir, filepath.Dir(r.pythonPath))
+	baseEnvironment := os.Environ()
+	if r.isolated {
+		baseEnvironment = unsetEnv(baseEnvironment, "A_STOCK_AGENT_BROWSER_WRAPPER_DIR")
+		baseEnvironment = unsetEnv(baseEnvironment, "AGENT_BROWSER_STATE")
+		baseEnvironment = unsetEnv(baseEnvironment, "AGENT_BROWSER_PROFILE")
+	}
+	values := hermesEnvironment(baseEnvironment, r.home, r.workDir, filepath.Dir(r.pythonPath))
+	if r.isolated {
+		values = unsetEnv(values, "AGENT_BROWSER_STATE")
+		values = unsetEnv(values, "AGENT_BROWSER_PROFILE")
+	}
 	// Hermes' TUI gateway resolves provider key_env values from the process
 	// environment. Explicitly mirror the protected Hermes .env value and
 	// override any ambient shell value so the application's setting is the
@@ -572,6 +590,64 @@ func (r *Runtime) processEnvironment(browserStatePath string) ([]string, error) 
 
 func (r *Runtime) Prompt(ctx context.Context, prompt string) (PromptResult, error) {
 	return r.prompt(ctx, prompt, "")
+}
+
+func (r *Runtime) PromptIsolated(ctx context.Context, systemContext, prompt string) (PromptResult, error) {
+	if strings.TrimSpace(systemContext) == "" {
+		return PromptResult{}, errors.New("Hermes 隔离系统提示词不能为空")
+	}
+	temporaryHome, err := os.MkdirTemp("", "easy-stock-hermes-isolated-*")
+	if err != nil {
+		return PromptResult{}, err
+	}
+	defer os.RemoveAll(temporaryHome)
+	data, err := r.isolatedConfig(systemContext)
+	if err != nil {
+		return PromptResult{}, err
+	}
+	if err := writeSecureFile(filepath.Join(temporaryHome, "config.yaml"), data); err != nil {
+		return PromptResult{}, err
+	}
+	key, err := r.ModelAPIKey()
+	if err != nil {
+		return PromptResult{}, err
+	}
+	if err := writeEnvValue(filepath.Join(temporaryHome, ".env"), modelAPIKeyEnvName, key); err != nil {
+		return PromptResult{}, err
+	}
+	isolated := NewRuntime(Config{RuntimeRoot: r.runtimeRoot, Home: temporaryHome, WorkDir: r.workDir, PythonPath: r.pythonPath})
+	isolated.isolated = true
+	r.mu.RLock()
+	isolated.llm, isolated.configured, isolated.hasAPIKey = r.llm, r.configured, r.hasAPIKey
+	r.mu.RUnlock()
+	return isolated.prompt(ctx, prompt, "")
+}
+
+func (r *Runtime) isolatedConfig(systemContext string) ([]byte, error) {
+	existing, err := r.readConfigMap()
+	if err != nil {
+		return nil, err
+	}
+	config := map[string]any{}
+	if model, ok := existing["model"]; ok {
+		config["model"] = model
+	}
+	if providers, ok := existing["providers"]; ok {
+		config["providers"] = providers
+	}
+	reasoningEffort := "medium"
+	if existingAgent, ok := stringMap(existing["agent"]); ok {
+		if value := strings.TrimSpace(stringValue(existingAgent["reasoning_effort"])); value != "" {
+			reasoningEffort = value
+		}
+	}
+	config["agent"] = map[string]any{"reasoning_effort": reasoningEffort, "system_prompt": strings.TrimSpace(systemContext)}
+	config["memory"] = map[string]any{"memory_enabled": false, "user_profile_enabled": false, "nudge_interval": 0}
+	config["skills"] = map[string]any{"disabled": []string{"*"}, "creation_nudge_interval": 0}
+	config["mcp_servers"] = map[string]any{}
+	config["curator"] = map[string]any{"enabled": false}
+	config["security"] = map[string]any{"allow_lazy_installs": false}
+	return yaml.Marshal(config)
 }
 
 func (r *Runtime) PromptWithBrowserState(ctx context.Context, prompt, storageStatePath string) (PromptResult, error) {

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"easy-stock/backend/internal/appsettings"
@@ -149,6 +150,98 @@ func TestRuntimeSyncAgentSettingsRejectsInvalidReasoningEffort(t *testing.T) {
 	err := runtime.SyncAgentSettings(AgentSettings{ReasoningEffort: "turbo"})
 	if err == nil || !strings.Contains(err.Error(), "思考等级") {
 		t.Fatalf("SyncAgentSettings() error = %v, want invalid reasoning effort", err)
+	}
+}
+
+func TestRuntimeIsolatedConfigReplacesAShareContextAndDisablesExternalState(t *testing.T) {
+	home := t.TempDir()
+	runtime := NewRuntime(Config{Home: home})
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("model:\n  default: test-model\nproviders:\n  easy-stock:\n    key_env: MODEL_API_KEY\nagent:\n  system_prompt: A股全局交易决策器\nmemory:\n  memory_enabled: true\nmcp_servers:\n  browser:\n    enabled: true\nunknown_external_integration:\n  enabled: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := runtime.isolatedConfig("台灣股票封閉證據研究")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{"A股全局交易決策器", "memory_enabled: true", "browser:\n", "unknown_external_integration"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("isolated config retained %q:\n%s", forbidden, text)
+		}
+	}
+	for _, required := range []string{"test-model", "MODEL_API_KEY", "台灣股票封閉證據研究", "memory_enabled: false", "mcp_servers: {}", "disabled:\n        - '*'", "allow_lazy_installs: false"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("isolated config missing %q:\n%s", required, text)
+		}
+	}
+}
+
+func TestRuntimeIsolatedConfigsAreConcurrentAndDoNotMutateNormalHome(t *testing.T) {
+	home := t.TempDir()
+	original := []byte("model:\n  default: test-model\nproviders: {}\nagent:\n  system_prompt: A-share-normal\n")
+	path := filepath.Join(home, "config.yaml")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtime := NewRuntime(Config{Home: home})
+	var wg sync.WaitGroup
+	outputs := make(chan string, 16)
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			data, err := runtime.isolatedConfig("Taiwan isolated " + strconv.Itoa(index))
+			if err != nil {
+				outputs <- "ERROR:" + err.Error()
+				return
+			}
+			outputs <- string(data)
+		}(i)
+	}
+	wg.Wait()
+	close(outputs)
+	seen := map[string]bool{}
+	for output := range outputs {
+		if strings.HasPrefix(output, "ERROR:") || strings.Contains(output, "A-share-normal") {
+			t.Fatalf("isolated config=%s", output)
+		}
+		seen[output] = true
+	}
+	if len(seen) != 16 {
+		t.Fatalf("isolated contexts=%d want 16", len(seen))
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(after) != string(original) {
+		t.Fatalf("normal home mutated: err=%v data=%s", err, after)
+	}
+}
+
+func TestRuntimeIsolatedEnvironmentRemovesBrowserIntegration(t *testing.T) {
+	home := t.TempDir()
+	if err := writeEnvValue(filepath.Join(home, ".env"), modelAPIKeyEnvName, "test-key"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("A_STOCK_AGENT_BROWSER_WRAPPER_DIR", t.TempDir())
+	t.Setenv("AGENT_BROWSER_STATE", "state.json")
+	t.Setenv("AGENT_BROWSER_PROFILE", "profile")
+	runtime := NewRuntime(Config{Home: home, WorkDir: t.TempDir(), PythonPath: filepath.Join(t.TempDir(), "python")})
+	runtime.isolated = true
+	values, err := runtime.processEnvironment("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"A_STOCK_AGENT_BROWSER_WRAPPER_DIR", "AGENT_BROWSER_STATE", "AGENT_BROWSER_PROFILE"} {
+		if got := environmentValue(values, key); got != "" {
+			t.Fatalf("isolated %s=%q", key, got)
+		}
+	}
+	normal := NewRuntime(Config{Home: home, WorkDir: t.TempDir(), PythonPath: filepath.Join(t.TempDir(), "python")})
+	normalValues, err := normal.processEnvironment("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if environmentValue(normalValues, "AGENT_BROWSER_PROFILE") == "" {
+		t.Fatal("normal A-share browser profile behavior changed")
 	}
 }
 

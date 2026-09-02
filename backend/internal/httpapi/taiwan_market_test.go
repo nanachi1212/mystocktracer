@@ -10,10 +10,20 @@ import (
 	"time"
 
 	"easy-stock/backend/internal/foundation"
+	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/marketemotion"
 	"easy-stock/backend/internal/sector"
 	"easy-stock/backend/internal/stockanalysis"
 )
+
+type fakeTaiwanResearchGateway struct {
+	*fakeHermesGateway
+	content string
+}
+
+func (g *fakeTaiwanResearchGateway) PromptIsolated(context.Context, string, string) (hermes.PromptResult, error) {
+	return hermes.PromptResult{Content: g.content}, nil
+}
 
 type fixedTaiwanMarket struct{}
 type fixedTaiwanChip struct{}
@@ -116,6 +126,15 @@ func TestTaiwanStockIntelligenceRequiresCanonicalIdentity(t *testing.T) {
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/stocks/2330/intelligence", nil))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("raw code status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestTaiwanStockResearchIsOptInAndKeepsIntelligenceOnAIFailure(t *testing.T) {
+	server := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}, HermesGateway: &fakeHermesGateway{}})
+	r := httptest.NewRecorder()
+	server.ServeHTTP(r, httptest.NewRequest(http.MethodPost, "/api/v1/tw/stocks/2330.TWSE/research", nil))
+	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `"status":"unavailable"`) || !strings.Contains(r.Body.String(), `"intelligence"`) {
+		t.Fatalf("failure isolation=%d %s", r.Code, r.Body.String())
 	}
 }
 func (fixedTaiwanMarket) KLine(_ context.Context, security foundation.SecurityIdentity, _ int) ([]foundation.KLine, error) {
