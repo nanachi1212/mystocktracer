@@ -32,7 +32,7 @@ const options = {
 	],
 	win32metadata: {
 		CompanyName: 'easy-stock',
-		FileDescription: 'easy-stock A-share research desktop app',
+		FileDescription: 'mystocktracer Taiwan stock research desktop app',
 		InternalName: 'easy-stock',
 		OriginalFilename: 'easy-stock.exe',
 		ProductName: 'easy-stock',

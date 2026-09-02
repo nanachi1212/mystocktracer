@@ -1,25 +1,34 @@
 <p align="center">
-  <img src="https://cdn.jsdelivr.net/gh/jundizhou/easy-stock@main/desktop/assets/easy-stock.png" width="112" height="112" alt="easy-stock Logo" />
+  <img src="https://cdn.jsdelivr.net/gh/jundizhou/easy-stock@main/desktop/assets/easy-stock.png" width="112" height="112" alt="mystocktracer Logo" />
 </p>
 
-<h1 align="center">easy-stock：A股 AI 智能投研工作台</h1>
+<h1 align="center">mystocktracer：台灣股票研究工作台</h1>
 
-> `easy-stock-TW` 台股化工作以 [jundizhou/easy-stock](https://github.com/jundizhou/easy-stock) 為基礎；原作者、Git 歷史與 [PolyForm Noncommercial License 1.0.0](./LICENSE) 均予保留。目前完成範圍請見 [台股化 Roadmap](./docs/taiwan-roadmap.md)。
+> mystocktracer 以原作者 jundizhou 的 [easy-stock](https://github.com/jundizhou/easy-stock) 為基礎；原作者署名、Git 歷史與 [PolyForm Noncommercial License 1.0.0](./LICENSE) 均完整保留。目前完成範圍請見 [台股化 Roadmap](./docs/taiwan-roadmap.md)。
 
-<p align="center"><strong>面向个人投资者的 A股行情分析、股票分析与 AI投研桌面应用</strong></p>
+<p align="center"><strong>以 TWSE、TPEx 與官方資料為基礎的台股研究桌面應用程式</strong></p>
 
 <p align="center">
-  让 AI 看懂市场，让每一次判断都有证据。<br />
-  把盘中观察、盘后复盘和长期认知，沉淀为一套持续进化的研究系统。
+  從市場廣度、市場情緒與產業雷達，走到個股官方證據與確定性解讀。<br />
+  AI 研究採明確啟動，保留資料日期、來源、缺漏與限制，不提供股票推薦。
 </p>
 
 <p align="center">
-  <a href="https://github.com/jundizhou/easy-stock/releases/latest"><strong>下载最新版</strong></a> ·
-  <a href="https://qm.qq.com/q/lizlauc32U"><strong>加入 QQ 群</strong></a> ·
-  <a href="#核心产品能力">查看核心能力</a> ·
-  <a href="https://github.com/jundizhou/easy-stock/issues/new/choose">反馈问题</a> ·
-  <a href="./ROADMAP.md">产品路线图</a>
+  <a href="./docs/taiwan-roadmap.md"><strong>台股化進度</strong></a> ·
+  <a href="#台灣市場核心能力">台灣市場能力</a> ·
+  <a href="./ROADMAP.md">完整產品路線圖</a> ·
+  <a href="#上游專案與授權">上游專案與授權</a>
 </p>
+
+## 台灣市場核心能力
+
+- 官方台股目錄、上市／上櫃行情、指數、法人、融資融券與基本面資料。
+- TWSE、TPEx 與合併市場的市場廣度及可解釋市場情緒。
+- 依官方產業分類建立的產業雷達，不另造前端綜合分數。
+- 台灣個股證據、確定性解讀，以及由使用者明確啟動的 grounded AI research。
+- 明確呈現最新完成交易日、資料新鮮度、部分資料與無法取得狀態。
+
+> 後續保留的 easy-stock A 股章節與畫面屬上游／舊版功能說明，不是 mystocktracer 的台灣預設產品入口。
 
 <p align="center">
   <img alt="Go" src="https://img.shields.io/badge/Backend-Go-00ADD8?logo=go&logoColor=white" />
@@ -46,7 +55,7 @@
   <a href="#快速开始">快速开始</a> ·
   <a href="https://github.com/jundizhou/easy-stock/discussions">社区讨论</a> ·
   <a href="./CONTRIBUTING.md">参与贡献</a> ·
-  <a href="#许可与商业使用">许可</a>
+  <a href="#上游專案與授權">授權</a>
 </p>
 
 <p align="center">
@@ -260,17 +269,17 @@ AI 会话统一经过本机 Hermes Runtime。Hermes 负责模型调用、会话�
 
 ---
 
-## 许可与商业使用
+## 上游專案與授權
 
-easy-stock 项目原创的后端、前端、桌面端和文档采用 [PolyForm Noncommercial License 1.0.0](./LICENSE) 授权。
+mystocktracer 保留 easy-stock 原作者、Git 歷史與著作權資訊。easy-stock 原創的後端、前端、桌面端及文件採用 [PolyForm Noncommercial License 1.0.0](./LICENSE) 授權。
 
-- 允许个人出于学习、研究、实验和其他非商业目的使用、修改及分发，但必须保留许可证与版权声明。
-- 未经作者明确书面许可，不得用于任何直接或间接的商业用途，包括但不限于企业生产环境、收费服务、SaaS、付费咨询或培训、商业产品集成、二次销售以及以本项目获利。
-- 如需商业使用，请通过 [GitHub 仓库](https://github.com/jundizhou/easy-stock) 联系作者 jundizhou，取得单独的商业授权。
-- 第三方依赖、数据源和随包材料不受本项目许可证重新授权，仍分别遵循其原始许可证及服务条款。
-- 欢迎在许可范围内提交 Issue、文档改进和代码贡献；贡献代码在被合并后按本项目相同许可证发布。
+- 允許個人基於學習、研究、實驗及其他非商業目的使用、修改與散布，但必須保留授權條款及著作權聲明。
+- 未經作者明確書面許可，不得用於任何直接或間接商業用途。
+- 如需商業使用，請透過 [GitHub repository](https://github.com/jundizhou/easy-stock) 聯絡原作者 jundizhou，取得個別商業授權。
+- 第三方依賴、資料來源與隨附材料仍分別遵循其原始授權條款及服務條款。
+- 完整法律條款以 repository 內的 [LICENSE](./LICENSE) 為準。
 
-> 本项目属于源码可用（source-available）软件，并非 OSI 定义下允许商业使用的开源软件。
+> 本專案屬於原始碼可用（source-available）軟體，並非 OSI 定義下允許商業使用的開源軟體。
 
 ---
 

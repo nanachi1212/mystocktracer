@@ -46,21 +46,22 @@ export function ModuleState({ state, error, children }: { state: DataState; erro
 	return <>{children}</>;
 }
 
-export function SourceNotice({ meta }: { meta: SourceMeta | null }) {
+export function SourceNotice({ meta, locale = 'zh-CN' }: { meta: SourceMeta | null; locale?: 'zh-CN' | 'zh-TW' }) {
 	if (!meta) return null;
 	return <div className={`market-source-notice ${meta.stale ? 'stale' : ''}`}>
-		<span>来源 {meta.source} · 抓取 {formatDateTime(meta.fetched_at)}</span>
-		{meta.fallback_reason && <em>{meta.fallback_reason}</em>}
+		<span>{locale === 'zh-TW' ? '來源' : '来源'} {meta.source} · {locale === 'zh-TW' ? '擷取' : '抓取'} {formatDateTime(meta.fetched_at, locale)}</span>
+		{meta.fallback_reason && <em>{locale === 'zh-TW' ? '部分資料改用備援來源' : meta.fallback_reason}</em>}
 	</div>;
 }
 
-export function CoreIndexView({ indexes, selectedID, onSelect, series, seriesLoading, meta }: {
+export function CoreIndexView({ indexes, selectedID, onSelect, series, seriesLoading, meta, locale = 'zh-CN' }: {
 	indexes: MarketIndexSnapshot[];
 	selectedID: string;
 	onSelect: (id: string) => void;
 	series: MarketIndexSeries | null;
 	seriesLoading: boolean;
 	meta: SourceMeta | null;
+	locale?: 'zh-CN' | 'zh-TW';
 }) {
 	const selected = indexes.find((item) => item.id === selectedID) || indexes[0];
 	const lines = series?.lines || [];
@@ -70,23 +71,23 @@ export function CoreIndexView({ indexes, selectedID, onSelect, series, seriesLoa
 	const high = lines.length ? Math.max(...lines.map((line) => line.high)) : 0;
 	const low = lines.length ? Math.min(...lines.map((line) => line.low)) : 0;
 	return <div className="market-data-view">
-		<SourceNotice meta={meta} />
+		<SourceNotice meta={meta} locale={locale} />
 		<div className="market-index-selector">{indexes.map((item) => <button type="button" className={item.id === selected?.id ? 'active' : ''} key={item.id} onClick={() => onSelect(item.id)}>
 			<span>{item.name}</span><strong>{formatPrice(item.price)}</strong><em className={toneClass(item.change_percent)}>{formatPercent(item.change_percent)}</em>
 		</button>)}</div>
 		{selected ? <section className="market-index-detail">
-			<header><div><span>{selected.region} · {selected.market}</span><h3>{selected.name}</h3><small>最近 {lines.length || '--'} 个交易周期 · {statusLabel(selected.status)}</small></div><div><strong>{formatPrice(selected.price)}</strong><em className={toneClass(selected.change_percent)}>{formatPercent(selected.change_percent)}</em></div></header>
+			<header><div><span>{selected.region} · {selected.market}</span><h3>{selected.name}</h3><small>{locale === 'zh-TW' ? `最近 ${lines.length || '--'} 個交易日 · ${statusLabelTW(selected.status)}` : `最近 ${lines.length || '--'} 个交易周期 · ${statusLabel(selected.status)}`}</small></div><div><strong>{formatPrice(selected.price)}</strong><em className={toneClass(selected.change_percent)}>{formatPercent(selected.change_percent)}</em></div></header>
 			<div className="market-index-chart-wrap">
-				{seriesLoading ? <div className="market-chart-loading">走势图加载中…</div> : <IndexLineChart lines={lines} />}
+				{seriesLoading ? <div className="market-chart-loading">{locale === 'zh-TW' ? '走勢圖載入中…' : '走势图加载中…'}</div> : <IndexLineChart lines={lines} />}
 				<aside>
-					<MiniStat label="区间收益" value={formatPercent(returnPercent)} tone={toneClass(returnPercent)} />
-					<MiniStat label="区间高点" value={formatPrice(high)} />
-					<MiniStat label="区间低点" value={formatPrice(low)} />
-					<MiniStat label="行情时间" value={formatDateTime(series?.index.trade_time || selected.trade_time)} />
+					<MiniStat label={locale === 'zh-TW' ? '區間報酬' : '区间收益'} value={formatPercent(returnPercent)} tone={toneClass(returnPercent)} />
+					<MiniStat label={locale === 'zh-TW' ? '區間高點' : '区间高点'} value={formatPrice(high)} />
+					<MiniStat label={locale === 'zh-TW' ? '區間低點' : '区间低点'} value={formatPrice(low)} />
+					<MiniStat label={locale === 'zh-TW' ? '行情時間' : '行情时间'} value={formatDateTime(series?.index.trade_time || selected.trade_time, locale)} />
 				</aside>
 			</div>
-			<div className="market-kline-table"><header><span>日期</span><span>开盘</span><span>最高</span><span>最低</span><span>收盘</span><span>涨跌</span></header>{lines.slice(-8).reverse().map((line) => <article key={line.time}><span>{formatDate(line.time)}</span><span>{formatPrice(line.open)}</span><span>{formatPrice(line.high)}</span><span>{formatPrice(line.low)}</span><strong>{formatPrice(line.close)}</strong><em className={toneClass(line.change_percent || 0)}>{formatPercent(line.change_percent || 0)}</em></article>)}</div>
-		</section> : <EmptyData title="暂无核心指数" detail="等待指数目录恢复。" />}
+			<div className="market-kline-table"><header><span>日期</span><span>{locale === 'zh-TW' ? '開盤' : '开盘'}</span><span>最高</span><span>最低</span><span>{locale === 'zh-TW' ? '收盤' : '收盘'}</span><span>{locale === 'zh-TW' ? '漲跌' : '涨跌'}</span></header>{lines.slice(-8).reverse().map((line) => <article key={line.time}><span>{formatDate(line.time, locale)}</span><span>{formatPrice(line.open)}</span><span>{formatPrice(line.high)}</span><span>{formatPrice(line.low)}</span><strong>{formatPrice(line.close)}</strong><em className={toneClass(line.change_percent || 0)}>{formatPercent(line.change_percent || 0)}</em></article>)}</div>
+		</section> : <EmptyData title={locale === 'zh-TW' ? '目前沒有指數資料' : '暂无核心指数'} detail={locale === 'zh-TW' ? '等待官方指數資料恢復。' : '等待指数目录恢复。'} />}
 	</div>;
 }
 
@@ -552,18 +553,22 @@ function fundFlowSourceLabel(meta: SourceMeta | null) {
 	return '东方财富分单资金';
 }
 
-function formatDateTime(value?: string) {
+function formatDateTime(value?: string, locale: 'zh-CN' | 'zh-TW' = 'zh-CN') {
 	if (!value) return '--';
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return value;
-	return date.toLocaleString('zh-CN', { hour12: false });
+	return date.toLocaleString(locale, { hour12: false });
 }
 
-function formatDate(value?: string) {
+function formatDate(value?: string, locale: 'zh-CN' | 'zh-TW' = 'zh-CN') {
 	if (!value) return '--';
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-	return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+	return date.toLocaleDateString(locale, { month: '2-digit', day: '2-digit' });
+}
+
+function statusLabelTW(status?: string) {
+	return status === 'open' ? '交易中' : status === 'closed' ? '已收盤' : '狀態未知';
 }
 
 function toneClass(value: number) {

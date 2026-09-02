@@ -24,6 +24,51 @@
 	--purple: #7651c9;
 }
 
+/* Taiwan-first product surfaces */
+.taiwan-product-workspace { display: grid; gap: 14px; padding: 16px 18px 24px; min-width: 0; }
+.taiwan-scope-tabs { display: flex; flex-wrap: wrap; gap: 7px; }
+.taiwan-scope-tabs button { min-height: 34px; padding: 0 13px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); cursor: pointer; }
+.taiwan-scope-tabs button.active { border-color: #77a7d7; background: #eef6ff; color: #175ea9; font-weight: 700; }
+.taiwan-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.taiwan-status-card, .taiwan-stock-heading, .taiwan-emotion-summary, .taiwan-ai-action, .taiwan-interpretation, .taiwan-research-result, .taiwan-research-unavailable, .taiwan-empty-state { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.taiwan-status-card { display: grid; gap: 6px; }
+.taiwan-status-card > div { display: flex; align-items: center; gap: 8px; }
+.taiwan-status-card small, .taiwan-status-card p { margin: 0; color: var(--muted); }
+.taiwan-status { padding: 3px 7px; border-radius: 999px; background: #edf5ff; color: #175ea9; font-size: 10px; }
+.taiwan-status.partial, .taiwan-status.stale { background: #fff5df; color: #996515; }
+.taiwan-status.unavailable { background: #fff0f1; color: #b5303a; }
+.taiwan-metric-grid, .taiwan-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.taiwan-metric-grid article, .taiwan-detail-grid article { display: grid; gap: 5px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.taiwan-metric-grid span, .taiwan-detail-grid span, .taiwan-detail-grid small { color: var(--muted); }
+.taiwan-metric-grid strong, .taiwan-detail-grid strong { font-size: 19px; }
+.taiwan-emotion-summary, .taiwan-stock-heading, .taiwan-ai-action { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.taiwan-emotion-summary > div { display: grid; gap: 4px; }
+.taiwan-emotion-summary span, .taiwan-emotion-summary small { color: var(--muted); }
+.taiwan-industry-list, .taiwan-interpretation > div, .taiwan-research-result > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.taiwan-industry-list article, .taiwan-interpretation article, .taiwan-research-result article { display: grid; gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.taiwan-industry-list header, .taiwan-interpretation article header { display: flex; justify-content: space-between; gap: 10px; }
+.taiwan-industry-list header span, .taiwan-industry-list small, .taiwan-interpretation small, .taiwan-research-result small { color: var(--muted); }
+.taiwan-industry-list article > div { display: flex; justify-content: space-between; gap: 12px; }
+.taiwan-stock-heading h2, .taiwan-research-result h3 { margin: 3px 0; }
+.taiwan-stock-heading > div:last-child { display: grid; justify-items: end; gap: 4px; }
+.taiwan-stock-heading > div:last-child strong { font-size: 24px; }
+.taiwan-interpretation { display: grid; gap: 12px; }
+.taiwan-evidence-overview { display: grid; gap: 10px; }
+.taiwan-evidence-overview h3 { margin: 3px 0; }
+.taiwan-evidence-overview p { margin: 0; color: var(--muted); line-height: 1.5; }
+.taiwan-interpretation > header { display: flex; justify-content: space-between; }
+.taiwan-interpretation h3 { margin: 3px 0; }
+.taiwan-interpretation ul, .taiwan-research-result ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+.taiwan-interpretation footer { color: var(--muted); }
+.taiwan-ai-action p, .taiwan-empty-state p, .taiwan-research-unavailable p { margin: 4px 0 0; color: var(--muted); }
+.taiwan-ai-action button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; }
+.taiwan-ai-action button:disabled { opacity: .6; cursor: wait; }
+.taiwan-research-result { display: grid; gap: 14px; }
+.taiwan-research-result header > span { color: var(--blue); font-weight: 700; }
+.taiwan-research-result p { line-height: 1.65; }
+.taiwan-research-unavailable { border-color: #ead5b6; background: #fffaf2; }
+@media (max-width: 900px) { .taiwan-metric-grid, .taiwan-detail-grid, .taiwan-industry-list, .taiwan-interpretation > div, .taiwan-research-result > div { grid-template-columns: 1fr; } .taiwan-stock-heading, .taiwan-emotion-summary, .taiwan-ai-action { align-items: stretch; flex-direction: column; } }
+
 /* Portfolio AI inspection */
 .portfolio-inspection-workspace {
 	display: grid;

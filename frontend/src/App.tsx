@@ -69,10 +69,12 @@ import { MarketOverviewWorkspace } from './components/MarketOverviewWorkspace';
 import { TradingMastery } from './components/TradingMastery';
 import { StockAIAnalysisWorkspace, StockAIWorkspaceMode } from './components/StockAIAnalysisWorkspace';
 import { PortfolioInspectionWorkspace } from './components/PortfolioInspectionWorkspace';
+import { TaiwanMarketWorkspace } from './components/TaiwanMarketWorkspace';
+import { TaiwanStockResearchWorkspace } from './components/TaiwanStockResearchWorkspace';
 import { logRuntimeEvent } from './lib/runtime-log';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
-type WorkspaceMode = 'themes' | 'limit-up' | 'mastery' | 'reviews' | 'stock-ai' | 'portfolio-inspection' | 'ai' | 'market';
+type WorkspaceMode = 'taiwan-overview' | 'taiwan-breadth' | 'taiwan-emotion' | 'taiwan-industry' | 'taiwan-stock' | 'taiwan-research' | 'themes' | 'limit-up' | 'mastery' | 'reviews' | 'stock-ai' | 'portfolio-inspection' | 'ai' | 'market';
 
 const emptyStockPagination = (): ThemeScreenPagination => ({
 	page: 1,
@@ -84,6 +86,13 @@ const emptyStockPagination = (): ThemeScreenPagination => ({
 
 export function App() {
 	const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => {
+		if (window.location.hash === '#taiwan-overview') return 'taiwan-overview';
+		if (window.location.hash === '#taiwan-breadth') return 'taiwan-breadth';
+		if (window.location.hash === '#taiwan-emotion') return 'taiwan-emotion';
+		if (window.location.hash === '#taiwan-industry') return 'taiwan-industry';
+		if (window.location.hash === '#taiwan-stock') return 'taiwan-stock';
+		if (window.location.hash === '#taiwan-research') return 'taiwan-research';
+		if (window.location.hash === '#themes') return 'themes';
 		if (window.location.hash === '#limit-up') return 'limit-up';
 		if (window.location.hash === '#mastery') return 'mastery';
 		if (window.location.hash === '#reviews') return 'reviews';
@@ -91,7 +100,7 @@ export function App() {
 		if (window.location.hash === '#portfolio-inspection') return 'portfolio-inspection';
 		if (window.location.hash === '#ai') return 'ai';
 		if (window.location.hash.startsWith('#market')) return 'market';
-		return 'themes';
+		return 'taiwan-overview';
 	});
 	const [sidebarExpanded, setSidebarExpanded] = useState(true);
 	const [config, setConfig] = useState<BackendConfig | null>(null);
@@ -573,6 +582,10 @@ export function App() {
 	}, [refreshLimitUpWorkspace, workspaceMode]);
 
 	const refreshAll = () => {
+		if (workspaceMode.startsWith('taiwan-')) {
+			setMarketRefreshKey((current) => current + 1);
+			return;
+		}
 		if (workspaceMode === 'limit-up') {
 			refreshLimitUpWorkspace();
 			return;
@@ -607,7 +620,7 @@ export function App() {
 
 	const switchWorkspace = (mode: WorkspaceMode) => {
 		setWorkspaceMode(mode);
-		window.history.replaceState(null, '', mode === 'limit-up' ? '#limit-up' : mode === 'mastery' ? '#mastery' : mode === 'reviews' ? '#reviews' : mode === 'stock-ai' ? '#stock-ai' : mode === 'portfolio-inspection' ? '#portfolio-inspection' : mode === 'ai' ? '#ai' : mode === 'market' ? '#market/pulse' : '#themes');
+		window.history.replaceState(null, '', mode.startsWith('taiwan-') ? `#${mode}` : mode === 'limit-up' ? '#limit-up' : mode === 'mastery' ? '#mastery' : mode === 'reviews' ? '#reviews' : mode === 'stock-ai' ? '#stock-ai' : mode === 'portfolio-inspection' ? '#portfolio-inspection' : mode === 'ai' ? '#ai' : mode === 'market' ? '#market/pulse' : '#themes');
 	};
 
 	const askMasteryAI = (traderName: string) => {
@@ -648,10 +661,11 @@ export function App() {
 		setActiveTheme(theme);
 	};
 
-	const currentLoadState = workspaceMode === 'limit-up' ? limitUpState : workspaceMode === 'mastery' || workspaceMode === 'reviews' || workspaceMode === 'stock-ai' || workspaceMode === 'portfolio-inspection' || workspaceMode === 'ai' || workspaceMode === 'market' ? 'ready' : foundationState;
+	const isTaiwanWorkspace = workspaceMode.startsWith('taiwan-');
+	const currentLoadState = isTaiwanWorkspace ? config ? 'ready' : 'loading' : workspaceMode === 'limit-up' ? limitUpState : workspaceMode === 'mastery' || workspaceMode === 'reviews' || workspaceMode === 'stock-ai' || workspaceMode === 'portfolio-inspection' || workspaceMode === 'ai' || workspaceMode === 'market' ? 'ready' : foundationState;
 	const currentStatusText = workspaceMode === 'limit-up'
 		? limitUpState === 'loading' ? '同步连板梯队' : limitUpState === 'error' ? '连板数据异常' : '连板结构已更新'
-		: workspaceMode === 'mastery' ? '游资心法库已连接' : workspaceMode === 'reviews' ? '复盘资料库已连接' : workspaceMode === 'stock-ai' ? '个股分析引擎已连接' : workspaceMode === 'portfolio-inspection' ? '持仓巡检引擎已连接' : workspaceMode === 'ai' ? 'AI 助手已连接' : workspaceMode === 'market' ? '行情数据层已连接' : statusText;
+		: isTaiwanWorkspace ? config ? '台股官方資料服務已連線' : '正在連線台股資料服務' : workspaceMode === 'mastery' ? '游资心法库已连接' : workspaceMode === 'reviews' ? '复盘资料库已连接' : workspaceMode === 'stock-ai' ? '个股分析引擎已连接' : workspaceMode === 'portfolio-inspection' ? '持仓巡检引擎已连接' : workspaceMode === 'ai' ? 'AI 助手已连接' : workspaceMode === 'market' ? '行情数据层已连接' : statusText;
 	const themeSourceStatus = overviewMeta?.source === 'theme-radar:fusion'
 		? overviewMeta.carry_forward ? '行业趋势 · 开盘啦衰减融合' : '行业趋势 · 开盘啦融合'
 		: overviewMeta?.source === 'duanxianxia:kaipanla'
@@ -659,39 +673,45 @@ export function App() {
 			: '行业趋势强度';
 	const currentSubStatus = workspaceMode === 'limit-up'
 		? limitUpData ? `${limitUpData.current.trade_date} · ${limitUpData.session_status} · ${limitUpData.meta.source.includes('duanxianxia') ? '开盘啦涨停池' : '东方财富兜底'} · ${limitUpData.concept_status === 'ready' ? '题材已归因' : '题材降级'}` : '开盘啦涨停池优先'
-		: workspaceMode === 'mastery' ? 'GitHub 原始资料 · 每日缓存 · Hermes 本地知识库' : workspaceMode === 'reviews' ? '雪球 · 淘股吧 · 微信公众号' : workspaceMode === 'stock-ai' ? '多周期评分 · 基准超额 · 隔日情景 · 动态风控' : workspaceMode === 'portfolio-inspection' ? '逐股分析 · 组合风险 · 后台任务' : workspaceMode === 'ai' ? '本机 Hermes AI 对话' : workspaceMode === 'market' ? '全球指数 · 行业资金 · 龙虎榜 · 公告研报' : themeSourceStatus + ' · ' + streamStatus;
-	const topbarTitle = workspaceMode === 'themes' ? '趋势题材雷达' : workspaceMode === 'limit-up' ? '短线连板雷达' : workspaceMode === 'mastery' ? '游资心法库' : workspaceMode === 'reviews' ? '大V复盘日记' : workspaceMode === 'stock-ai' ? '个股 AI 分析' : workspaceMode === 'portfolio-inspection' ? '持仓 AI 巡检' : workspaceMode === 'market' ? '行情总览' : 'AI 对话';
-	const topbarDescription = workspaceMode === 'themes' ? '炒作主线、趋势强度、个股梯队与日 K 联动工作台' : workspaceMode === 'limit-up' ? '连板高度、炒作概念与晋级结构工作台' : workspaceMode === 'mastery' ? '阅读不同游资的交易经验，并由 Hermes 按原文辅助研读' : workspaceMode === 'reviews' ? '多平台复盘内容、作者观点与原文归档工作台' : workspaceMode === 'stock-ai' ? '多周期评分、隔日情景推演与账户级风控执行工作台' : workspaceMode === 'portfolio-inspection' ? '逐股研判、集中度识别与组合风险巡检工作台' : workspaceMode === 'market' ? '从盘面快讯到资金与研究信号的统一行情工作台' : '像 Codex 一样持续协作、拆解问题并形成可执行结果';
+		: isTaiwanWorkspace ? 'TWSE · TPEx · 官方資料與可追溯狀態' : workspaceMode === 'mastery' ? 'GitHub 原始资料 · 每日缓存 · Hermes 本地知识库' : workspaceMode === 'reviews' ? '雪球 · 淘股吧 · 微信公众号' : workspaceMode === 'stock-ai' ? '多周期评分 · 基准超额 · 隔日情景 · 动态风控' : workspaceMode === 'portfolio-inspection' ? '逐股分析 · 组合风险 · 后台任务' : workspaceMode === 'ai' ? '本机 Hermes AI 对话' : workspaceMode === 'market' ? '全球指数 · 行业资金 · 龙虎榜 · 公告研报' : themeSourceStatus + ' · ' + streamStatus;
+	const taiwanTitles: Partial<Record<WorkspaceMode, [string, string]>> = {
+		'taiwan-overview': ['台股總覽', '上市、上櫃行情與官方市場資料'],
+		'taiwan-breadth': ['市場廣度', '上漲、下跌家數與成交方向'],
+		'taiwan-emotion': ['市場情緒', '以確定性規則呈現市場參與與訊號分歧'],
+		'taiwan-industry': ['產業雷達', '官方產業分類的相對市場廣度與成交方向'],
+		'taiwan-stock': ['個股研究', '官方證據與確定性解讀，不提供投資推薦'],
+		'taiwan-research': ['AI 研究', '由使用者明確啟動的台股證據摘要'],
+	};
+	const topbarTitle = taiwanTitles[workspaceMode]?.[0] || (workspaceMode === 'themes' ? '趋势题材雷达' : workspaceMode === 'limit-up' ? '短线连板雷达' : workspaceMode === 'mastery' ? '游资心法库' : workspaceMode === 'reviews' ? '大V复盘日记' : workspaceMode === 'stock-ai' ? '个股 AI 分析' : workspaceMode === 'portfolio-inspection' ? '持仓 AI 巡检' : workspaceMode === 'market' ? '行情总览' : 'AI 对话');
+	const topbarDescription = taiwanTitles[workspaceMode]?.[1] || (workspaceMode === 'themes' ? '炒作主线、趋势强度、个股梯队与日 K 联动工作台' : workspaceMode === 'limit-up' ? '连板高度、炒作概念与晋级结构工作台' : workspaceMode === 'mastery' ? '阅读不同游资的交易经验，并由 Hermes 按原文辅助研读' : workspaceMode === 'reviews' ? '多平台复盘内容、作者观点与原文归档工作台' : workspaceMode === 'stock-ai' ? '多周期评分、隔日情景推演与账户级风控执行工作台' : workspaceMode === 'portfolio-inspection' ? '逐股研判、集中度识别与组合风险巡检工作台' : workspaceMode === 'market' ? '从盘面快讯到资金与研究信号的统一行情工作台' : '像 Codex 一样持续协作、拆解问题并形成可执行结果');
 
 	return (
 		<main className={`workspace-frame ${sidebarExpanded ? 'sidebar-expanded' : 'sidebar-collapsed'}`}>
 			<aside className="app-sidebar" aria-label="功能导航">
-				<div className="sidebar-brand"><div className="sidebar-logo"><img src={`${import.meta.env.BASE_URL}easy-stock-mark.svg`} alt="easy-stock" /></div>{sidebarExpanded && <div><strong>easy-stock</strong><span>AI STOCK LAB</span></div>}</div>
+				<div className="sidebar-brand"><div className="sidebar-logo"><img src={`${import.meta.env.BASE_URL}easy-stock-mark.svg`} alt="mystocktracer" /></div>{sidebarExpanded && <div><strong>mystocktracer</strong><span>台股研究工作台</span></div>}</div>
 				<nav>
-					<button type="button" className={workspaceMode === 'reviews' ? 'active' : ''} onClick={() => switchWorkspace('reviews')} title="大V复盘日记"><BookOpen size={18} /><span>大V复盘日记</span></button>
-					<button type="button" className={workspaceMode === 'stock-ai' ? 'active' : ''} onClick={() => switchWorkspace('stock-ai')} title="个股分析"><BrainCircuit size={18} /><span>个股分析</span></button>
-					<button type="button" className={workspaceMode === 'portfolio-inspection' ? 'active' : ''} onClick={() => switchWorkspace('portfolio-inspection')} title="持仓AI巡检"><WalletCards size={18} /><span>持仓AI巡检</span></button>
-					<button type="button" className={workspaceMode === 'limit-up' ? 'active' : ''} onClick={() => switchWorkspace('limit-up')} title="短线连板"><Flame size={18} /><span>短线连板</span></button>
-					<button type="button" className={workspaceMode === 'themes' ? 'active' : ''} onClick={() => switchWorkspace('themes')} title="趋势题材"><LayoutDashboard size={18} /><span>趋势题材</span></button>
-					<button type="button" className={workspaceMode === 'market' ? 'active' : ''} onClick={() => switchWorkspace('market')} title="行情总览"><BarChart3 size={18} /><span>行情总览</span></button>
-					<button type="button" className={workspaceMode === 'mastery' ? 'active' : ''} onClick={() => switchWorkspace('mastery')} title="游资心法"><BookMarked size={18} /><span>游资心法</span></button>
-					<button type="button" className={workspaceMode === 'ai' ? 'active' : ''} onClick={() => switchWorkspace('ai')} title="AI 对话"><Bot size={18} /><span>AI 对话</span></button>
+					<button type="button" className={workspaceMode === 'taiwan-overview' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-overview')} title="台股總覽"><LayoutDashboard size={18} /><span>台股總覽</span></button>
+					<button type="button" className={workspaceMode === 'taiwan-breadth' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-breadth')} title="市場廣度"><Activity size={18} /><span>市場廣度</span></button>
+					<button type="button" className={workspaceMode === 'taiwan-emotion' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-emotion')} title="市場情緒"><Gauge size={18} /><span>市場情緒</span></button>
+					<button type="button" className={workspaceMode === 'taiwan-industry' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-industry')} title="產業雷達"><BarChart3 size={18} /><span>產業雷達</span></button>
+					<button type="button" className={workspaceMode === 'taiwan-stock' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-stock')} title="個股研究"><BrainCircuit size={18} /><span>個股研究</span></button>
+					<button type="button" className={workspaceMode === 'taiwan-research' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-research')} title="AI 研究"><Bot size={18} /><span>AI 研究</span></button>
 				</nav>
-				<div className="sidebar-guidance">{sidebarExpanded && <><strong>{workspaceMode === 'ai' ? '对话模型' : '数据口径'}</strong><span>{workspaceMode === 'themes' ? '概念共振与趋势归因' : workspaceMode === 'limit-up' ? '封板梯队与概念归因' : workspaceMode === 'mastery' ? '上游原文缓存与 Hermes 知识同步' : workspaceMode === 'reviews' ? '多平台原文与本地归档' : workspaceMode === 'stock-ai' ? '300日趋势 · 基准强弱 · 情景风控' : workspaceMode === 'portfolio-inspection' ? '持仓权重 · 题材集中 · 风险贡献' : workspaceMode === 'market' ? '指数、资金、榜单与研究证据统一聚合' : '复用系统设置中的模型连接'}</span></>}</div>
-				<button type="button" className="sidebar-settings" onClick={() => setSettingsOpen(true)} aria-label="打开系统设置" title="系统设置"><Settings size={17} />{sidebarExpanded && <span>系统设置</span>}</button>
-				<button type="button" className="sidebar-toggle" onClick={() => setSidebarExpanded((value) => !value)} aria-label={sidebarExpanded ? '收起侧边栏' : '展开侧边栏'}>{sidebarExpanded ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />} {sidebarExpanded && <span>收起侧栏</span>}</button>
+				<div className="sidebar-guidance">{sidebarExpanded && <><strong>資料原則</strong><span>官方來源 · 完成交易日 · 缺漏狀態不隱藏</span></>}</div>
+				<button type="button" className="sidebar-settings" onClick={() => setSettingsOpen(true)} aria-label="開啟系統設定" title="系統設定"><Settings size={17} />{sidebarExpanded && <span>系統設定</span>}</button>
+				<button type="button" className="sidebar-toggle" onClick={() => setSidebarExpanded((value) => !value)} aria-label={sidebarExpanded ? '收合側邊欄' : '展開側邊欄'}>{sidebarExpanded ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />} {sidebarExpanded && <span>收合側欄</span>}</button>
 			</aside>
 			<div className="app-shell">
 			<header className="topbar">
 				<div className="brand-block">
-					<div className="brand-mark"><img src={`${import.meta.env.BASE_URL}easy-stock-mark.svg`} alt="easy-stock" /></div>
+					<div className="brand-mark"><img src={`${import.meta.env.BASE_URL}easy-stock-mark.svg`} alt="mystocktracer" /></div>
 					<div>
 						<h1>{topbarTitle}</h1>
 						<p>{topbarDescription}</p>
 					</div>
 				</div>
 				<nav className="mode-nav" aria-label="工作台模式">
-					{workspaceMode === 'stock-ai' ? <>
+					{isTaiwanWorkspace ? <button type="button" className="active">{topbarTitle}</button> : workspaceMode === 'stock-ai' ? <>
 						<button type="button" className={stockAIWorkspaceMode === 'analysis' ? 'active' : ''} onClick={() => setStockAIWorkspaceMode('analysis')}><BrainCircuit size={16} aria-hidden="true" />个股分析</button>
 						<button type="button" className={stockAIWorkspaceMode === 'expectation' ? 'active' : ''} onClick={() => setStockAIWorkspaceMode('expectation')}><Target size={16} aria-hidden="true" />隔日预期</button>
 						<button type="button" className={stockAIWorkspaceMode === 'risk' ? 'active' : ''} onClick={() => setStockAIWorkspaceMode('risk')}><ShieldCheck size={16} aria-hidden="true" />风控执行</button>
@@ -706,13 +726,13 @@ export function App() {
 						<span className="status-dot" />
 						<div><strong>{currentStatusText}</strong><small>{currentSubStatus}</small></div>
 					</div>
-					<button type="button" className="icon-button" onClick={refreshAll} aria-label="刷新全部数据">
+					<button type="button" className="icon-button" onClick={refreshAll} aria-label="重新整理資料">
 						<RefreshCw size={18} aria-hidden="true" />
 					</button>
 				</div>
 			</header>
 
-			{workspaceMode === 'themes' ? <>
+			{workspaceMode === 'taiwan-overview' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="overview" /> : workspaceMode === 'taiwan-breadth' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="breadth" /> : workspaceMode === 'taiwan-emotion' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="emotion" /> : workspaceMode === 'taiwan-industry' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="industry" /> : workspaceMode === 'taiwan-stock' ? <TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} /> : workspaceMode === 'taiwan-research' ? <TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} /> : workspaceMode === 'themes' ? <>
 			<section className="market-strip" aria-label="市场概览">
 				<div><Activity size={16} aria-hidden="true" /><span>主线平均热度</span><strong>{marketPulse.average || '--'}</strong></div>
 				<div><Flame size={16} aria-hidden="true" /><span>活跃主线</span><strong>{marketPulse.active}</strong></div>
@@ -948,8 +968,8 @@ export function App() {
 			</> : workspaceMode === 'limit-up' ? <LimitUpWorkspace config={config} data={limitUpData} state={limitUpState} error={limitUpError} emotionData={marketEmotionData} emotionState={marketEmotionState} emotionError={marketEmotionError} onRefresh={refreshLimitUpWorkspace} /> : workspaceMode === 'mastery' ? <TradingMastery config={config} refreshKey={masteryRefreshKey} onAskAI={askMasteryAI} /> : workspaceMode === 'reviews' ? <ReviewDiary config={config} refreshKey={reviewRefreshKey} /> : workspaceMode === 'stock-ai' ? <StockAIAnalysisWorkspace config={config} refreshKey={stockAIRefreshKey} mode={stockAIWorkspaceMode} initialAnalysis={stockAIInitialAnalysis} onInitialAnalysisConsumed={() => setStockAIInitialAnalysis(null)} onAskAI={askStockAnalysisAI} onOpenSettings={() => setSettingsOpen(true)} /> : workspaceMode === 'portfolio-inspection' ? <PortfolioInspectionWorkspace config={config} refreshKey={portfolioInspectionRefreshKey} onOpenSettings={() => setSettingsOpen(true)} onOpenStockAnalysis={openPortfolioStockAnalysis} /> : workspaceMode === 'market' ? <MarketOverviewWorkspace config={config} refreshKey={marketRefreshKey} onAskAI={askMarketAI} /> : <AIChatWorkspace config={config} refreshKey={aiRefreshKey} initialPrompt={aiPrefill} onInitialPromptConsumed={() => setAIPrefill('')} onOpenSettings={() => setSettingsOpen(true)} />}
 
 			<footer className="data-footer">
-				<div><Wifi size={15} aria-hidden="true" /><span>{config?.backendUrl || '连接本地数据服务中'}</span></div>
-					<div><Radio size={15} aria-hidden="true" /><span>{workspaceMode === 'themes' ? '题材与龙一至龙五：开盘啦 · 实时行情：新浪 · K线与领导力：东方财富/新浪' : workspaceMode === 'limit-up' ? '当日涨停池与逐股题材：开盘啦优先 · 历史梯队、缺失股票与行情字段：东方财富补充 · 默认剔除ST' : workspaceMode === 'mastery' ? '来源：trading-mastery/游资心法 · 每日缓存 · 同步至 Hermes Skill 与本地记忆索引' : workspaceMode === 'reviews' ? '复盘文章：本地 SQLite 归档 · 原文观点不代表系统结论' : workspaceMode === 'stock-ai' ? '行情与K线：东方财富/新浪 · 涨停与题材：开盘啦/东方财富 · AI只基于结构化证据总结' : workspaceMode === 'portfolio-inspection' ? '逐股分析复用个股引擎 · 组合指标由本地程序计算 · AI只基于结构化证据汇总' : workspaceMode === 'market' ? '行情与行业强度：腾讯/东方财富 · 资金与领涨标的：新浪/东方财富 · 龙虎榜、公告与研报：东方财富 · 盘面快讯：财联社 · AI 只读取带时间和来源的证据' : '模型请求由本地后端转发 · API Key 不会暴露给页面 · 对话历史保存在当前设备'}</span></div>
+				<div><Wifi size={15} aria-hidden="true" /><span>{config?.backendUrl || '正在連線本機資料服務'}</span></div>
+					<div><Radio size={15} aria-hidden="true" /><span>{isTaiwanWorkspace ? '台灣證交所與櫃買中心官方資料 · 顯示資料日期、延遲、部分與無法取得狀態' : workspaceMode === 'themes' ? '题材与龙一至龙五：开盘啦 · 实时行情：新浪 · K线与领导力：东方财富/新浪' : workspaceMode === 'limit-up' ? '当日涨停池与逐股题材：开盘啦优先 · 历史梯队、缺失股票与行情字段：东方财富补充 · 默认剔除ST' : workspaceMode === 'mastery' ? '来源：trading-mastery/游资心法 · 每日缓存 · 同步至 Hermes Skill 与本地记忆索引' : workspaceMode === 'reviews' ? '复盘文章：本地 SQLite 归档 · 原文观点不代表系统结论' : workspaceMode === 'stock-ai' ? '行情与K线：东方财富/新浪 · 涨停与题材：开盘啦/东方财富 · AI只基于结构化证据总结' : workspaceMode === 'portfolio-inspection' ? '逐股分析复用个股引擎 · 组合指标由本地程序计算 · AI只基于结构化证据汇总' : workspaceMode === 'market' ? '行情与行业强度：腾讯/东方财富 · 资金与领涨标的：新浪/东方财富 · 龙虎榜、公告与研报：东方财富 · 盘面快讯：财联社 · AI 只读取带时间和来源的证据' : '模型请求由本地后端转发 · API Key 不会暴露给页面 · 对话历史保存在当前设备'}</span></div>
 			</footer>
 			</div>
 			<SettingsDrawer config={config} open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => { setAIRefreshKey((current) => current + 1); setStockAIRefreshKey((current) => current + 1); }} />
