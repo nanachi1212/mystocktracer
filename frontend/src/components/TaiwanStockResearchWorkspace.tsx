@@ -33,6 +33,8 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 	const [researching, setResearching] = useState(false);
 	const [error, setError] = useState('');
 	const selectRequestID = useRef(0);
+	const selectedRef = useRef<SecurityIdentity | null>(null);
+	useEffect(() => { selectedRef.current = selected; }, [selected]);
 
 	const search = async (value = query) => {
 		if (!config || !value.trim()) return;
@@ -66,7 +68,15 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 		} catch (reason) { setError(taiwanErrorMessage(reason, 'AI 研究目前無法使用')); }
 		finally { setResearching(false); }
 	};
-	useEffect(() => { if (config) void search('2330'); }, [config, refreshKey]);
+	// Preserve the initial default (2330) on first load, but a later refresh (refreshKey change)
+	// must retry whatever the user currently has selected rather than silently resetting to 2330.
+	// This only depends on [config, refreshKey] — not `selected` — so selecting a stock does not
+	// itself re-trigger a fetch; only a refreshKey change (or config resolving) does.
+	useEffect(() => {
+		if (!config) return;
+		if (selectedRef.current) void select(selectedRef.current);
+		else void search('2330');
+	}, [config, refreshKey]);
 	const submit = (event: FormEvent) => { event.preventDefault(); void search(); };
 	return <div className="taiwan-product-workspace taiwan-stock-research">
 		<form className="market-filter" onSubmit={submit}><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="輸入 2330、台積電、2330.TWSE 或 6488.TPEX" aria-label="台灣證券名稱或代碼" /></label><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : '搜尋'}</button></form>

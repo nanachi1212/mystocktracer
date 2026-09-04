@@ -190,6 +190,33 @@ describe('Taiwan-first product shell', () => {
 	});
 });
 
+describe('P1E refresh behavior — retries the current selection instead of a fixed default', () => {
+	const overviewSource = () => fs.readFileSync(path.join(root, 'frontend/src/components/market/TaiwanMarketView.tsx'), 'utf8');
+	const researchSource = () => fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanStockResearchWorkspace.tsx'), 'utf8');
+
+	it('TaiwanMarketView: a selected security is retried on refresh via a ref, not by adding `selected` to the effect dependency list (no refresh-induced request loop)', () => {
+		const source = overviewSource();
+		expect(source).toContain('const selectedRef = useRef<SecurityIdentity | null>(null);');
+		expect(source).toContain('useEffect(() => { selectedRef.current = selected; }, [selected]);');
+		expect(source).toContain('if (selectedRef.current) void select(selectedRef.current);');
+		expect(source).not.toMatch(/\[config, refreshKey, selected\]/);
+	});
+
+	it('TaiwanStockResearchWorkspace: refresh retries the current selection and no longer unconditionally resets to search(\'2330\')', () => {
+		const source = researchSource();
+		expect(source).toContain('const selectedRef = useRef<SecurityIdentity | null>(null);');
+		expect(source).toContain('useEffect(() => { selectedRef.current = selected; }, [selected]);');
+		expect(source).toContain('if (selectedRef.current) void select(selectedRef.current);');
+		expect(source).toContain("else void search('2330');");
+		expect(source).not.toMatch(/\[config, refreshKey, selected\]/);
+	});
+
+	it('TaiwanStockResearchWorkspace: the initial default (2330) is preserved for a fresh mount with nothing selected yet', () => {
+		const source = researchSource();
+		expect(source).toMatch(/if \(selectedRef\.current\) void select\(selectedRef\.current\);\s*else void search\('2330'\);/);
+	});
+});
+
 describe('P1C Taiwan product localization (settings drawer)', () => {
 	it('hides China-market-only review automation and data-provider credentials, with no Taiwan equivalent', () => {
 		const source = fs.readFileSync(path.join(root, 'frontend/src/components/SettingsDrawer.tsx'), 'utf8');

@@ -3,8 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { BackendConfig, InstitutionalHistory, KLine, MarginHistory, MarketIndexSeries, Quote, SecurityIdentity, TaiwanFundamentals } from '../../lib/backend';
 import { requestJSON } from '../../lib/backend';
-import { runScopedRequest } from '../../lib/taiwan-product';
+import { runScopedRequest, taiwanErrorMessage } from '../../lib/taiwan-product';
 import { CoreIndexView, SourceNotice } from './MarketDataViews';
+
+const DATASET_LABELS = { quote: '報價', kline: 'K 線', institutional: '法人買賣超', margin: '融資融券', fundamentals: '基本面' } as const;
+
+export function partialFailureWarning(failed: string[]): string {
+	return failed.length > 0 ? `部分個股資料目前無法取得：${failed.join('、')}` : '';
+}
 
 export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig | null; refreshKey: number }) {
 	const [query, setQuery] = useState('');
@@ -20,6 +26,7 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
 	const selectRequestID = useRef(0);
+	const selectedRef = useRef<SecurityIdentity | null>(null);
 
 	const search = async (value = query) => {
 		if (!config || !value.trim()) return;
@@ -28,7 +35,7 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 			const payload = await requestJSON<{ data: { securities: SecurityIdentity[] } }>(config, `/api/v1/tw/securities?query=${encodeURIComponent(value.trim())}`);
 			setMatches(payload.data.securities);
 			if (payload.data.securities.length === 1) await select(payload.data.securities[0]);
-		} catch (reason) { setError(reason instanceof Error ? reason.message : '台股搜尋失敗'); }
+		} catch (reason) { setError(taiwanErrorMessage(reason, '台股搜尋失敗')); }
 		finally { setLoading(false); }
 	};
 
@@ -37,8 +44,9 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 		setSelected(security);
 		// Clear the previous selection's data immediately so a still-loading new symbol never
 		// renders under the old symbol's heading, and drop a stale response if the user has
-		// since selected another symbol.
-		await runScopedRequest(selectRequestID, () => Promise.all([
+		// since selected another symbol. Each dataset is settled independently (Promise.allSettled)
+		// so one dataset failing does not discard the other datasets that succeeded.
+		await runScopedRequest(selectRequestID, () => Promise.allSettled([
 			requestJSON<{ data: Quote[] }>(config, `/api/v1/tw/quotes?symbols=${encodeURIComponent(security.canonical)}`),
 			requestJSON<{ data: KLine[] }>(config, `/api/v1/tw/kline?symbol=${encodeURIComponent(security.canonical)}&limit=120`),
 			requestJSON<{ data: InstitutionalHistory }>(config, `/api/v1/tw/institutional?symbol=${encodeURIComponent(security.canonical)}&limit=20`),
@@ -46,20 +54,36 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 			requestJSON<{ data: TaiwanFundamentals }>(config, `/api/v1/tw/fundamentals?symbol=${encodeURIComponent(security.canonical)}&months=24`),
 		]), {
 			onStart: () => { setQuote(null); setLines([]); setInstitutional(null); setMargin(null); setFundamentals(null); setLoading(true); setError(''); },
-			onSuccess: ([quotePayload, linePayload, institutionalPayload, marginPayload, fundamentalsPayload]) => {
-				setQuote(quotePayload.data[0] || null); setLines(linePayload.data);
-				setInstitutional(institutionalPayload.data); setMargin(marginPayload.data);
-				setFundamentals(fundamentalsPayload.data);
+			onSuccess: ([quoteResult, klineResult, institutionalResult, marginResult, fundamentalsResult]) => {
+				const failed: string[] = [];
+				if (quoteResult.status === 'fulfilled') setQuote(quoteResult.value.data[0] || null); else failed.push(DATASET_LABELS.quote);
+				if (klineResult.status === 'fulfilled') setLines(klineResult.value.data); else failed.push(DATASET_LABELS.kline);
+				if (institutionalResult.status === 'fulfilled') setInstitutional(institutionalResult.value.data); else failed.push(DATASET_LABELS.institutional);
+				if (marginResult.status === 'fulfilled') setMargin(marginResult.value.data); else failed.push(DATASET_LABELS.margin);
+				if (fundamentalsResult.status === 'fulfilled') setFundamentals(fundamentalsResult.value.data); else failed.push(DATASET_LABELS.fundamentals);
+				setError(partialFailureWarning(failed));
 			},
-			onError: (reason) => setError(reason instanceof Error ? reason.message : '台股行情載入失敗'),
+			onError: (reason) => setError(taiwanErrorMessage(reason, '台股行情載入失敗')),
 			onSettle: () => setLoading(false),
 		});
 	};
 
 	useEffect(() => {
 		if (!config) return;
-		requestJSON<{ data: MarketIndexSeries[] }>(config, '/api/v1/tw/indexes').then((payload) => setIndexes(payload.data)).catch((reason) => setError(reason instanceof Error ? reason.message : '台股指數載入失敗'));
+		requestJSON<{ data: MarketIndexSeries[] }>(config, '/api/v1/tw/indexes').then((payload) => setIndexes(payload.data)).catch((reason) => setError(taiwanErrorMessage(reason, '台股指數載入失敗')));
 	}, [config, refreshKey]);
+
+	// Refresh retries the currently selected security (if any) in addition to the indexes effect
+	// above. This effect only depends on [config, refreshKey] — not `selected` — so selecting a
+	// stock does not itself re-trigger a fetch; only a refreshKey change (or config resolving) does.
+	useEffect(() => {
+		if (!config) return;
+		if (selectedRef.current) void select(selectedRef.current);
+	}, [config, refreshKey]);
+
+	// Kept in sync with `selected` so the refresh effect above can read the current selection
+	// without depending on `selected` itself (which would re-trigger a fetch on every selection).
+	useEffect(() => { selectedRef.current = selected; }, [selected]);
 
 	const submit = (event: FormEvent) => { event.preventDefault(); void search(); };
 	const indexSnapshots = indexes.map((item) => item.index);
@@ -71,7 +95,7 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 		{loading && selected && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取官方個股資料</div>}
 		{!selected && !loading && <div className="taiwan-empty-state"><strong>請選擇一檔證券查看台股資料</strong><p>搜尋上市或上櫃股票、ETF，選擇後即可查看報價、K 線、籌碼與基本面資料。</p></div>}
 		{selected && quote && <section className="market-index-detail"><header><div><span>{selected.exchange} · {selected.security_type.toUpperCase()} · {selected.currency}</span><h3>{selected.name} {selected.code}</h3><small>{quote.meta.is_realtime ? '即時行情' : '官方收盤資料'} · {quote.meta.trade_date} · {quote.meta.stale ? '資料較舊' : '最新完成交易資料'}</small></div><div><strong>{quote.price.toLocaleString('zh-TW')}</strong><em className={quote.change_percent > 0 ? 'up' : quote.change_percent < 0 ? 'down' : 'flat'}>{quote.change_percent > 0 ? '+' : ''}{quote.change_percent.toFixed(2)}%</em></div></header><SourceNotice meta={quote.meta} locale="zh-TW" /><div className="market-kline-table"><header><span>日期</span><span>開盤</span><span>最高</span><span>最低</span><span>收盤</span><span>漲跌</span></header>{lines.slice(-10).reverse().map((line) => <article key={line.time}><span>{new Date(line.time).toLocaleDateString('zh-TW')}</span><span>{line.open}</span><span>{line.high}</span><span>{line.low}</span><strong>{line.close}</strong><em>{(line.change_percent || 0).toFixed(2)}%</em></article>)}</div></section>}
-		{institutional && margin && <ChipView institutional={institutional} margin={margin} />}
+		{(institutional || margin) && <ChipView institutional={institutional} margin={margin} />}
 		{fundamentals && <FundamentalsView data={fundamentals} />}
 		<CoreIndexView indexes={indexSnapshots} selectedID={selectedIndex} onSelect={setSelectedIndex} series={indexSeries} seriesLoading={false} meta={indexSeries?.meta || null} locale="zh-TW" />
 	</div>;
@@ -93,17 +117,17 @@ export function FundamentalsView({ data }: { data: TaiwanFundamentals }) {
 	</div></section>;
 }
 
-function ChipView({ institutional, margin }: { institutional: InstitutionalHistory; margin: MarginHistory }) {
-	const latest = institutional.data.at(-1); const latestMargin = margin.data.at(-1); const summary = institutional.summary;
+export function ChipView({ institutional, margin }: { institutional: InstitutionalHistory | null; margin: MarginHistory | null }) {
+	const latest = institutional?.data.at(-1); const latestMargin = margin?.data.at(-1); const summary = institutional?.summary;
 	const lots = (value?: number) => value == null ? '—' : `${(value / 1000).toLocaleString('zh-TW')} 張`;
 	const signedLots = (value?: number) => value == null ? '—' : `${value > 0 ? '+' : ''}${(value / 1000).toLocaleString('zh-TW')} 張`;
 	return <section className="taiwan-chip-panel"><header><div><span>CHIP DATA</span><h3>籌碼</h3></div><small>{latest?.trade_date || '資料不足'} · 單位顯示為張</small></header>
-		<div className="taiwan-chip-grid">{[
-			['外資', latest?.foreign_buy, latest?.foreign_sell, latest?.foreign_net, summary.foreign_net_5d, summary.foreign_net_20d],
-			['投信', latest?.investment_trust_buy, latest?.investment_trust_sell, latest?.investment_trust_net, summary.investment_trust_net_5d, summary.investment_trust_net_20d],
-			['自營商', latest?.dealer_buy, latest?.dealer_sell, latest?.dealer_net, summary.dealer_net_5d, summary.dealer_net_20d],
-		].map(([label,buy,sell,net,five,twenty]) => <article key={String(label)}><strong>{label}</strong><span>買入 {lots(buy as number)}</span><span>賣出 {lots(sell as number)}</span><em>買賣超 {signedLots(net as number)}</em><small>5日 {signedLots(five as number)} · 20日 {signedLots(twenty as number)}</small></article>)}</div>
-		<div className="taiwan-margin-grid"><article><span>融資餘額</span><strong>{lots(latestMargin?.margin_balance)}</strong></article><article><span>融資增減</span><strong>{signedLots(latestMargin?.margin_change)}</strong></article><article><span>融券餘額</span><strong>{lots(latestMargin?.short_balance)}</strong></article><article><span>融券增減</span><strong>{signedLots(latestMargin?.short_change)}</strong></article><article><span>券資比</span><strong>{latestMargin?.short_margin_ratio == null ? '—' : `${latestMargin.short_margin_ratio.toFixed(2)}%`}</strong></article></div>
-		<SourceNotice meta={institutional.meta} locale="zh-TW" />
+		{institutional ? <div className="taiwan-chip-grid">{[
+			['外資', latest?.foreign_buy, latest?.foreign_sell, latest?.foreign_net, summary?.foreign_net_5d, summary?.foreign_net_20d],
+			['投信', latest?.investment_trust_buy, latest?.investment_trust_sell, latest?.investment_trust_net, summary?.investment_trust_net_5d, summary?.investment_trust_net_20d],
+			['自營商', latest?.dealer_buy, latest?.dealer_sell, latest?.dealer_net, summary?.dealer_net_5d, summary?.dealer_net_20d],
+		].map(([label,buy,sell,net,five,twenty]) => <article key={String(label)}><strong>{label}</strong><span>買入 {lots(buy as number)}</span><span>賣出 {lots(sell as number)}</span><em>買賣超 {signedLots(net as number)}</em><small>5日 {signedLots(five as number)} · 20日 {signedLots(twenty as number)}</small></article>)}</div> : <p>法人買賣超資料目前無法取得</p>}
+		{margin ? <div className="taiwan-margin-grid"><article><span>融資餘額</span><strong>{lots(latestMargin?.margin_balance)}</strong></article><article><span>融資增減</span><strong>{signedLots(latestMargin?.margin_change)}</strong></article><article><span>融券餘額</span><strong>{lots(latestMargin?.short_balance)}</strong></article><article><span>融券增減</span><strong>{signedLots(latestMargin?.short_change)}</strong></article><article><span>券資比</span><strong>{latestMargin?.short_margin_ratio == null ? '—' : `${latestMargin.short_margin_ratio.toFixed(2)}%`}</strong></article></div> : <p>融資融券資料目前無法取得</p>}
+		<SourceNotice meta={(institutional || margin)!.meta} locale="zh-TW" />
 	</section>;
 }
