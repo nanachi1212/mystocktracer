@@ -12,6 +12,11 @@ export function partialFailureWarning(failed: string[]): string {
 	return failed.length > 0 ? `部分個股資料目前無法取得：${failed.join('、')}` : '';
 }
 
+// `error` is a single shared state (indexes / search / selected-stock all write to it), so a
+// source can only safely clear it on success if no other source has taken ownership since it
+// started. This ref tracks who last set `error`, without triggering a render on its own.
+type ErrorOwner = 'indexes' | 'search' | 'stock' | '';
+
 export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig | null; refreshKey: number }) {
 	const [query, setQuery] = useState('');
 	const [matches, setMatches] = useState<SecurityIdentity[]>([]);
@@ -27,16 +32,17 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 	const [error, setError] = useState('');
 	const selectRequestID = useRef(0);
 	const selectedRef = useRef<SecurityIdentity | null>(null);
+	const errorOwnerRef = useRef<ErrorOwner>('');
 
 	const search = async (value = query) => {
 		if (!config || !value.trim()) return;
-		setLoading(true); setError('');
+		setLoading(true); errorOwnerRef.current = 'search'; setError('');
 		try {
 			const payload = await requestJSON<{ data: { securities: SecurityIdentity[] } }>(config, `/api/v1/tw/securities?query=${encodeURIComponent(value.trim())}`);
 			setMatches(payload.data.securities);
 			if (payload.data.securities.length === 1) await select(payload.data.securities[0]);
 			else if (payload.data.securities.length === 0) setError(`找不到符合「${value.trim()}」的台灣證券`);
-		} catch (reason) { setError(taiwanErrorMessage(reason, '台股搜尋失敗')); }
+		} catch (reason) { errorOwnerRef.current = 'search'; setError(taiwanErrorMessage(reason, '台股搜尋失敗')); }
 		finally { setLoading(false); }
 	};
 
@@ -54,7 +60,7 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 			requestJSON<{ data: MarginHistory }>(config, `/api/v1/tw/margin?symbol=${encodeURIComponent(security.canonical)}&limit=20`),
 			requestJSON<{ data: TaiwanFundamentals }>(config, `/api/v1/tw/fundamentals?symbol=${encodeURIComponent(security.canonical)}&months=24`),
 		]), {
-			onStart: () => { setQuote(null); setLines([]); setInstitutional(null); setMargin(null); setFundamentals(null); setLoading(true); setError(''); },
+			onStart: () => { setQuote(null); setLines([]); setInstitutional(null); setMargin(null); setFundamentals(null); setLoading(true); errorOwnerRef.current = 'stock'; setError(''); },
 			onSuccess: ([quoteResult, klineResult, institutionalResult, marginResult, fundamentalsResult]) => {
 				const failed: string[] = [];
 				if (quoteResult.status === 'fulfilled') setQuote(quoteResult.value.data[0] || null); else failed.push(DATASET_LABELS.quote);
@@ -62,16 +68,24 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 				if (institutionalResult.status === 'fulfilled') setInstitutional(institutionalResult.value.data); else failed.push(DATASET_LABELS.institutional);
 				if (marginResult.status === 'fulfilled') setMargin(marginResult.value.data); else failed.push(DATASET_LABELS.margin);
 				if (fundamentalsResult.status === 'fulfilled') setFundamentals(fundamentalsResult.value.data); else failed.push(DATASET_LABELS.fundamentals);
+				errorOwnerRef.current = failed.length > 0 ? 'stock' : '';
 				setError(partialFailureWarning(failed));
 			},
-			onError: (reason) => setError(taiwanErrorMessage(reason, '台股行情載入失敗')),
+			onError: (reason) => { errorOwnerRef.current = 'stock'; setError(taiwanErrorMessage(reason, '台股行情載入失敗')); },
 			onSettle: () => setLoading(false),
 		});
 	};
 
 	useEffect(() => {
 		if (!config) return;
-		requestJSON<{ data: MarketIndexSeries[] }>(config, '/api/v1/tw/indexes').then((payload) => setIndexes(payload.data)).catch((reason) => setError(taiwanErrorMessage(reason, '台股指數載入失敗')));
+		requestJSON<{ data: MarketIndexSeries[] }>(config, '/api/v1/tw/indexes')
+			.then((payload) => {
+				setIndexes(payload.data);
+				// Only clear `error` if indexes is still its owner — a search/stock error that
+				// took ownership while this request was in flight must survive indexes recovering.
+				if (errorOwnerRef.current === 'indexes') { errorOwnerRef.current = ''; setError(''); }
+			})
+			.catch((reason) => { errorOwnerRef.current = 'indexes'; setError(taiwanErrorMessage(reason, '台股指數載入失敗')); });
 	}, [config, refreshKey]);
 
 	// Refresh retries the currently selected security (if any) in addition to the indexes effect

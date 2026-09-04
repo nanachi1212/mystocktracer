@@ -149,13 +149,52 @@ describe('P1F search zero-result feedback — TaiwanMarketView', () => {
 	});
 
 	it('search() clears any previous error/not-found message at the start of a new search, so a later 1-result or multi-result search clears a stale not-found message', () => {
-		expect(searchBody()).toContain("setLoading(true); setError('');");
+		expect(searchBody()).toContain("setLoading(true); errorOwnerRef.current = 'search'; setError('');");
 	});
 
 	it('a zero-result search does not clear the previously selected security or its already-loaded data', () => {
 		const body = searchBody();
 		expect(body).not.toMatch(/length === 0\)[^;]*setSelected/);
 		expect(body).not.toMatch(/length === 0\)[^;]*setQuote/);
+	});
+});
+
+describe('P1G stale-error ownership — indexes success only clears an error it still owns', () => {
+	const indexesEffectBody = () => {
+		const source = overviewSource();
+		return source.slice(source.indexOf('useEffect(() => {'), source.indexOf('[config, refreshKey]'));
+	};
+
+	it('declares a non-rendering ownership ref (not a React state) instead of comparing rendered error text', () => {
+		const source = overviewSource();
+		expect(source).toContain("const errorOwnerRef = useRef<ErrorOwner>('');");
+		expect(source).not.toMatch(/errorOwner\s*===\s*['"`]台股指數載入失敗/);
+	});
+
+	it('indexes failure claims ownership before setting the error', () => {
+		const body = indexesEffectBody();
+		expect(body).toContain("errorOwnerRef.current = 'indexes'; setError(taiwanErrorMessage(reason, '台股指數載入失敗'));");
+	});
+
+	it('indexes success clears the error only if indexes is still the current owner (does not blindly clear)', () => {
+		const body = indexesEffectBody();
+		expect(body).toContain("if (errorOwnerRef.current === 'indexes') { errorOwnerRef.current = ''; setError(''); }");
+		expect(body).not.toMatch(/\.then\(\(payload\) => setIndexes\(payload\.data\)\)/);
+	});
+
+	it('search claims ownership at start and on failure, so an in-flight indexes success cannot clear a search error', () => {
+		const source = overviewSource();
+		const searchBody = source.slice(source.indexOf('const search = async'), source.indexOf('const select = async'));
+		expect(searchBody).toContain("setLoading(true); errorOwnerRef.current = 'search'; setError('');");
+		expect(searchBody).toContain("errorOwnerRef.current = 'search'; setError(taiwanErrorMessage(reason, '台股搜尋失敗'));");
+	});
+
+	it('select() claims ownership on start/failure, and on success only keeps ownership when a partial-failure warning is actually shown', () => {
+		const source = overviewSource();
+		const selectBody = source.slice(source.indexOf('const select = async'), source.indexOf('useEffect(() => {'));
+		expect(selectBody).toContain("errorOwnerRef.current = 'stock'; setError('');");
+		expect(selectBody).toContain("errorOwnerRef.current = failed.length > 0 ? 'stock' : '';");
+		expect(selectBody).toContain("errorOwnerRef.current = 'stock'; setError(taiwanErrorMessage(reason, '台股行情載入失敗'));");
 	});
 });
 
