@@ -233,7 +233,7 @@ export type MonthlyRevenue = { canonical:string; period:string; revenue:number; 
 export type FinancialStatementPeriod = { fiscal_year:number; fiscal_quarter:number; period_end:string; revenue?:number; gross_profit?:number; operating_income?:number; net_income_attributable_to_parent?:number; cumulative_eps?:number; published_at?:string; available_at?:string; provider:string; status:string };
 export type ValuationSnapshot = { data_date:string; pe?:number; pb?:number; dividend_yield_percent?:number; provider:string; status:string };
 export type DividendRecord = { year:number; cash_dividend?:number; stock_dividend?:number; ex_dividend_date?:string; raw_status?:string; normalized_status:string; provider:string; status:string };
-export type TaiwanFundamentals = { security:SecurityIdentity; monthly_revenue:MonthlyRevenue[]; financial_statement?:FinancialStatementPeriod; valuation?:ValuationSnapshot; dividends:DividendRecord[]; capabilities:Record<string,FundamentalCapability>; meta:SourceMeta };
+export type TaiwanFundamentals = { security:SecurityIdentity; monthly_revenue:MonthlyRevenue[] | null; financial_statement?:FinancialStatementPeriod; valuation?:ValuationSnapshot; dividends:DividendRecord[] | null; capabilities:Record<string,FundamentalCapability>; meta:SourceMeta };
 
 export type Quote = {
   symbol: string;

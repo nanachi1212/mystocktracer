@@ -231,3 +231,45 @@ describe('P1C.1 Taiwan-first localization completion', () => {
 		expect(source).not.toMatch(/设置|连接|读取|获取|应用|检查|备份/);
 	});
 });
+
+describe('P1D Taiwan overview startup fan-out', () => {
+	const overviewSource = () => fs.readFileSync(path.join(root, 'frontend/src/components/market/TaiwanMarketView.tsx'), 'utf8');
+
+	it('does not auto-search 2330 (or any symbol) on mount — only indexes load on startup', () => {
+		const source = overviewSource();
+		const mountEffect = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('[config, refreshKey]'));
+		expect(mountEffect).toContain('/api/v1/tw/indexes');
+		expect(mountEffect).not.toMatch(/search\(/);
+		// The query field starts empty; a hardcoded default symbol would silently reintroduce
+		// the fan-out this fixes, so guard the exact initial state too.
+		expect(source).toContain("useState('')");
+		expect(source).not.toContain("useState('2330')");
+	});
+
+	it('shows an empty state before any security is selected, without hiding indexes or the search box', () => {
+		const source = overviewSource();
+		expect(source).toContain('taiwan-empty-state');
+		expect(source).toContain('請選擇一檔證券查看台股資料');
+		// Empty state, search form, and CoreIndexView must all be reachable from the same render —
+		// none of them gated behind `selected` in a way that would hide the others.
+		expect(source).toContain('{!selected && !loading &&');
+		expect(source.indexOf('<form className="market-filter"')).toBeLessThan(source.indexOf('taiwan-empty-state'));
+		expect(source).toContain('<CoreIndexView');
+	});
+
+	it('keeps manual search and selection wired to the existing securities resolver and market datasets', () => {
+		const source = overviewSource();
+		expect(source).toContain('/api/v1/tw/securities?query=');
+		expect(source).toContain('/api/v1/tw/quotes?symbols=');
+		expect(source).toContain('/api/v1/tw/kline?symbol=');
+		expect(source).toContain('/api/v1/tw/institutional?symbol=');
+		expect(source).toContain('/api/v1/tw/margin?symbol=');
+		expect(source).toContain('/api/v1/tw/fundamentals?symbol=');
+	});
+
+	it('preserves the P1B race guard on the selection path unchanged', () => {
+		const source = overviewSource();
+		expect(source).toContain('runScopedRequest(selectRequestID');
+		expect(source).toContain('setQuote(null); setLines([]); setInstitutional(null); setMargin(null); setFundamentals(null);');
+	});
+});
