@@ -23,16 +23,16 @@ type llmConnectionTestResult struct {
 
 func (s *Server) settingsLLMTest(w http.ResponseWriter, r *http.Request) {
 	if s.hermesGateway == nil {
-		writeError(w, http.StatusServiceUnavailable, "Hermes 模型运行时不可用")
+		writeError(w, http.StatusServiceUnavailable, "Hermes 模型執行環境不可用")
 		return
 	}
 	status := s.hermesGateway.Status()
 	if !status.Available {
-		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Hermes 运行时不可用"))
+		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Hermes 執行環境不可用"))
 		return
 	}
 	if !status.Configured {
-		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "请先配置 Hermes 模型"))
+		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "請先設定 Hermes 使用的模型"))
 		return
 	}
 
@@ -41,12 +41,12 @@ func (s *Server) settingsLLMTest(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	result, err := s.hermesGateway.Prompt(ctx, "这是模型连接探针。请仅回复 "+llmProbeMarker+"，不要添加任何其他文字。")
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "Hermes 模型连接失败: "+err.Error())
+		writeError(w, http.StatusBadGateway, "Hermes 模型連線失敗: "+err.Error())
 		return
 	}
 	content := strings.TrimSpace(result.Content)
 	if !strings.Contains(strings.ToUpper(content), llmProbeMarker) {
-		writeError(w, http.StatusBadGateway, "Hermes 已启动，但模型未返回预期探针标记")
+		writeError(w, http.StatusBadGateway, "Hermes 已啟動，但模型未回傳預期的探測標記")
 		return
 	}
 

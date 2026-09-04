@@ -32,7 +32,11 @@ const (
 
 var diagnosticSecretPattern = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*(?:bearer\s+)?|(?:api[_ -]?key|token)\s*[:=]\s*)[^\s,;]+`)
 
-const systemPrompt = `你是 easy-stock 的 AI 投研助手。easy-stock 是面向 A 股市场的 AI 原生行情分析与研究工作台。像 Codex 一样协作：先理解目标，再基于可追踪的数据和原文证据给出清晰、可执行、可验证的回答；主动区分事实、推断、市场预期与待验证条件，不编造实时数据，不承诺收益。涉及游资、心法、情绪周期、龙头战法、首板、打板、仓位或预期差时，优先使用本机的 a-stock-short-term-masters 技能核对原文，并说明这些内容属于历史经验与二次整理材料。默认使用中文，除非用户要求其他语言。`
+// systemPrompt configures the general-purpose Hermes agent (sidebar chat and the settings
+// connection probe). Taiwan stock research does NOT use this prompt — GenerateTaiwanResearch
+// calls Hermes through PromptIsolated with its own dedicated, evidence-only system prompt
+// (see stockanalysis.taiwanResearchSystemPrompt) that never inherits skills or this identity.
+const systemPrompt = `你是 easy-stock 的 AI 投研助手。easy-stock 目前以台灣股票（TWSE、TPEx）研究為主要產品方向；個股研究另有獨立、僅限官方證據的專用流程，不使用本系統提示詞。像 Codex 一樣協作：先理解目標，再基於可追蹤的資料與原文證據給出清晰、可執行、可驗證的回答；主動區分事實、推斷、市場預期與待驗證條件，不編造即時資料，不承諾收益。除非使用者明確詢問中國 A 股市場，否則不得假設使用者所在市場、貨幣或交易規則為 A 股。本機另安裝歷史遺留的 a-stock-short-term-masters 技能，僅在使用者主動詢問 A 股游資、心法、情緒週期、龍頭戰法、首板、打板、倉位或預期差等歷史經驗資料時使用，並說明其屬於歷史經驗與二次整理材料，不代表本產品目前市場定位。預設使用繁體中文，除非使用者要求其他語言。`
 
 type Status struct {
 	Available        bool   `json:"available"`
@@ -176,17 +180,17 @@ func (r *Runtime) Status() Status {
 
 	status := Status{Configured: configured, APIKeyConfigured: hasAPIKey, Version: r.runtimeVersion()}
 	if r.pythonPath == "" {
-		status.Message = "未配置 Hermes 运行时路径"
+		status.Message = "未設定 Hermes 執行環境路徑"
 		return status
 	}
 	info, err := os.Stat(r.pythonPath)
 	if err != nil || info.IsDir() {
-		status.Message = "Hermes 运行时不可用"
+		status.Message = "Hermes 執行環境不可用"
 		return status
 	}
 	status.Available = true
 	if !configured {
-		status.Message = "请先配置 Hermes 使用的模型"
+		status.Message = "請先設定 Hermes 使用的模型"
 	}
 	return status
 }
@@ -196,7 +200,7 @@ func (r *Runtime) Status() Status {
 // responses or logs.
 func (r *Runtime) ModelAPIKey() (string, error) {
 	if strings.TrimSpace(r.home) == "" {
-		return "", errors.New("Hermes 用户目录未配置")
+		return "", errors.New("Hermes 使用者目錄未設定")
 	}
 	return readEnvValue(filepath.Join(r.home, ".env"), modelAPIKeyEnvName)
 }
@@ -218,10 +222,10 @@ func (r *Runtime) SyncLLMProfile(cfg appsettings.LLM, profileID string, apiKeyUp
 
 func (r *Runtime) syncLLM(cfg appsettings.LLM, profileID string, apiKeyUpdate *string) error {
 	if strings.TrimSpace(r.home) == "" {
-		return errors.New("Hermes 用户目录未配置")
+		return errors.New("Hermes 使用者目錄未設定")
 	}
 	if err := os.MkdirAll(r.home, 0o700); err != nil {
-		return fmt.Errorf("创建 Hermes 用户目录: %w", err)
+		return fmt.Errorf("建立 Hermes 使用者目錄: %w", err)
 	}
 	r.configMu.Lock()
 	defer r.configMu.Unlock()
@@ -246,7 +250,7 @@ func (r *Runtime) syncLLM(cfg appsettings.LLM, profileID string, apiKeyUpdate *s
 	if apiKeyUpdate != nil {
 		effectiveKey = strings.TrimSpace(*apiKeyUpdate)
 		if strings.ContainsAny(effectiveKey, "\r\n") {
-			return errors.New("模型 API Key 不能包含换行")
+			return errors.New("模型 API Key 不能包含換行")
 		}
 		if err := writeEnvValue(envPath, profileKeyName, effectiveKey); err != nil {
 			return err
@@ -275,7 +279,7 @@ func (r *Runtime) syncLLM(cfg appsettings.LLM, profileID string, apiKeyUpdate *s
 		return err
 	}
 	if err := writeSecureFile(filepath.Join(r.home, "config.yaml"), []byte(configText)); err != nil {
-		return fmt.Errorf("写入 Hermes 模型配置: %w", err)
+		return fmt.Errorf("寫入 Hermes 模型設定: %w", err)
 	}
 
 	configured := normalized.Model != "" && normalized.BaseURL != "" && (normalized.Provider == "custom" || effectiveKey != "")
@@ -290,29 +294,29 @@ func (r *Runtime) syncLLM(cfg appsettings.LLM, profileID string, apiKeyUpdate *s
 // StoreLLMProfileKey updates only a non-active profile's secret.
 func (r *Runtime) StoreLLMProfileKey(profileID string, apiKeyUpdate *string) error {
 	if strings.TrimSpace(r.home) == "" {
-		return errors.New("Hermes 用户目录未配置")
+		return errors.New("Hermes 使用者目錄未設定")
 	}
 	if strings.TrimSpace(profileID) == "" {
-		return errors.New("模型配置 ID 不能为空")
+		return errors.New("模型設定 ID 不能為空")
 	}
 	r.configMu.Lock()
 	defer r.configMu.Unlock()
 	if err := os.MkdirAll(r.home, 0o700); err != nil {
-		return fmt.Errorf("创建 Hermes 用户目录: %w", err)
+		return fmt.Errorf("建立 Hermes 使用者目錄: %w", err)
 	}
 	if apiKeyUpdate == nil {
 		return nil
 	}
 	value := strings.TrimSpace(*apiKeyUpdate)
 	if strings.ContainsAny(value, "\r\n") {
-		return errors.New("模型 API Key 不能包含换行")
+		return errors.New("模型 API Key 不能包含換行")
 	}
 	return writeEnvValue(filepath.Join(r.home, ".env"), profileKeyEnvName(profileID), value)
 }
 
 func (r *Runtime) ModelAPIKeyForProfile(profileID string) (string, error) {
 	if strings.TrimSpace(r.home) == "" {
-		return "", errors.New("Hermes 用户目录未配置")
+		return "", errors.New("Hermes 使用者目錄未設定")
 	}
 	if strings.TrimSpace(profileID) == "" || profileID == "active" {
 		return r.ModelAPIKey()
@@ -342,7 +346,7 @@ func profileKeyEnvName(profileID string) string {
 
 func (r *Runtime) AgentSettings() (AgentSettings, error) {
 	if strings.TrimSpace(r.home) == "" {
-		return AgentSettings{}, errors.New("Hermes 用户目录未配置")
+		return AgentSettings{}, errors.New("Hermes 使用者目錄未設定")
 	}
 	config, err := r.readConfigMap()
 	if err != nil {
@@ -400,7 +404,7 @@ func (r *Runtime) AgentSettings() (AgentSettings, error) {
 
 func (r *Runtime) SyncAgentSettings(settings AgentSettings) error {
 	if strings.TrimSpace(r.home) == "" {
-		return errors.New("Hermes 用户目录未配置")
+		return errors.New("Hermes 使用者目錄未設定")
 	}
 	r.configMu.Lock()
 	defer r.configMu.Unlock()
@@ -413,7 +417,7 @@ func (r *Runtime) SyncAgentSettings(settings AgentSettings) error {
 		reasoningEffort = "medium"
 	}
 	if !IsValidReasoningEffort(reasoningEffort) {
-		return fmt.Errorf("无效的 Hermes 思考等级: %s", settings.ReasoningEffort)
+		return fmt.Errorf("無效的 Hermes 思考等級: %s", settings.ReasoningEffort)
 	}
 	agent, _ := stringMap(config["agent"])
 	if agent == nil {
@@ -512,10 +516,10 @@ func (r *Runtime) Start(ctx context.Context) (Process, error) {
 func (r *Runtime) start(ctx context.Context, browserStatePath string) (Process, error) {
 	status := r.Status()
 	if !status.Available {
-		return nil, errors.New(firstNonEmpty(status.Message, "Hermes 运行时不可用"))
+		return nil, errors.New(firstNonEmpty(status.Message, "Hermes 執行環境不可用"))
 	}
 	if strings.TrimSpace(r.home) == "" {
-		return nil, errors.New("Hermes 用户目录未配置")
+		return nil, errors.New("Hermes 使用者目錄未設定")
 	}
 	processEnv, err := r.processEnvironment(browserStatePath)
 	if err != nil {
@@ -544,7 +548,7 @@ func (r *Runtime) start(ctx context.Context, browserStatePath string) (Process, 
 		_ = stdin.Close()
 		_ = stdout.Close()
 		_ = stderr.Close()
-		return nil, fmt.Errorf("启动 Hermes: %w", err)
+		return nil, fmt.Errorf("啟動 Hermes: %w", err)
 	}
 	return &commandProcess{cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderr}, nil
 }
@@ -594,7 +598,7 @@ func (r *Runtime) Prompt(ctx context.Context, prompt string) (PromptResult, erro
 
 func (r *Runtime) PromptIsolated(ctx context.Context, systemContext, prompt string) (PromptResult, error) {
 	if strings.TrimSpace(systemContext) == "" {
-		return PromptResult{}, errors.New("Hermes 隔离系统提示词不能为空")
+		return PromptResult{}, errors.New("Hermes 隔離系統提示詞不能為空")
 	}
 	temporaryHome, err := os.MkdirTemp("", "easy-stock-hermes-isolated-*")
 	if err != nil {
@@ -659,14 +663,14 @@ func (r *Runtime) PromptWithBrowserState(ctx context.Context, prompt, storageSta
 
 func (r *Runtime) prompt(ctx context.Context, prompt, browserStatePath string) (PromptResult, error) {
 	if strings.TrimSpace(prompt) == "" {
-		return PromptResult{}, errors.New("Hermes 提示词不能为空")
+		return PromptResult{}, errors.New("Hermes 提示詞不能為空")
 	}
 	status := r.Status()
 	if !status.Available {
-		return PromptResult{}, errors.New(firstNonEmpty(status.Message, "Hermes 运行时不可用"))
+		return PromptResult{}, errors.New(firstNonEmpty(status.Message, "Hermes 執行環境不可用"))
 	}
 	if !status.Configured {
-		return PromptResult{}, errors.New(firstNonEmpty(status.Message, "请先配置 Hermes 模型"))
+		return PromptResult{}, errors.New(firstNonEmpty(status.Message, "請先設定 Hermes 使用的模型"))
 	}
 
 	process, err := r.start(ctx, browserStatePath)
@@ -729,11 +733,11 @@ func (r *Runtime) prompt(ctx context.Context, prompt, browserStatePath string) (
 		case item := <-lines:
 			if item.err != nil {
 				waitForDiagnostics(diagnosticsDone)
-				return PromptResult{}, r.hermesFailure(fmt.Sprintf("Hermes 会话结束: %v", item.err), diagnostics.String())
+				return PromptResult{}, r.hermesFailure(fmt.Sprintf("Hermes 對話工作階段結束: %v", item.err), diagnostics.String())
 			}
 			if len(item.line) == 0 {
 				waitForDiagnostics(diagnosticsDone)
-				return PromptResult{}, r.hermesFailure("Hermes 会话意外结束", diagnostics.String())
+				return PromptResult{}, r.hermesFailure("Hermes 對話工作階段意外結束", diagnostics.String())
 			}
 			var frame rpcFrame
 			if err := json.Unmarshal(item.line, &frame); err != nil {
@@ -753,7 +757,7 @@ func (r *Runtime) prompt(ctx context.Context, prompt, browserStatePath string) (
 				result.SessionID = stringValue(frame.Result["session_id"])
 				result.StoredSessionID = firstNonEmpty(stringValue(frame.Result["stored_session_id"]), result.SessionID)
 				if result.SessionID == "" {
-					return PromptResult{}, errors.New("Hermes 未返回会话 ID")
+					return PromptResult{}, errors.New("Hermes 未回傳工作階段 ID")
 				}
 				submitted = true
 				if err := writeRPC("2", "prompt.submit", map[string]any{"session_id": result.SessionID, "text": prompt}); err != nil {
@@ -767,11 +771,11 @@ func (r *Runtime) prompt(ctx context.Context, prompt, browserStatePath string) (
 			case "message.complete":
 				result.Content = strings.TrimSpace(firstNonEmpty(eventText(frame, "content"), eventText(frame, "text"), streamed.String()))
 				if result.Content == "" {
-					return PromptResult{}, errors.New("Hermes 没有返回有效内容")
+					return PromptResult{}, errors.New("Hermes 沒有回傳有效內容")
 				}
 				return result, nil
 			case "message.error", "session.error", "run.error":
-				return PromptResult{}, r.hermesFailure(firstNonEmpty(eventText(frame, "message"), "Hermes 执行失败"), diagnostics.String())
+				return PromptResult{}, r.hermesFailure(firstNonEmpty(eventText(frame, "message"), "Hermes 執行失敗"), diagnostics.String())
 			}
 		}
 	}
@@ -826,7 +830,7 @@ func (r *Runtime) hermesFailure(summary, diagnostic string) error {
 	if diagnostic == "" {
 		return errors.New(summary)
 	}
-	return fmt.Errorf("%s\n运行时详情：%s", summary, diagnostic)
+	return fmt.Errorf("%s\n執行環境詳細資訊：%s", summary, diagnostic)
 }
 
 func sanitizeHermesDiagnostic(value, apiKey string) string {
@@ -921,7 +925,7 @@ func normalizeLLM(cfg appsettings.LLM) appsettings.LLM {
 func renderConfig(cfg appsettings.LLM, workDir string) string {
 	providerName := cfg.Provider
 	if providerName == "custom" {
-		providerName = "自定义模型"
+		providerName = "自訂模型"
 	}
 	var text strings.Builder
 	fmt.Fprintf(&text, "model:\n  default: %s\n  provider: %s\n  base_url: %s\n  api_mode: %s\n\n", yamlString(cfg.Model), providerSlug, yamlString(cfg.BaseURL), yamlString(cfg.APIMode))
@@ -949,7 +953,7 @@ func (r *Runtime) renderMergedConfig(cfg appsettings.LLM) (string, error) {
 	}
 	managed := map[string]any{}
 	if err := yaml.Unmarshal([]byte(renderConfig(cfg, r.workDir)), &managed); err != nil {
-		return "", fmt.Errorf("生成 Hermes 配置: %w", err)
+		return "", fmt.Errorf("產生 Hermes 設定: %w", err)
 	}
 	for _, key := range []string{"model", "providers", "agent", "terminal", "memory", "curator", "security"} {
 		if value, ok := managed[key]; ok {
@@ -976,7 +980,7 @@ func (r *Runtime) renderMergedConfig(cfg appsettings.LLM) (string, error) {
 	config["skills"] = existingSkills
 	data, err := yaml.Marshal(config)
 	if err != nil {
-		return "", fmt.Errorf("编码 Hermes 配置: %w", err)
+		return "", fmt.Errorf("編碼 Hermes 設定: %w", err)
 	}
 	return string(data), nil
 }
@@ -988,13 +992,13 @@ func (r *Runtime) readConfigMap() (map[string]any, error) {
 		return config, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("读取 Hermes 配置: %w", err)
+		return nil, fmt.Errorf("讀取 Hermes 設定: %w", err)
 	}
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return config, nil
 	}
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("解析 Hermes 配置: %w", err)
+		return nil, fmt.Errorf("解析 Hermes 設定: %w", err)
 	}
 	return config, nil
 }
@@ -1002,10 +1006,10 @@ func (r *Runtime) readConfigMap() (map[string]any, error) {
 func (r *Runtime) writeConfigMap(config map[string]any) error {
 	data, err := yaml.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("编码 Hermes 配置: %w", err)
+		return fmt.Errorf("編碼 Hermes 設定: %w", err)
 	}
 	if err := writeSecureFile(filepath.Join(r.home, "config.yaml"), data); err != nil {
-		return fmt.Errorf("写入 Hermes 配置: %w", err)
+		return fmt.Errorf("寫入 Hermes 設定: %w", err)
 	}
 	return nil
 }
@@ -1030,7 +1034,7 @@ func discoverSkills(root string) []SkillInfo {
 			return nil
 		}
 		seen[name] = true
-		category := "未分类"
+		category := "未分類"
 		if relative, relativeErr := filepath.Rel(root, skillDir); relativeErr == nil {
 			parts := strings.Split(filepath.ToSlash(relative), "/")
 			if len(parts) > 1 && parts[0] != "." {
@@ -1307,7 +1311,7 @@ func readEnvValue(path, key string) (string, error) {
 		return "", nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("读取 Hermes 环境配置: %w", err)
+		return "", fmt.Errorf("讀取 Hermes 環境設定: %w", err)
 	}
 	prefix := key + "="
 	for _, line := range strings.Split(string(data), "\n") {
@@ -1328,7 +1332,7 @@ func writeEnvValue(path, key, value string) error {
 	if data, err := os.ReadFile(path); err == nil {
 		lines = strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("读取 Hermes 环境配置: %w", err)
+		return fmt.Errorf("讀取 Hermes 環境設定: %w", err)
 	}
 	prefix := key + "="
 	replacement := prefix + strconv.Quote(value)
@@ -1350,7 +1354,7 @@ func writeEnvValue(path, key, value string) error {
 		result = append(result, replacement)
 	}
 	if err := writeSecureFile(path, []byte(strings.Join(result, "\n")+"\n")); err != nil {
-		return fmt.Errorf("写入 Hermes 环境配置: %w", err)
+		return fmt.Errorf("寫入 Hermes 環境設定: %w", err)
 	}
 	return nil
 }

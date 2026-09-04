@@ -67,13 +67,13 @@ func TestLibraryCachesRemoteDocumentsAndSyncsHermes(t *testing.T) {
 		t.Fatalf("cache was not reused tree=%d raw=%d", treeCalls.Load(), rawCalls.Load())
 	}
 
-	skillPath := filepath.Join(hermesHome, "skills", "trading", skillName, "SKILL.md")
+	skillPath := filepath.Join(hermesHome, "skills", "trading", SkillName, "SKILL.md")
 	skill, err := os.ReadFile(skillPath)
 	if err != nil || !strings.Contains(string(skill), "测试游资") {
 		t.Fatalf("Hermes skill not synced: err=%v content=%s", err, skill)
 	}
 	memory, err := os.ReadFile(filepath.Join(hermesHome, "memories", "MEMORY.md"))
-	if err != nil || !strings.Contains(string(memory), skillName) {
+	if err != nil || !strings.Contains(string(memory), SkillName) {
 		t.Fatalf("Hermes memory index not synced: err=%v content=%s", err, memory)
 	}
 

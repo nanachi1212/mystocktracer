@@ -26,7 +26,10 @@ const (
 	defaultRawBaseURL = "https://raw.githubusercontent.com/zhouqinglong520/trading-mastery/main/"
 	defaultSourceURL  = "https://github.com/zhouqinglong520/trading-mastery/tree/main/%E6%B8%B8%E8%B5%84%E5%BF%83%E6%B3%95"
 	manifestVersion   = 4
-	skillName         = "a-stock-short-term-masters"
+	// SkillName is the Hermes skill this legacy A-share mainland-China trading-mastery
+	// feature installs. It has no Taiwan-market equivalent; httpapi excludes it from the
+	// settings view exposed to the Taiwan-first Skill/MCP panel (see settings_agent.go).
+	SkillName = "a-stock-short-term-masters"
 )
 
 type Config struct {
@@ -577,7 +580,7 @@ func (l *Library) syncHermesKnowledge(current *manifest) error {
 	if strings.TrimSpace(l.config.HermesHome) == "" {
 		return errors.New("Hermes Home 未配置")
 	}
-	skillDir := filepath.Join(l.config.HermesHome, "skills", "trading", skillName)
+	skillDir := filepath.Join(l.config.HermesHome, "skills", "trading", SkillName)
 	referencesDir := filepath.Join(skillDir, "references")
 	if err := os.MkdirAll(referencesDir, 0o700); err != nil {
 		return err
@@ -629,7 +632,7 @@ func (l *Library) syncMemoryIndex(traderCount int, fetchedAt time.Time) error {
 	}
 	const start = "<!-- easy-stock:short-term-masters:start -->"
 	const end = "<!-- easy-stock:short-term-masters:end -->"
-	block := fmt.Sprintf("%s\n§\neasy-stock 已在本机安装 `%s` Hermes 技能，包含 %d 位游资的心法原文缓存；涉及游资、情绪周期、龙头、首板、打板、仓位或预期差的问题可加载该技能核对原文。资料最近同步于 %s，属于历史经验材料而非收益承诺。\n%s", start, skillName, traderCount, fetchedAt.Local().Format("2006-01-02 15:04"), end)
+	block := fmt.Sprintf("%s\n§\neasy-stock 已在本机安装 `%s` Hermes 技能，包含 %d 位游资的心法原文缓存；涉及游资、情绪周期、龙头、首板、打板、仓位或预期差的问题可加载该技能核对原文。资料最近同步于 %s，属于历史经验材料而非收益承诺。\n%s", start, SkillName, traderCount, fetchedAt.Local().Format("2006-01-02 15:04"), end)
 	updated := upsertManagedBlock(string(existing), start, end, block)
 	return atomicWrite(path, []byte(updated), 0o600)
 }

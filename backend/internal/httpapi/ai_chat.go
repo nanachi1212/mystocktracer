@@ -29,16 +29,16 @@ var hermesWebSocketUpgrader = websocket.Upgrader{
 
 func (s *Server) aiChatWebSocket(w http.ResponseWriter, r *http.Request) {
 	if s.hermesGateway == nil {
-		writeError(w, http.StatusServiceUnavailable, "Hermes 对话底座不可用")
+		writeError(w, http.StatusServiceUnavailable, "Hermes 對話服務不可用")
 		return
 	}
 	status := s.hermesGateway.Status()
 	if !status.Available {
-		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Hermes 运行时不可用"))
+		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Hermes 執行環境不可用"))
 		return
 	}
 	if !status.Configured {
-		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "请先配置 Hermes 模型"))
+		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "請先設定 Hermes 使用的模型"))
 		return
 	}
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/methodology"
 )
 
 var (
@@ -72,12 +73,12 @@ func (s *Server) settingsAgentGateway() (hermes.SettingsGateway, bool) {
 func (s *Server) settingsAgentGet(w http.ResponseWriter, r *http.Request) {
 	gateway, ok := s.settingsAgentGateway()
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "Hermes Skill/MCP 配置服务不可用")
+		writeError(w, http.StatusServiceUnavailable, "Hermes Skill/MCP 設定服務不可用")
 		return
 	}
 	settings, err := gateway.AgentSettings()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取 Hermes Skill/MCP 设置: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "讀取 Hermes Skill/MCP 設定: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": buildAgentSettingsView(settings)})
@@ -86,7 +87,7 @@ func (s *Server) settingsAgentGet(w http.ResponseWriter, r *http.Request) {
 func (s *Server) settingsAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	gateway, ok := s.settingsAgentGateway()
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "Hermes Skill/MCP 配置服务不可用")
+		writeError(w, http.StatusServiceUnavailable, "Hermes Skill/MCP 設定服務不可用")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
@@ -107,24 +108,24 @@ func (s *Server) settingsAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	current, err := gateway.AgentSettings()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取现有 Hermes 设置: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "讀取現有 Hermes 設定: "+err.Error())
 		return
 	}
 	settings := mergeAgentSettings(current, request)
 	if err := gateway.SyncAgentSettings(settings); err != nil {
-		writeError(w, http.StatusInternalServerError, "保存 Hermes Skill/MCP 设置: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "儲存 Hermes Skill/MCP 設定: "+err.Error())
 		return
 	}
 	updated, err := gateway.AgentSettings()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "重新读取 Hermes 设置: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "重新讀取 Hermes 設定: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": buildAgentSettingsView(updated)})
 }
 
 func buildAgentSettingsView(settings hermes.AgentSettings) agentSettingsView {
-	view := agentSettingsView{ReasoningEffort: settings.ReasoningEffort, Skills: settings.Skills, MCPServers: make([]mcpServerView, 0, len(settings.MCPServers))}
+	view := agentSettingsView{ReasoningEffort: settings.ReasoningEffort, Skills: taiwanFirstSkills(settings.Skills), MCPServers: make([]mcpServerView, 0, len(settings.MCPServers))}
 	for _, server := range settings.MCPServers {
 		item := mcpServerView{
 			Name: server.Name, Enabled: server.Enabled, Transport: server.Transport,
@@ -147,6 +148,23 @@ func buildAgentSettingsView(settings hermes.AgentSettings) agentSettingsView {
 		view.MCPServers = append(view.MCPServers, item)
 	}
 	return view
+}
+
+// taiwanFirstSkills excludes Hermes skills that have no Taiwan-market equivalent (currently
+// just the mainland-China trading-mastery skill) from the settings view exposed to the
+// Taiwan-first Skill/MCP panel, so it never presents an A-share-only capability as part of
+// the normal Taiwan research toolset. The skill itself, its files, and its enabled/disabled
+// state are untouched — Taiwan stock research also never invokes it: GenerateTaiwanResearch
+// calls Hermes through PromptIsolated, which explicitly does not inherit skills.
+func taiwanFirstSkills(skills []hermes.SkillInfo) []hermes.SkillInfo {
+	filtered := make([]hermes.SkillInfo, 0, len(skills))
+	for _, skill := range skills {
+		if skill.Name == methodology.SkillName {
+			continue
+		}
+		filtered = append(filtered, skill)
+	}
+	return filtered
 }
 
 func mergeAgentSettings(current hermes.AgentSettings, request agentSettingsUpdateRequest) hermes.AgentSettings {
@@ -218,18 +236,18 @@ func validateAgentSettingsUpdate(request agentSettingsUpdateRequest) error {
 	if request.ReasoningEffort != nil {
 		effort := strings.ToLower(strings.TrimSpace(*request.ReasoningEffort))
 		if !hermes.IsValidReasoningEffort(effort) {
-			return fmt.Errorf("无效的思考等级: %s", *request.ReasoningEffort)
+			return fmt.Errorf("無效的思考等級: %s", *request.ReasoningEffort)
 		}
 	}
 	if request.Skills != nil && len(*request.Skills) > 500 || request.MCPServers != nil && len(*request.MCPServers) > 100 {
-		return fmt.Errorf("Skill 或 MCP Server 数量过多")
+		return fmt.Errorf("Skill 或 MCP Server 數量過多")
 	}
 	seenSkills := map[string]bool{}
 	if request.Skills != nil {
 		for _, skill := range *request.Skills {
 			name := strings.TrimSpace(skill.Name)
 			if name == "" || len(name) > 160 || seenSkills[name] {
-				return fmt.Errorf("Skill 名称无效或重复")
+				return fmt.Errorf("Skill 名稱無效或重複")
 			}
 			seenSkills[name] = true
 		}
@@ -241,27 +259,27 @@ func validateAgentSettingsUpdate(request agentSettingsUpdateRequest) error {
 	for _, server := range *request.MCPServers {
 		name := strings.TrimSpace(server.Name)
 		if !mcpNamePattern.MatchString(name) || seenServers[name] {
-			return fmt.Errorf("MCP Server 名称必须为 1-64 位字母、数字、点、下划线或短横线，且不能重复")
+			return fmt.Errorf("MCP Server 名稱必須為 1-64 位字母、數字、點、底線或短橫線，且不能重複")
 		}
 		seenServers[name] = true
 		if originalName := strings.TrimSpace(server.OriginalName); originalName != "" && !mcpNamePattern.MatchString(originalName) {
-			return fmt.Errorf("MCP Server %s 的原名称无效", name)
+			return fmt.Errorf("MCP Server %s 的原名稱無效", name)
 		}
 		transport := strings.TrimSpace(server.Transport)
 		if transport != "stdio" && transport != "http" && transport != "sse" {
-			return fmt.Errorf("MCP Server %s 的传输方式无效", name)
+			return fmt.Errorf("MCP Server %s 的傳輸方式無效", name)
 		}
 		if transport == "stdio" {
 			command := strings.TrimSpace(server.Command)
 			if command == "" || len(command) > 1024 || strings.ContainsAny(command, "\r\n") {
-				return fmt.Errorf("MCP Server %s 需要有效的启动命令", name)
+				return fmt.Errorf("MCP Server %s 需要有效的啟動命令", name)
 			}
 			if len(server.Args) > 100 {
-				return fmt.Errorf("MCP Server %s 的参数过多", name)
+				return fmt.Errorf("MCP Server %s 的參數過多", name)
 			}
 			for _, arg := range server.Args {
 				if len(arg) > 4096 || strings.ContainsAny(arg, "\r\n") {
-					return fmt.Errorf("MCP Server %s 包含无效参数", name)
+					return fmt.Errorf("MCP Server %s 包含無效參數", name)
 				}
 			}
 		} else {
@@ -272,12 +290,12 @@ func validateAgentSettingsUpdate(request agentSettingsUpdateRequest) error {
 			}
 		}
 		if server.Timeout < 0 || server.Timeout > 3600 || server.ConnectTimeout < 0 || server.ConnectTimeout > 600 {
-			return fmt.Errorf("MCP Server %s 的超时时间无效", name)
+			return fmt.Errorf("MCP Server %s 的逾時時間無效", name)
 		}
-		if err := validateProtectedMap(name, "环境变量", server.Env, server.ClearEnv, true); err != nil {
+		if err := validateProtectedMap(name, "環境變數", server.Env, server.ClearEnv, true); err != nil {
 			return err
 		}
-		if err := validateProtectedMap(name, "请求头", server.Headers, server.ClearHeaders, false); err != nil {
+		if err := validateProtectedMap(name, "請求標頭", server.Headers, server.ClearHeaders, false); err != nil {
 			return err
 		}
 	}
@@ -286,26 +304,26 @@ func validateAgentSettingsUpdate(request agentSettingsUpdateRequest) error {
 
 func validateProtectedMap(serverName, label string, values map[string]*string, clear []string, env bool) error {
 	if len(values)+len(clear) > 100 {
-		return fmt.Errorf("MCP Server %s 的%s过多", serverName, label)
+		return fmt.Errorf("MCP Server %s 的%s過多", serverName, label)
 	}
 	keys := map[string]bool{}
 	for key, value := range values {
 		key = strings.TrimSpace(key)
 		if keys[key] {
-			return fmt.Errorf("MCP Server %s 的%s键重复", serverName, label)
+			return fmt.Errorf("MCP Server %s 的%s鍵重複", serverName, label)
 		}
 		keys[key] = true
 		if key == "" || (env && !envNamePattern.MatchString(key)) || strings.ContainsAny(key, "\r\n:") || (value != nil && (len(*value) > 32<<10 || strings.ContainsAny(*value, "\r\n"))) {
-			return fmt.Errorf("MCP Server %s 包含无效%s", serverName, label)
+			return fmt.Errorf("MCP Server %s 包含無效%s", serverName, label)
 		}
 	}
 	for _, key := range clear {
 		key = strings.TrimSpace(key)
 		if key == "" || (env && !envNamePattern.MatchString(key)) || strings.ContainsAny(key, "\r\n:") {
-			return fmt.Errorf("MCP Server %s 包含无效%s", serverName, label)
+			return fmt.Errorf("MCP Server %s 包含無效%s", serverName, label)
 		}
 		if keys[key] {
-			return fmt.Errorf("MCP Server %s 的%s键重复", serverName, label)
+			return fmt.Errorf("MCP Server %s 的%s鍵重複", serverName, label)
 		}
 		keys[key] = true
 	}

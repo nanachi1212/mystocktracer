@@ -189,3 +189,45 @@ describe('Taiwan-first product shell', () => {
 		expect(windows.match(/FileDescription:\s*'([^']+)'/)?.[1]).not.toMatch(/A股|A-share/i);
 	});
 });
+
+describe('P1C Taiwan product localization (settings drawer)', () => {
+	it('hides China-market-only review automation and data-provider credentials, with no Taiwan equivalent', () => {
+		const source = fs.readFileSync(path.join(root, 'frontend/src/components/SettingsDrawer.tsx'), 'utf8');
+		// The rendered <form> — from the security note through the footer — must not surface any
+		// of the confirmed China-market-only settings. WechatServiceCard/ReviewProfileCard and their
+		// state are intentionally left defined-but-unrendered (not deleted), so this checks what is
+		// actually reachable from the JSX return, not the whole file.
+		const renderedForm = source.slice(source.indexOf('<form className="settings-form"'), source.indexOf('</form>'));
+		expect(renderedForm).not.toMatch(/大V复盘自动化|同花顺|雪球|淘股吧|微信公众号|Tushare Pro Token|行情与内容数据源|涨停/);
+	});
+
+	it('keeps the SecretKey credential contract intact even though some fields are hidden from the UI', () => {
+		const source = fs.readFileSync(path.join(root, 'frontend/src/components/SettingsDrawer.tsx'), 'utf8');
+		// Hiding is a UI-only change — the backend credential contract (SecretKey union, emptySecrets)
+		// must not be rewritten or truncated as a side effect.
+		expect(source).toContain("type SecretKey = 'llm_api_key' | 'tushare_token' | 'ths_cookie' | 'xueqiu_cookie' | 'eastmoney_cookie' | 'wechat_api_token';");
+	});
+
+	it('uses Traditional Chinese for the settings drawer chrome that remains active', () => {
+		const source = fs.readFileSync(path.join(root, 'frontend/src/components/SettingsDrawer.tsx'), 'utf8');
+		expect(source).toContain('系統設定');
+		expect(source).not.toContain('系统设置');
+		const renderedForm = source.slice(source.indexOf('<form className="settings-form"'), source.indexOf('</form>'));
+		// 保存 is valid in both scripts (保 and 存 don't differ), so it isn't in this list.
+		expect(renderedForm).not.toMatch(/设置|连接|读取|获取/);
+	});
+});
+
+describe('P1C.1 Taiwan-first localization completion', () => {
+	it('uses Traditional Chinese for the always-visible Hermes Skill/MCP panel', () => {
+		const source = fs.readFileSync(path.join(root, 'frontend/src/components/HermesAgentSettingsPanel.tsx'), 'utf8');
+		expect(source).toContain('Skill 與 MCP');
+		expect(source).not.toMatch(/设置|连接|读取|获取|删除|启用|添加/);
+	});
+
+	it('uses Traditional Chinese for the always-visible App update panel', () => {
+		const source = fs.readFileSync(path.join(root, 'frontend/src/components/AppUpdatePanel.tsx'), 'utf8');
+		expect(source).toContain('版本與自動更新');
+		expect(source).not.toMatch(/设置|连接|读取|获取|应用|检查|备份/);
+	});
+});

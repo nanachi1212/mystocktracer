@@ -2,8 +2,6 @@ import {
 	Bot,
 	CheckCircle2,
 	CircleAlert,
-	Clock3,
-	Database,
 	Eye,
 	EyeOff,
 	FolderOpen,
@@ -127,7 +125,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 			.catch((error) => {
 				if (cancelled) return;
 				setState('error');
-				setMessage(error instanceof Error ? error.message : '读取设置失败');
+				setMessage(error instanceof Error ? error.message : '讀取設定失敗');
 			});
 		return () => {
 			cancelled = true;
@@ -242,8 +240,8 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		setTestState('idle');
 		setTestResult(null);
 		setModelListMessage(nextDefinition.baseURL
-			? '请确认 Base URL，输入模型 API Key，然后点击“获取模型”。'
-			: '请输入兼容接口的 Base URL 和 API Key，再获取模型列表。');
+			? '請確認 Base URL，輸入模型 API Key，然後點擊「取得模型清單」。'
+			: '請輸入相容介面的 Base URL 和 API Key，再取得模型清單。');
 	};
 
 	const updateSecret = (key: SecretKey, value: string) => {
@@ -299,7 +297,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		const requestBaseURL = baseURL.trim();
 		const requestAPIKey = (profileKeyValues[activeLLMProfileID] || '').trim();
 		setModelListState('loading');
-		setModelListMessage('正在读取模型服务的模型列表…');
+		setModelListMessage('正在讀取模型服務的模型清單…');
 		try {
 			const request: { provider: string; base_url: string; api_key?: string } = { provider: requestProvider, base_url: requestBaseURL };
 			if (requestAPIKey || clearProfileKeys.has(activeLLMProfileID)) request.api_key = requestAPIKey;
@@ -312,13 +310,13 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 			if (fetchID !== modelFetchSequence.current) return;
 			setModelOptions(payload.data.models);
 			setModelListState('success');
-			setModelListMessage(`已从 ${payload.data.source_url} 获取 ${payload.data.models.length} 个模型`);
+			setModelListMessage(`已從 ${payload.data.source_url} 取得 ${payload.data.models.length} 個模型`);
 			setManualModel(false);
 		} catch (error) {
 			if (fetchID !== modelFetchSequence.current) return;
 			setModelOptions([]);
 			setModelListState('error');
-			setModelListMessage(error instanceof Error ? error.message : '获取模型列表失败');
+			setModelListMessage(error instanceof Error ? error.message : '取得模型清單失敗');
 			setManualModel(true);
 		}
 	};
@@ -383,7 +381,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 	};
 
 	const persistSettings = async () => {
-		if (!config) throw new Error('后端尚未连接');
+		if (!config) throw new Error('後端尚未連線');
 		const credentials: Record<string, string> = {};
 		for (const key of ['tushare_token', 'ths_cookie', 'xueqiu_cookie', 'eastmoney_cookie'] as SecretKey[]) {
 			if (secrets[key].trim()) credentials[key] = secrets[key].trim();
@@ -421,18 +419,18 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		try {
 			await persistSettings();
 			setState('saved');
-			setMessage('设置已同步到本机 Hermes');
+			setMessage('設定已同步到本機 Hermes');
 			onSaved?.();
 		} catch (error) {
 			setState('error');
-			setMessage(error instanceof Error ? error.message : '保存设置失败');
+			setMessage(error instanceof Error ? error.message : '儲存設定失敗');
 		}
 	};
 
 	const testConnection = async () => {
 		if (!config) return;
 		setState('saving');
-		setMessage('正在保存设置并通过 Hermes 调用模型探针');
+		setMessage('正在儲存設定並透過 Hermes 呼叫模型探測');
 		setTestState('testing');
 		setTestResult(null);
 		try {
@@ -441,11 +439,11 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 			setTestResult(payload.data);
 			setTestState('success');
 			setState('saved');
-			setMessage(`Hermes 模型连接成功，耗时 ${payload.data.latency_ms}ms`);
+			setMessage(`Hermes 模型連線成功，耗時 ${payload.data.latency_ms}ms`);
 		} catch (error) {
 			setTestState('error');
 			setState('error');
-			setMessage(error instanceof Error ? error.message : '模型连接测试失败');
+			setMessage(error instanceof Error ? error.message : '模型連線測試失敗');
 		}
 	};
 
@@ -456,7 +454,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 			await window.aStock.openRuntimeLogs();
 		} catch (error) {
 			setState('error');
-			setMessage(error instanceof Error ? error.message : '打开日志目录失败');
+			setMessage(error instanceof Error ? error.message : '開啟日誌目錄失敗');
 		} finally {
 			setOpeningRuntimeLogs(false);
 		}
@@ -466,93 +464,75 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 
 	return (
 		<div className="settings-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-			<aside className="settings-drawer" role="dialog" aria-modal="true" aria-label="系统设置">
+			<aside className="settings-drawer" role="dialog" aria-modal="true" aria-label="系統設定">
 				<header className="settings-header">
-					<div><span>HERMES LOCAL RUNTIME</span><h2>系统设置</h2><p>管理 Hermes 模型运行时与外部数据源凭据</p></div>
-					<button type="button" onClick={onClose} aria-label="关闭设置"><X size={20} /></button>
+					<div><span>HERMES LOCAL RUNTIME</span><h2>系統設定</h2><p>管理 Hermes 模型執行環境與 AI 研究所需的連線設定</p></div>
+					<button type="button" onClick={onClose} aria-label="關閉設定"><X size={20} /></button>
 				</header>
 
-				{state === 'loading' && <div className="settings-loading"><LoaderCircle className="spin" size={22} /><span>读取本机设置</span></div>}
+				{state === 'loading' && <div className="settings-loading"><LoaderCircle className="spin" size={22} /><span>讀取本機設定</span></div>}
 				{state !== 'loading' && (
 					<form className="settings-form" onSubmit={save}>
 						<section className="settings-security-note">
 							<ShieldCheck size={19} />
-							<div><strong>模型密钥由 Hermes 管理</strong><span>API Key 只写入 Hermes 的本机 .env；页面仅读取是否已配置，不会取回密钥原文。</span></div>
-							<em>{configuredCount} 项已配置</em>
+							<div><strong>模型密鑰由 Hermes 管理</strong><span>API Key 只寫入 Hermes 的本機 .env；頁面僅讀取是否已設定，不會取回密鑰原文。</span></div>
+							<em>{configuredCount} 項已設定</em>
 						</section>
 
 						<HermesAgentSettingsPanel config={config} open={open} />
 
 						<section className="settings-section">
-							<div className="settings-section-title"><Bot size={18} /><div><h3>Hermes 模型运行时</h3><p>侧边栏对话、模型探针和复盘 AI 提炼统一由本机 Hermes 驱动。</p></div></div>
+							<div className="settings-section-title"><Bot size={18} /><div><h3>Hermes 模型執行環境</h3><p>台股個股研究的「產生 AI 研究摘要」與 AI 助手對話統一由本機 Hermes 驅動。</p></div></div>
 							<div className={`llm-connection-test ${settings?.hermes.available ? settings.hermes.configured ? 'success' : '' : 'error'}`}>
-								<div><Bot size={17} /><span><strong>{settings?.hermes.available ? `Hermes ${settings.hermes.version || 'Runtime'} 已安装` : 'Hermes 运行时不可用'}</strong><small>{settings?.hermes.message || (settings?.hermes.configured ? '运行时和模型配置均已就绪。' : '运行时已就绪，请继续配置模型连接。')}</small></span></div>
+								<div><Bot size={17} /><span><strong>{settings?.hermes.available ? `Hermes ${settings.hermes.version || 'Runtime'} 已安裝` : 'Hermes 執行環境不可用'}</strong><small>{settings?.hermes.message || (settings?.hermes.configured ? '執行環境和模型設定均已就緒。' : '執行環境已就緒，請繼續設定模型連線。')}</small></span></div>
 							</div>
 							<div className="llm-profile-toolbar">
-								<label><span>模型配置</span><select value={activeLLMProfileID} onChange={(event) => selectLLMProfile(event.target.value)}>{llmProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name} · {profile.model || llmProviderDefinition(profile.provider).label}</option>)}</select></label>
-								<button type="button" onClick={addLLMProfile}><Plus size={14} />新增配置</button>
-								<button type="button" className="danger" onClick={removeLLMProfile} disabled={llmProfiles.length <= 1}><Trash2 size={14} />删除</button>
+								<label><span>模型設定</span><select value={activeLLMProfileID} onChange={(event) => selectLLMProfile(event.target.value)}>{llmProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name} · {profile.model || llmProviderDefinition(profile.provider).label}</option>)}</select></label>
+								<button type="button" onClick={addLLMProfile}><Plus size={14} />新增設定</button>
+								<button type="button" className="danger" onClick={removeLLMProfile} disabled={llmProfiles.length <= 1}><Trash2 size={14} />刪除</button>
 							</div>
-							<label><span>配置名称</span><input value={profileName} onChange={(event) => { setProfileName(event.target.value); patchSelectedLLMProfile({ name: event.target.value }); }} placeholder="例如 DeepSeek 日常 / GPT-5.6 Sol 深度分析" /></label>
+							<label><span>設定名稱</span><input value={profileName} onChange={(event) => { setProfileName(event.target.value); patchSelectedLLMProfile({ name: event.target.value }); }} placeholder="例如 DeepSeek 日常 / GPT-5.6 Sol 深度分析" /></label>
 							<div className="settings-grid two-columns">
-								<label><span>服务商</span><select value={provider} onChange={(event) => updateProvider(event.target.value)}>{llmProviders.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label>
-								<label><span>接口协议</span><select value={apiMode} onChange={(event) => { setAPIMode(event.target.value); patchSelectedLLMProfile({ api_mode: event.target.value }); setTestState('idle'); setTestResult(null); }}><option value="chat_completions">Chat Completions</option><option value="codex_responses">Responses API</option><option value="anthropic_messages">Anthropic Messages</option></select></label>
+								<label><span>服務商</span><select value={provider} onChange={(event) => updateProvider(event.target.value)}>{llmProviders.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label>
+								<label><span>介面協定</span><select value={apiMode} onChange={(event) => { setAPIMode(event.target.value); patchSelectedLLMProfile({ api_mode: event.target.value }); setTestState('idle'); setTestResult(null); }}><option value="chat_completions">Chat Completions</option><option value="codex_responses">Responses API</option><option value="anthropic_messages">Anthropic Messages</option></select></label>
 							</div>
 								<label><span>API Base URL</span><input value={baseURL} onChange={(event) => updateBaseURL(event.target.value)} placeholder="https://api.example.com/v1" /></label>
-								<SecretField key={`llm-api-key-${activeLLMProfileID}`} label="模型 API Key" secretKey="llm_api_key" status={selectedLLMProfile?.api_key} value={profileKeyValues[activeLLMProfileID] || ''} clearing={clearProfileKeys.has(activeLLMProfileID)} onChange={updateSecret} onClear={toggleClear} hint="每套配置独立安全保存；切换配置不会覆盖其他密钥" revealable />
+								<SecretField key={`llm-api-key-${activeLLMProfileID}`} label="模型 API Key" secretKey="llm_api_key" status={selectedLLMProfile?.api_key} value={profileKeyValues[activeLLMProfileID] || ''} clearing={clearProfileKeys.has(activeLLMProfileID)} onChange={updateSecret} onClear={toggleClear} hint="每套設定獨立安全保存；切換設定不會覆蓋其他密鑰" revealable />
 								<div className="model-field">
-									<span className="model-field-heading"><span>模型</span>{modelListState === 'success' && <button type="button" onClick={() => setManualModel((current) => !current)}>{manualModel ? '使用下拉' : '手动输入'}</button>}</span>
+									<span className="model-field-heading"><span>模型</span>{modelListState === 'success' && <button type="button" onClick={() => setManualModel((current) => !current)}>{manualModel ? '使用下拉選單' : '手動輸入'}</button>}</span>
 									<span className="model-picker-row">
-										{modelListState === 'success' && !manualModel ? <select value={model} onChange={(event) => { if (event.target.value === manualModelOption) setManualModel(true); else updateModel(event.target.value); }}><option value="">请选择模型</option>{selectableModels.map((option) => <option value={option.id} key={option.id}>{modelOptionLabel(option)}</option>)}<option value={manualModelOption}>手动输入其他模型…</option></select> : <input value={model} onChange={(event) => updateModel(event.target.value)} placeholder="例如 gpt-5.5 或 deepseek-chat" />}
-										<button type="button" className="model-refresh-button" onClick={() => void fetchModels()} disabled={!config || state === 'saving' || modelListState === 'loading'}>{modelListState === 'loading' ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}{modelListState === 'success' ? '刷新' : '获取模型'}</button>
+										{modelListState === 'success' && !manualModel ? <select value={model} onChange={(event) => { if (event.target.value === manualModelOption) setManualModel(true); else updateModel(event.target.value); }}><option value="">請選擇模型</option>{selectableModels.map((option) => <option value={option.id} key={option.id}>{modelOptionLabel(option)}</option>)}<option value={manualModelOption}>手動輸入其他模型…</option></select> : <input value={model} onChange={(event) => updateModel(event.target.value)} placeholder="例如 gpt-5.5 或 deepseek-chat" />}
+										<button type="button" className="model-refresh-button" onClick={() => void fetchModels()} disabled={!config || state === 'saving' || modelListState === 'loading'}>{modelListState === 'loading' ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}{modelListState === 'success' ? '重新整理' : '取得模型清單'}</button>
 									</span>
-									<small className={`model-list-message ${modelListState}`}>{modelListMessage || '请先填写 Base URL 和 API Key，再获取模型列表；也可继续手动输入。'}</small>
+									<small className={`model-list-message ${modelListState}`}>{modelListMessage || '請先填寫 Base URL 和 API Key，再取得模型清單；也可以繼續手動輸入。'}</small>
 								</div>
-							<label className="settings-timeout-field"><span>模型响应等待时间（秒）</span><input type="number" min={30} max={3600} step={30} value={responseTimeoutSeconds} onChange={(event) => setResponseTimeoutSeconds(Number(event.target.value) || defaultResponseTimeoutSeconds)} /><small>默认 300 秒，范围 30–3600 秒；模型长时间无响应时将等待更久再重试。</small></label>
+							<label className="settings-timeout-field"><span>模型回應等待時間（秒）</span><input type="number" min={30} max={3600} step={30} value={responseTimeoutSeconds} onChange={(event) => setResponseTimeoutSeconds(Number(event.target.value) || defaultResponseTimeoutSeconds)} /><small>預設 300 秒，範圍 30–3600 秒；模型長時間無回應時會等待更久再重試。</small></label>
 							<div className={`llm-connection-test ${testState}`}>
-								<div><PlugZap size={17} /><span><strong>{testState === 'success' ? 'Hermes 模型连接可用' : testState === 'error' ? '连接测试未通过' : testState === 'testing' ? 'Hermes 正在请求模型' : 'Hermes 真实模型探针'}</strong><small>{testResult ? `Hermes · ${testResult.model} · ${testResult.api_mode} · ${testResult.latency_ms}ms · ${testResult.response}` : '保存当前配置后由 Hermes 发送最小提示词，并验证模型确实返回内容。'}</small></span></div>
-								<button type="button" onClick={testConnection} disabled={!config || state === 'saving' || testState === 'testing'}>{testState === 'testing' ? <LoaderCircle className="spin" size={15} /> : <PlugZap size={15} />}保存并测试连接</button>
+								<div><PlugZap size={17} /><span><strong>{testState === 'success' ? 'Hermes 模型連線可用' : testState === 'error' ? '連線測試未通過' : testState === 'testing' ? 'Hermes 正在請求模型' : 'Hermes 真實模型探測'}</strong><small>{testResult ? `Hermes · ${testResult.model} · ${testResult.api_mode} · ${testResult.latency_ms}ms · ${testResult.response}` : '儲存目前設定後由 Hermes 送出最小提示詞，並驗證模型確實回傳內容。'}</small></span></div>
+								<button type="button" onClick={testConnection} disabled={!config || state === 'saving' || testState === 'testing'}>{testState === 'testing' ? <LoaderCircle className="spin" size={15} /> : <PlugZap size={15} />}儲存並測試連線</button>
 							</div>
 						</section>
 
-						<section className="settings-section">
-							<div className="settings-section-title"><Clock3 size={18} /><div><h3>大V复盘自动化</h3><p>按平台管理多套采集配置，每个大V订阅可以绑定其中一套。</p></div></div>
-							<div className="review-profile-tabs">{(['xueqiu', 'taoguba', 'wechat'] as ReviewSource[]).map((source) => <button type="button" className={reviewSource === source ? 'active' : ''} onClick={() => setReviewSource(source)} key={source}>{reviewSourceLabel(source)}<em>{reviewProfiles.filter((profile) => profile.source === source).length}</em></button>)}</div>
-							{reviewSource === 'wechat' && <WechatServiceCard status={wechatServiceStatus} loginURL={wechatLoginURL} onLogin={() => void openWechatLogin()} onCloseLogin={() => { setWechatLoginURL(''); setWechatLoginBaseline(''); }} />}
-							<div className="review-profile-list">
-								{reviewProfiles.filter((profile) => profile.source === reviewSource).map((profile) => <ReviewProfileCard profile={profile} browserAuthStatus={browserAuthStatuses[profile.id]} openingBrowser={openingBrowserProfile === profile.id} onOpenBrowserLogin={() => void openReviewSourceLogin(profile)} onChange={(patch) => updateReviewProfile(profile.id, patch)} onRemove={() => removeReviewProfile(profile.id)} canRemove={profile.source !== 'wechat' || reviewProfiles.filter((item) => item.source === 'wechat').length > 1} key={profile.id} />)}
-								{!reviewProfiles.some((profile) => profile.source === reviewSource) && <div className="review-profile-empty"><strong>还没有{reviewSourceLabel(reviewSource)}配置</strong><span>可以添加多套配置，并让不同大V订阅使用不同登录态或同步时段。</span></div>}
-							</div>
-							{reviewSource !== 'wechat' && <button type="button" className="review-profile-add" onClick={() => addReviewProfile(reviewSource)}><Plus size={14} />添加{reviewSourceLabel(reviewSource)}配置</button>}
-							<p className="settings-field-note">雪球和淘股吧通过内置浏览器保存独立登录态；微信公众号扫码仅用于解析已知文章链接，历史文章列表接口已停用，暂不提供自动订阅。所有登录凭据仅保存在本机。</p>
-						</section>
-
-						<section className="settings-section">
-							<div className="settings-section-title"><Database size={18} /><div><h3>行情与内容数据源</h3><p>现有公共接口继续直接使用；以下凭据为增强数据与后续接入准备。</p></div></div>
-							<div className="public-source-status">
-								<span><CheckCircle2 size={14} />东方财富：公共行情已接入</span>
-								<span><CheckCircle2 size={14} />新浪财经：公共行情已接入</span>
-								<span><CheckCircle2 size={14} />财联社：公开资讯已接入</span>
-							</div>
-							<SecretField label="Tushare Pro Token" secretKey="tushare_token" status={settings?.credentials.tushare_token} value={secrets.tushare_token} clearing={clearSecrets.has('tushare_token')} onChange={updateSecret} onClear={toggleClear} hint="预留：基础数据、指数和日线增强" />
-							<SecretField label="同花顺 Cookie / Token" secretKey="ths_cookie" status={settings?.credentials.ths_cookie} value={secrets.ths_cookie} clearing={clearSecrets.has('ths_cookie')} onChange={updateSecret} onClear={toggleClear} hint="预留：涨停原因与题材催化数据" />
-							<SecretField label="东方财富 Cookie" secretKey="eastmoney_cookie" status={settings?.credentials.eastmoney_cookie} value={secrets.eastmoney_cookie} clearing={clearSecrets.has('eastmoney_cookie')} onChange={updateSecret} onClear={toggleClear} hint="当前公共行情不需要，预留登录态接口" />
-						</section>
+						{/* Legacy mainland-China review-source automation and data-provider credentials
+						   (see ReviewSource / SecretKey) have no Taiwan equivalent and would mislead
+						   Taiwan-first users. Hidden from this settings drawer per P1C audit — the
+						   underlying state, fetch, and save logic are left intact (not deleted) so the backend
+						   settings contract and any future multi-market UI are unaffected. */}
 
 						<AppUpdatePanel />
 
 						<section className="settings-section runtime-log-section">
-							<div className="settings-section-title"><FolderOpen size={18} /><div><h3>运行日志</h3><p>遇到问题时，可将此目录中的日志文件提供给开发者排查。</p></div></div>
+							<div className="settings-section-title"><FolderOpen size={18} /><div><h3>執行日誌</h3><p>遇到問題時，可將此目錄中的日誌檔案提供給開發者排查。</p></div></div>
 							<div className="runtime-log-summary">
-								<span><strong>{runtimeLogStatus?.available ? '日志正在自动保存' : '请在桌面应用中查看日志'}</strong><small>{runtimeLogStatus ? `每个文件最多 ${runtimeLogStatus.max_file_mb} MB，保留 ${runtimeLogStatus.backup_files} 份历史记录；密钥和登录凭据会在写入前隐藏。` : '浏览器开发模式不保存桌面运行日志。'}</small>{runtimeLogStatus?.directory && <code title={runtimeLogStatus.directory}>{runtimeLogStatus.directory}</code>}</span>
-								<button type="button" onClick={() => void openRuntimeLogs()} disabled={!runtimeLogStatus?.available || openingRuntimeLogs}>{openingRuntimeLogs ? <LoaderCircle className="spin" size={15} /> : <FolderOpen size={15} />}打开日志目录</button>
+								<span><strong>{runtimeLogStatus?.available ? '日誌正在自動儲存' : '請在桌面應用程式中查看日誌'}</strong><small>{runtimeLogStatus ? `每個檔案最多 ${runtimeLogStatus.max_file_mb} MB，保留 ${runtimeLogStatus.backup_files} 份歷史記錄；密鑰和登入憑證會在寫入前隱藏。` : '瀏覽器開發模式不會儲存桌面執行日誌。'}</small>{runtimeLogStatus?.directory && <code title={runtimeLogStatus.directory}>{runtimeLogStatus.directory}</code>}</span>
+								<button type="button" onClick={() => void openRuntimeLogs()} disabled={!runtimeLogStatus?.available || openingRuntimeLogs}>{openingRuntimeLogs ? <LoaderCircle className="spin" size={15} /> : <FolderOpen size={15} />}開啟日誌目錄</button>
 							</div>
 						</section>
 
 						<footer className="settings-footer">
-							<div className={`settings-message ${state}`}>{state === 'saved' && <CheckCircle2 size={15} />}{state === 'error' && <KeyRound size={15} />}<span>{message || '留空的模型密钥会保留 Hermes .env 中的现有值。'}</span></div>
+							<div className={`settings-message ${state}`}>{state === 'saved' && <CheckCircle2 size={15} />}{state === 'error' && <KeyRound size={15} />}<span>{message || '留空的模型密鑰會保留 Hermes .env 中的現有值。'}</span></div>
 							<button type="button" onClick={onClose}>取消</button>
-							<button type="submit" className="settings-save" disabled={!config || state === 'saving' || testState === 'testing'}>{state === 'saving' ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}保存设置</button>
+							<button type="submit" className="settings-save" disabled={!config || state === 'saving' || testState === 'testing'}>{state === 'saving' ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}儲存設定</button>
 						</footer>
 					</form>
 				)}
@@ -645,12 +625,12 @@ function SecretField({ label, secretKey, status, value, clearing, onChange, onCl
 	const [revealed, setRevealed] = useState(false);
 	return (
 		<label className={`secret-field ${clearing ? 'clearing' : ''}`}>
-			<span className="secret-field-heading"><span>{label}{hint && <small>{hint}</small>}</span>{status?.configured && <em>{clearing ? '等待清除' : `已配置 ${status.masked || ''}`}</em>}</span>
+			<span className="secret-field-heading"><span>{label}{hint && <small>{hint}</small>}</span>{status?.configured && <em>{clearing ? '等待清除' : `已設定 ${status.masked || ''}`}</em>}</span>
 			<span className="secret-input-row">
 				<KeyRound size={15} />
-				<input type={revealable && revealed ? 'text' : 'password'} autoComplete="new-password" value={value} disabled={clearing} onChange={(event) => onChange(secretKey, event.target.value)} placeholder={status?.configured ? '输入新值可覆盖，留空保持不变' : '输入凭据'} />
-				{revealable && <button type="button" className="secret-visibility-button" onClick={() => setRevealed((current) => !current)} disabled={clearing || !value} title={revealed ? '隐藏 API Key' : '显示 API Key'} aria-label={revealed ? '隐藏 API Key' : '显示 API Key'} aria-pressed={revealed}>{revealed ? <EyeOff size={15} /> : <Eye size={15} />}</button>}
-				{status?.configured && <button type="button" className="secret-clear-button" onClick={() => onClear(secretKey)} title={clearing ? '取消清除' : '清除已保存凭据'}><Trash2 size={14} />{clearing ? '撤销' : '清除'}</button>}
+				<input type={revealable && revealed ? 'text' : 'password'} autoComplete="new-password" value={value} disabled={clearing} onChange={(event) => onChange(secretKey, event.target.value)} placeholder={status?.configured ? '輸入新值可覆蓋，留空保持不變' : '輸入憑證'} />
+				{revealable && <button type="button" className="secret-visibility-button" onClick={() => setRevealed((current) => !current)} disabled={clearing || !value} title={revealed ? '隱藏 API Key' : '顯示 API Key'} aria-label={revealed ? '隱藏 API Key' : '顯示 API Key'} aria-pressed={revealed}>{revealed ? <EyeOff size={15} /> : <Eye size={15} />}</button>}
+				{status?.configured && <button type="button" className="secret-clear-button" onClick={() => onClear(secretKey)} title={clearing ? '取消清除' : '清除已儲存憑證'}><Trash2 size={14} />{clearing ? '撤銷' : '清除'}</button>}
 			</span>
 		</label>
 	);

@@ -148,7 +148,7 @@ func TestRuntimeAgentSettingsPreservesSecretsAndModelConfig(t *testing.T) {
 func TestRuntimeSyncAgentSettingsRejectsInvalidReasoningEffort(t *testing.T) {
 	runtime := NewRuntime(Config{Home: t.TempDir()})
 	err := runtime.SyncAgentSettings(AgentSettings{ReasoningEffort: "turbo"})
-	if err == nil || !strings.Contains(err.Error(), "思考等级") {
+	if err == nil || !strings.Contains(err.Error(), "思考等級") {
 		t.Fatalf("SyncAgentSettings() error = %v, want invalid reasoning effort", err)
 	}
 }
@@ -419,6 +419,19 @@ func TestTailBufferKeepsOnlyTheLatestDiagnosticBytes(t *testing.T) {
 	_, _ = buffer.Write([]byte("second"))
 	if got := buffer.String(); got != "t-second" {
 		t.Fatalf("tail buffer = %q, want %q", got, "t-second")
+	}
+}
+
+func TestGeneralSystemPromptDoesNotClaimAShareProductIdentity(t *testing.T) {
+	rendered := renderConfig(appsettings.LLM{Provider: "openai", BaseURL: "https://api.openai.com/v1", Model: "gpt-5"}, "")
+	if strings.Contains(rendered, "面向 A 股市场") {
+		t.Fatalf("general Hermes system prompt still claims an A-share product identity: %s", rendered)
+	}
+	if !strings.Contains(rendered, "台灣股票") {
+		t.Fatalf("general Hermes system prompt does not identify the current Taiwan-first product: %s", rendered)
+	}
+	if !strings.Contains(rendered, "不得假設使用者所在市場、貨幣或交易規則為 A 股") {
+		t.Fatalf("general Hermes system prompt does not instruct against assuming A-share market rules: %s", rendered)
 	}
 }
 
