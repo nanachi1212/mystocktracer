@@ -3,11 +3,11 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { BackendConfig, SecurityIdentity } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
-import { formatTaiwanPercent, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel } from '../lib/taiwan-product';
+import { formatTaiwanPercent, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel } from '../lib/taiwan-product';
 
-type Evidence = { status: string; freshness?: string; as_of?: string; reason?: string; data?: Record<string, unknown> };
-type Component = { state: string; status: string; freshness?: string; as_of?: string; reasons: string[] };
-type Intelligence = {
+export type Evidence = { status: string; freshness?: string; as_of?: string; reason?: string; data?: Record<string, unknown> };
+export type Component = { state: string; status: string; freshness?: string; as_of?: string; reasons: string[] };
+export type Intelligence = {
 	model_version: string; symbol: string;
 	identity: { canonical_symbol: string; code: string; name: string; exchange: string; currency: string; security_type: string; industry_name?: string };
 	quote: Evidence & { target_latest_completed_trading_date?: string; data?: { price: number; change_percent: number; meta?: { trade_date?: string; is_realtime?: boolean } } };
@@ -15,7 +15,7 @@ type Intelligence = {
 	fundamentals: Evidence; institutional: Evidence; margin: Evidence;
 	market_context: Evidence & { state?: string; confidence?: string; advance_ratio?: number | null; advancing_amount_ratio?: number | null };
 	industry_context: Evidence & { taxonomy_status?: string; industry?: { industry_name: string; relative_breadth: number | null; relative_capital: number | null } };
-	interpretation?: { model_version: string; components: Record<string, Component>; data_quality: { available_components: string[]; indeterminate_components: string[]; unavailable_components: string[]; stale_components: string[]; partial_components: string[] } };
+	interpretation?: { model_version: string; components: Record<string, Component>; data_quality: { available_components: string[] | null; indeterminate_components: string[] | null; unavailable_components: string[] | null; stale_components: string[] | null; partial_components: string[] | null } };
 };
 type ResearchSection = { text: string; evidence_keys: string[] };
 type Research = { status: string; model_version: string; generated_at?: string; headline?: string; summary?: string; sections: Record<string, ResearchSection>; conflicts: string[]; data_limitations: string[]; research_notes: string[]; reason?: string };
@@ -91,9 +91,14 @@ function EvidenceOverview({ intelligence }: { intelligence: Intelligence }) {
 	return <section className="taiwan-evidence-overview"><header><span>官方證據</span><h3>資料涵蓋與狀態</h3></header><div className="taiwan-detail-grid">{items.map(([label, item, detail]) => <article key={label}><span>{label}</span><strong>{taiwanStatusLabel(item.status)}</strong><small>{item.as_of ? `資料日期 ${item.as_of}` : taiwanStatusLabel(item.freshness)}</small><p>{taiwanReasonLabel(detail)}</p></article>)}</div></section>;
 }
 
-function InterpretationView({ intelligence }: { intelligence: Intelligence }) {
+export function InterpretationView({ intelligence }: { intelligence: Intelligence }) {
 	const interpretation = intelligence.interpretation!;
-	return <section className="taiwan-interpretation"><header><div><span>確定性解讀</span><h3>各項證據狀態</h3></div><small>{interpretation.model_version}</small></header><div>{Object.entries(interpretation.components).map(([key, item]) => <article key={key}><header><strong>{componentLabels[key] || key}</strong><span>{taiwanStatusLabel(item.state)} · {taiwanStatusLabel(item.status)}</span></header><small>{item.as_of ? `資料日期 ${item.as_of}` : taiwanStatusLabel(item.freshness)}</small><ul>{item.reasons.map((reason) => <li key={reason}>{taiwanReasonLabel(reason)}</li>)}</ul></article>)}</div><footer>可用 {interpretation.data_quality.available_components.length} 項 · 無法判定 {interpretation.data_quality.indeterminate_components.length} 項 · 無法取得／不適用 {interpretation.data_quality.unavailable_components.length} 項{interpretation.data_quality.stale_components.length > 0 && ` · 資料較舊 ${interpretation.data_quality.stale_components.length} 項`}{interpretation.data_quality.partial_components.length > 0 && ` · 部分資料 ${interpretation.data_quality.partial_components.length} 項`}</footer></section>;
+	const availableComponents = taiwanComponentList(interpretation.data_quality.available_components);
+	const indeterminateComponents = taiwanComponentList(interpretation.data_quality.indeterminate_components);
+	const unavailableComponents = taiwanComponentList(interpretation.data_quality.unavailable_components);
+	const staleComponents = taiwanComponentList(interpretation.data_quality.stale_components);
+	const partialComponents = taiwanComponentList(interpretation.data_quality.partial_components);
+	return <section className="taiwan-interpretation"><header><div><span>確定性解讀</span><h3>各項證據狀態</h3></div><small>{interpretation.model_version}</small></header><div>{Object.entries(interpretation.components).map(([key, item]) => <article key={key}><header><strong>{componentLabels[key] || key}</strong><span>{taiwanStatusLabel(item.state)} · {taiwanStatusLabel(item.status)}</span></header><small>{item.as_of ? `資料日期 ${item.as_of}` : taiwanStatusLabel(item.freshness)}</small><ul>{item.reasons.map((reason) => <li key={reason}>{taiwanReasonLabel(reason)}</li>)}</ul></article>)}</div><footer>可用 {availableComponents.length} 項 · 無法判定 {indeterminateComponents.length} 項 · 無法取得／不適用 {unavailableComponents.length} 項{staleComponents.length > 0 && ` · 資料較舊 ${staleComponents.length} 項`}{partialComponents.length > 0 && ` · 部分資料 ${partialComponents.length} 項`}</footer></section>;
 }
 
 function ResearchView({ research }: { research: Research }) {

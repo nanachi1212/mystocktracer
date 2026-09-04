@@ -62,6 +62,14 @@ export function taiwanErrorMessage(reason: unknown, fallback: string) {
 	return fallback;
 }
 
+// Backend TaiwanInterpretationDataQuality lists (available/indeterminate/unavailable/stale/partial
+// component names) are documented as plain lists with no null-vs-empty distinction, but Go
+// serializes a zero-length unset []string as JSON null rather than []. Normalize that null to []
+// at the point of use so a legitimately empty category never crashes `.length` reads.
+export function taiwanComponentList(value: string[] | null | undefined) {
+	return value ?? [];
+}
+
 export function taiwanReasonLabel(value: string) {
 	return value
 		.replace('completed 5-session and 20-session returns are both required', '需要完整的 5 日與 20 日收盤報酬資料')

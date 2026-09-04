@@ -67,6 +67,8 @@
 .taiwan-research-result header > span { color: var(--blue); font-weight: 700; }
 .taiwan-research-result p { line-height: 1.65; }
 .taiwan-research-unavailable { border-color: #ead5b6; background: #fffaf2; }
+.taiwan-research-error-boundary { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 16px 18px; padding: 14px 16px; border: 1px solid #ead5b6; border-radius: 10px; background: #fffaf2; color: #9b6a25; }
+.taiwan-research-error-boundary button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; }
 @media (max-width: 900px) { .taiwan-metric-grid, .taiwan-detail-grid, .taiwan-industry-list, .taiwan-interpretation > div, .taiwan-research-result > div { grid-template-columns: 1fr; } .taiwan-stock-heading, .taiwan-emotion-summary, .taiwan-ai-action { align-items: stretch; flex-direction: column; } }
 
 /* Portfolio AI inspection */

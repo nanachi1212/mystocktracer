@@ -1,9 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatTaiwanRatio, formatTaiwanTWD, resolveTaiwanWorkspace, taiwanDefaultWorkspace, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath, taiwanStatusLabel } from './taiwan-product';
+import { formatTaiwanRatio, formatTaiwanTWD, resolveTaiwanWorkspace, taiwanComponentList, taiwanDefaultWorkspace, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath, taiwanStatusLabel } from './taiwan-product';
 
 const root = path.resolve(__dirname, '../../..');
+
+describe('taiwanComponentList', () => {
+	it('normalizes the Go nil-slice-as-null quirk to an empty list', () => {
+		expect(taiwanComponentList(null)).toEqual([]);
+		expect(taiwanComponentList(undefined)).toEqual([]);
+	});
+
+	it('passes through a populated list unchanged', () => {
+		expect(taiwanComponentList(['industry', 'fundamentals'])).toEqual(['industry', 'fundamentals']);
+	});
+});
 
 describe('Taiwan-first product shell', () => {
 	it('uses zh-TW metadata without an A-share identity', () => {
