@@ -132,6 +132,33 @@ describe('P1E partial failure isolation — select() settles each dataset indepe
 	});
 });
 
+describe('P1F search zero-result feedback — TaiwanMarketView', () => {
+	const searchBody = () => {
+		const source = overviewSource();
+		return source.slice(source.indexOf('const search = async'), source.indexOf('const select = async'));
+	};
+
+	it('shows an explicit Traditional Chinese not-found message (naming the query) when securities search returns zero results', () => {
+		expect(searchBody()).toContain('else if (payload.data.securities.length === 0) setError(`找不到符合「${value.trim()}」的台灣證券`);');
+	});
+
+	it('zero-result feedback is set directly, not routed through taiwanErrorMessage (stays distinct from request-failure wording)', () => {
+		const body = searchBody();
+		expect(body).toContain('找不到符合');
+		expect(body).not.toMatch(/length === 0\) setError\(taiwanErrorMessage/);
+	});
+
+	it('search() clears any previous error/not-found message at the start of a new search, so a later 1-result or multi-result search clears a stale not-found message', () => {
+		expect(searchBody()).toContain("setLoading(true); setError('');");
+	});
+
+	it('a zero-result search does not clear the previously selected security or its already-loaded data', () => {
+		const body = searchBody();
+		expect(body).not.toMatch(/length === 0\)[^;]*setSelected/);
+		expect(body).not.toMatch(/length === 0\)[^;]*setQuote/);
+	});
+});
+
 describe('P1E refresh behavior — TaiwanMarketView retries the currently selected security', () => {
 	it('keeps a ref of the current selection, updated from `selected` but read only inside the refresh effect', () => {
 		const source = overviewSource();

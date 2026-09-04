@@ -128,11 +128,13 @@ describe('Taiwan-first product shell', () => {
 	it('does not claim Taiwan provider data is connected when only the backend endpoint resolved', () => {
 		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
 		// `config` only means the backend HTTP endpoint was resolved — it says nothing about
-		// whether TWSE/TPEx data actually loaded. The topbar wording must not conflate the two;
-		// per-scope status (available/partial/stale/unavailable) is shown by each Taiwan view
-		// itself, sourced from backend status/freshness fields.
+		// whether TWSE/TPEx data actually loaded, and (P1F) resolving `config` never proves the
+		// backend process is actually reachable either. The topbar wording must not overclaim
+		// a live connection; per-scope status (available/partial/stale/unavailable) is shown by
+		// each Taiwan view itself, sourced from backend status/freshness fields.
 		expect(app).not.toContain('台股官方資料服務已連線');
-		expect(app).toContain('後端服務已連線');
+		expect(app).not.toContain('後端服務已連線');
+		expect(app).toContain('後端服務已設定');
 	});
 
 	it('clears the previous scope/selection before a new Taiwan request settles, with a race guard', () => {
@@ -214,6 +216,34 @@ describe('P1E refresh behavior — retries the current selection instead of a fi
 	it('TaiwanStockResearchWorkspace: the initial default (2330) is preserved for a fresh mount with nothing selected yet', () => {
 		const source = researchSource();
 		expect(source).toMatch(/if \(selectedRef\.current\) void select\(selectedRef\.current\);\s*else void search\('2330'\);/);
+	});
+});
+
+describe('P1F search zero-result feedback — TaiwanStockResearchWorkspace', () => {
+	const researchSource = () => fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanStockResearchWorkspace.tsx'), 'utf8');
+	const searchBody = () => {
+		const source = researchSource();
+		return source.slice(source.indexOf('const search = async'), source.indexOf('const select = async'));
+	};
+
+	it('shows an explicit Traditional Chinese not-found message (naming the query) when securities search returns zero results', () => {
+		expect(searchBody()).toContain('else if (payload.data.securities.length === 0) setError(`找不到符合「${value.trim()}」的台灣證券`);');
+	});
+
+	it('zero-result feedback is set directly, not routed through taiwanErrorMessage (stays distinct from request-failure wording)', () => {
+		const body = searchBody();
+		expect(body).toContain('找不到符合');
+		expect(body).not.toMatch(/length === 0\) setError\(taiwanErrorMessage/);
+	});
+
+	it('search() clears any previous error/not-found message at the start of a new search, so a later 1-result or multi-result search clears a stale not-found message', () => {
+		expect(searchBody()).toContain("setLoading(true); setError('');");
+	});
+
+	it('a zero-result search does not clear the previously selected security or its already-loaded data', () => {
+		const body = searchBody();
+		expect(body).not.toMatch(/length === 0\)[^;]*setSelected/);
+		expect(body).not.toMatch(/length === 0\)[^;]*setIntelligence/);
 	});
 });
 

@@ -43,6 +43,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 			const payload = await requestJSON<{ data: { securities: SecurityIdentity[] } }>(config, `/api/v1/tw/securities?query=${encodeURIComponent(value.trim())}`);
 			setMatches(payload.data.securities);
 			if (payload.data.securities.length === 1) await select(payload.data.securities[0]);
+			else if (payload.data.securities.length === 0) setError(`找不到符合「${value.trim()}」的台灣證券`);
 		} catch (reason) { setError(taiwanErrorMessage(reason, '台灣證券搜尋失敗')); }
 		finally { setLoading(false); }
 	};

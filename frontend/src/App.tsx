@@ -666,7 +666,7 @@ export function App() {
 	const currentLoadState = isTaiwanWorkspace ? config ? 'ready' : 'loading' : workspaceMode === 'limit-up' ? limitUpState : workspaceMode === 'mastery' || workspaceMode === 'reviews' || workspaceMode === 'stock-ai' || workspaceMode === 'portfolio-inspection' || workspaceMode === 'ai' || workspaceMode === 'market' ? 'ready' : foundationState;
 	const currentStatusText = workspaceMode === 'limit-up'
 		? limitUpState === 'loading' ? '同步连板梯队' : limitUpState === 'error' ? '连板数据异常' : '连板结构已更新'
-		: isTaiwanWorkspace ? config ? '後端服務已連線' : '正在連線後端服務' : workspaceMode === 'mastery' ? '游资心法库已连接' : workspaceMode === 'reviews' ? '复盘资料库已连接' : workspaceMode === 'stock-ai' ? '个股分析引擎已连接' : workspaceMode === 'portfolio-inspection' ? '持仓巡检引擎已连接' : workspaceMode === 'ai' ? 'AI 助手已连接' : workspaceMode === 'market' ? '行情数据层已连接' : statusText;
+		: isTaiwanWorkspace ? config ? '後端服務已設定' : '正在取得後端設定' : workspaceMode === 'mastery' ? '游资心法库已连接' : workspaceMode === 'reviews' ? '复盘资料库已连接' : workspaceMode === 'stock-ai' ? '个股分析引擎已连接' : workspaceMode === 'portfolio-inspection' ? '持仓巡检引擎已连接' : workspaceMode === 'ai' ? 'AI 助手已连接' : workspaceMode === 'market' ? '行情数据层已连接' : statusText;
 	const themeSourceStatus = overviewMeta?.source === 'theme-radar:fusion'
 		? overviewMeta.carry_forward ? '行业趋势 · 开盘啦衰减融合' : '行业趋势 · 开盘啦融合'
 		: overviewMeta?.source === 'duanxianxia:kaipanla'
