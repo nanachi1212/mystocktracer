@@ -1,8 +1,9 @@
 import { LoaderCircle, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { BackendConfig, InstitutionalHistory, KLine, MarginHistory, MarketIndexSeries, Quote, SecurityIdentity, TaiwanFundamentals } from '../../lib/backend';
 import { requestJSON } from '../../lib/backend';
+import { runScopedRequest } from '../../lib/taiwan-product';
 import { CoreIndexView, SourceNotice } from './MarketDataViews';
 
 export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig | null; refreshKey: number }) {
@@ -18,6 +19,7 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 	const [selectedIndex, setSelectedIndex] = useState('taiex');
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
+	const selectRequestID = useRef(0);
 
 	const search = async (value = query) => {
 		if (!config || !value.trim()) return;
@@ -32,20 +34,26 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 
 	const select = async (security: SecurityIdentity) => {
 		if (!config) return;
-		setSelected(security); setLoading(true); setError('');
-		try {
-			const [quotePayload, linePayload, institutionalPayload, marginPayload, fundamentalsPayload] = await Promise.all([
-				requestJSON<{ data: Quote[] }>(config, `/api/v1/tw/quotes?symbols=${encodeURIComponent(security.canonical)}`),
-				requestJSON<{ data: KLine[] }>(config, `/api/v1/tw/kline?symbol=${encodeURIComponent(security.canonical)}&limit=120`),
-				requestJSON<{ data: InstitutionalHistory }>(config, `/api/v1/tw/institutional?symbol=${encodeURIComponent(security.canonical)}&limit=20`),
-				requestJSON<{ data: MarginHistory }>(config, `/api/v1/tw/margin?symbol=${encodeURIComponent(security.canonical)}&limit=20`),
-				requestJSON<{ data: TaiwanFundamentals }>(config, `/api/v1/tw/fundamentals?symbol=${encodeURIComponent(security.canonical)}&months=24`),
-			]);
-			setQuote(quotePayload.data[0] || null); setLines(linePayload.data);
-			setInstitutional(institutionalPayload.data); setMargin(marginPayload.data);
-			setFundamentals(fundamentalsPayload.data);
-		} catch (reason) { setError(reason instanceof Error ? reason.message : '台股行情載入失敗'); }
-		finally { setLoading(false); }
+		setSelected(security);
+		// Clear the previous selection's data immediately so a still-loading new symbol never
+		// renders under the old symbol's heading, and drop a stale response if the user has
+		// since selected another symbol.
+		await runScopedRequest(selectRequestID, () => Promise.all([
+			requestJSON<{ data: Quote[] }>(config, `/api/v1/tw/quotes?symbols=${encodeURIComponent(security.canonical)}`),
+			requestJSON<{ data: KLine[] }>(config, `/api/v1/tw/kline?symbol=${encodeURIComponent(security.canonical)}&limit=120`),
+			requestJSON<{ data: InstitutionalHistory }>(config, `/api/v1/tw/institutional?symbol=${encodeURIComponent(security.canonical)}&limit=20`),
+			requestJSON<{ data: MarginHistory }>(config, `/api/v1/tw/margin?symbol=${encodeURIComponent(security.canonical)}&limit=20`),
+			requestJSON<{ data: TaiwanFundamentals }>(config, `/api/v1/tw/fundamentals?symbol=${encodeURIComponent(security.canonical)}&months=24`),
+		]), {
+			onStart: () => { setQuote(null); setLines([]); setInstitutional(null); setMargin(null); setFundamentals(null); setLoading(true); setError(''); },
+			onSuccess: ([quotePayload, linePayload, institutionalPayload, marginPayload, fundamentalsPayload]) => {
+				setQuote(quotePayload.data[0] || null); setLines(linePayload.data);
+				setInstitutional(institutionalPayload.data); setMargin(marginPayload.data);
+				setFundamentals(fundamentalsPayload.data);
+			},
+			onError: (reason) => setError(reason instanceof Error ? reason.message : '台股行情載入失敗'),
+			onSettle: () => setLoading(false),
+		});
 	};
 
 	useEffect(() => {
@@ -61,6 +69,7 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 		<form className="market-filter" onSubmit={submit}><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="輸入 2330、台積電、2330.TWSE 或 6488.TPEX" /></label><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : '搜尋'}</button></form>
 		{error && <div className="market-partial-warning">{error}</div>}
 		{matches.length > 1 && <div className="taiwan-search-results">{matches.map((item) => <button type="button" key={item.canonical} onClick={() => void select(item)}><strong>{item.code} {item.name}</strong><span>{item.exchange} · {item.security_type.toUpperCase()} · {item.currency}</span></button>)}</div>}
+		{loading && selected && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取官方個股資料</div>}
 		{selected && quote && <section className="market-index-detail"><header><div><span>{selected.exchange} · {selected.security_type.toUpperCase()} · {selected.currency}</span><h3>{selected.name} {selected.code}</h3><small>{quote.meta.is_realtime ? '即時行情' : '官方收盤資料'} · {quote.meta.trade_date} · {quote.meta.stale ? '資料較舊' : '最新完成交易資料'}</small></div><div><strong>{quote.price.toLocaleString('zh-TW')}</strong><em className={quote.change_percent > 0 ? 'up' : quote.change_percent < 0 ? 'down' : 'flat'}>{quote.change_percent > 0 ? '+' : ''}{quote.change_percent.toFixed(2)}%</em></div></header><SourceNotice meta={quote.meta} locale="zh-TW" /><div className="market-kline-table"><header><span>日期</span><span>開盤</span><span>最高</span><span>最低</span><span>收盤</span><span>漲跌</span></header>{lines.slice(-10).reverse().map((line) => <article key={line.time}><span>{new Date(line.time).toLocaleDateString('zh-TW')}</span><span>{line.open}</span><span>{line.high}</span><span>{line.low}</span><strong>{line.close}</strong><em>{(line.change_percent || 0).toFixed(2)}%</em></article>)}</div></section>}
 		{institutional && margin && <ChipView institutional={institutional} margin={margin} />}
 		{fundamentals && <FundamentalsView data={fundamentals} />}

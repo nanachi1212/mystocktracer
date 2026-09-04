@@ -54,6 +54,29 @@ export function formatTaiwanTWD(value?: number | null) {
 	return value == null ? '—' : `${(value / 100_000_000).toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 億元`;
 }
 
+// Runs an async task as the latest "generation" of a scoped request (e.g. a market scope tab or
+// a selected stock symbol changing). `ref` is a mutable counter (a useRef(0) works as-is) shared
+// across calls: each call claims the next id, and a call's result is only applied if no newer
+// call has started by the time it settles — so a slow response for a scope/selection the user
+// has since navigated away from can never overwrite what is currently on screen. `onStart` runs
+// synchronously before the task so callers can clear stale data before the new fetch begins.
+export async function runScopedRequest<T>(
+	ref: { current: number },
+	task: () => Promise<T>,
+	handlers: { onStart?: () => void; onSuccess: (value: T) => void; onError?: (reason: unknown) => void; onSettle?: () => void },
+) {
+	const requestID = ++ref.current;
+	handlers.onStart?.();
+	try {
+		const value = await task();
+		if (requestID === ref.current) handlers.onSuccess(value);
+	} catch (reason) {
+		if (requestID === ref.current) handlers.onError?.(reason);
+	} finally {
+		if (requestID === ref.current) handlers.onSettle?.();
+	}
+}
+
 export function taiwanErrorMessage(reason: unknown, fallback: string) {
 	const message = reason instanceof Error ? reason.message : '';
 	if (!message) return fallback;

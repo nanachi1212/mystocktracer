@@ -1,9 +1,9 @@
 import { Bot, LoaderCircle, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { BackendConfig, SecurityIdentity } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
-import { formatTaiwanPercent, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel } from '../lib/taiwan-product';
+import { formatTaiwanPercent, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel } from '../lib/taiwan-product';
 
 export type Evidence = { status: string; freshness?: string; as_of?: string; reason?: string; data?: Record<string, unknown> };
 export type Component = { state: string; status: string; freshness?: string; as_of?: string; reasons: string[] };
@@ -32,6 +32,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 	const [loading, setLoading] = useState(false);
 	const [researching, setResearching] = useState(false);
 	const [error, setError] = useState('');
+	const selectRequestID = useRef(0);
 
 	const search = async (value = query) => {
 		if (!config || !value.trim()) return;
@@ -45,12 +46,16 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 	};
 	const select = async (security: SecurityIdentity) => {
 		if (!config) return;
-		setSelected(security); setResearch(null); setLoading(true); setError('');
-		try {
-			const payload = await requestJSON<{ data: Intelligence }>(config, taiwanIntelligencePath(security.canonical));
-			setIntelligence(payload.data);
-		} catch (reason) { setIntelligence(null); setError(taiwanErrorMessage(reason, '台灣個股研究資料載入失敗')); }
-		finally { setLoading(false); }
+		setSelected(security);
+		// Clear the previous selection's data immediately so a still-loading new symbol never
+		// renders under the old symbol's heading/evidence — and drop a stale response if the
+		// user has since selected another symbol (last-wins by selection order, not arrival order).
+		await runScopedRequest(selectRequestID, () => requestJSON<{ data: Intelligence }>(config, taiwanIntelligencePath(security.canonical)), {
+			onStart: () => { setIntelligence(null); setResearch(null); setLoading(true); setError(''); },
+			onSuccess: (payload) => setIntelligence(payload.data),
+			onError: (reason) => { setIntelligence(null); setError(taiwanErrorMessage(reason, '台灣個股研究資料載入失敗')); },
+			onSettle: () => setLoading(false),
+		});
 	};
 	const generateResearch = async () => {
 		if (!config || !selected) return;
@@ -67,6 +72,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 		<form className="market-filter" onSubmit={submit}><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="輸入 2330、台積電、2330.TWSE 或 6488.TPEX" aria-label="台灣證券名稱或代碼" /></label><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : '搜尋'}</button></form>
 		{error && <div className="market-partial-warning">{error}</div>}
 		{matches.length > 1 && <div className="taiwan-search-results">{matches.map((item) => <button type="button" key={item.canonical} onClick={() => void select(item)}><strong>{item.code} {item.name}</strong><span>{item.exchange} · {taiwanSecurityTypeLabel(item.security_type)}</span></button>)}</div>}
+		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取官方個股資料</div>}
 		{intelligence && <>
 			<section className="taiwan-stock-heading"><div><span>{intelligence.identity.exchange} · {taiwanSecurityTypeLabel(intelligence.identity.security_type)} · {intelligence.identity.currency}</span><h2>{intelligence.identity.name} {intelligence.identity.code}</h2><small>{intelligence.identity.canonical_symbol}{intelligence.identity.industry_name ? ` · ${intelligence.identity.industry_name}` : ''}</small></div>{intelligence.quote.data && <div><strong>{intelligence.quote.data.price.toLocaleString('zh-TW')}</strong><em className={intelligence.quote.data.change_percent > 0 ? 'up' : intelligence.quote.data.change_percent < 0 ? 'down' : 'flat'}>{formatTaiwanPercent(intelligence.quote.data.change_percent, true)}</em></div>}</section>
 			<section className="taiwan-status-card"><div><span className={`taiwan-status ${intelligence.quote.status}`}>{taiwanStatusLabel(intelligence.quote.status)}</span><span>{taiwanStatusLabel(intelligence.quote.freshness)}</span></div><small>資料日期 {intelligence.quote.as_of || intelligence.quote.data?.meta?.trade_date || '未提供'} · 最新完成交易日 {intelligence.quote.target_latest_completed_trading_date || '未提供'}</small></section>

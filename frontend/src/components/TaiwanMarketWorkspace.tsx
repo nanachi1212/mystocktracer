@@ -1,12 +1,12 @@
 import { Activity, BarChart3, Building2, LoaderCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { BackendConfig } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
-import { formatTaiwanPercent, formatTaiwanRatio, formatTaiwanTWD, taiwanErrorMessage, taiwanMarketPath, taiwanScopes, taiwanStatusLabel, type TaiwanScope } from '../lib/taiwan-product';
+import { formatTaiwanPercent, formatTaiwanRatio, formatTaiwanTWD, runScopedRequest, taiwanErrorMessage, taiwanMarketPath, taiwanScopes, taiwanStatusLabel, type TaiwanScope } from '../lib/taiwan-product';
 import { TaiwanMarketView } from './market/TaiwanMarketView';
 
 type View = 'overview' | 'breadth' | 'emotion' | 'industry';
-type CommonScope = { scope: string; status: string; freshness: string; as_of: string | null; target_latest_trading_date: string; included_exchanges: string[]; missing_exchanges: string[] };
+export type CommonScope = { scope: string; status: string; freshness: string; as_of: string | null; target_latest_trading_date: string; included_exchanges: string[]; missing_exchanges: string[] };
 type Breadth = CommonScope & { advancers: number; decliners: number; unchanged: number; no_trade: number; unknown: number; universe_count: number; advance_ratio: number | null; advancing_amount_ratio: number | null; total_amount_twd: number; missing_amount_count: number };
 type Emotion = CommonScope & { model_version: string; confidence: string; state: string; raw: Breadth; components: { breadth_participation: string; capital_participation: string; breadth_capital_relationship: string }; coverage: { direction_coverage: number | null; amount_coverage: number | null } };
 type Industry = { industry_id: string; industry_name: string; exchange: string; constituent_count: number; relative_breadth: number | null; relative_capital: number | null; data_quality: { direction_coverage: number | null; amount_coverage: number | null } };
@@ -17,14 +17,18 @@ export function TaiwanMarketWorkspace({ config, refreshKey, view }: { config: Ba
 	const [data, setData] = useState<Breadth | Emotion | IndustryScope | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
+	const scopeRequestID = useRef(0);
 	useEffect(() => {
 		if (!config || view === 'overview') return;
 		const endpoint = view === 'breadth' ? 'market-breadth' : view === 'emotion' ? 'market-emotion' : 'industry-radar';
-		setLoading(true); setError('');
-		requestJSON<{ data: Breadth | Emotion | IndustryScope }>(config, taiwanMarketPath(endpoint, scope))
-			.then((payload) => setData(payload.data))
-			.catch((reason) => { setData(null); setError(taiwanErrorMessage(reason, '台灣市場資料載入失敗')); })
-			.finally(() => setLoading(false));
+		void runScopedRequest(scopeRequestID, () => requestJSON<{ data: Breadth | Emotion | IndustryScope }>(config, taiwanMarketPath(endpoint, scope)), {
+			// Clear the previous scope's data immediately: the scope tabs already show the new
+			// selection, so the data below must never keep rendering the old scope unlabeled.
+			onStart: () => { setData(null); setLoading(true); setError(''); },
+			onSuccess: (payload) => setData(payload.data),
+			onError: (reason) => { setData(null); setError(taiwanErrorMessage(reason, '台灣市場資料載入失敗')); },
+			onSettle: () => setLoading(false),
+		});
 	}, [config, refreshKey, scope, view]);
 	if (view === 'overview') return <TaiwanMarketView config={config} refreshKey={refreshKey} />;
 	return <div className="taiwan-product-workspace">
@@ -38,7 +42,7 @@ export function TaiwanMarketWorkspace({ config, refreshKey, view }: { config: Ba
 	</div>;
 }
 
-function FreshnessHeader({ data }: { data: CommonScope }) {
+export function FreshnessHeader({ data }: { data: CommonScope }) {
 	return <section className="taiwan-status-card"><div><strong>{data.scope}</strong><span className={`taiwan-status ${data.status}`}>{taiwanStatusLabel(data.status)}</span><span>{taiwanStatusLabel(data.freshness)}</span></div><small>資料日期 {data.as_of || '未提供'} · 最新完成交易日 {data.target_latest_trading_date || '未提供'}</small>{data.missing_exchanges?.length > 0 && <p>缺少市場：{data.missing_exchanges.join('、')}；已納入：{data.included_exchanges.join('、') || '無'}</p>}</section>;
 }
 

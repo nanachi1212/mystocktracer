@@ -1,7 +1,78 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatTaiwanRatio, formatTaiwanTWD, resolveTaiwanWorkspace, taiwanComponentList, taiwanDefaultWorkspace, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath, taiwanStatusLabel } from './taiwan-product';
+import { formatTaiwanRatio, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest, taiwanComponentList, taiwanDefaultWorkspace, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath, taiwanStatusLabel } from './taiwan-product';
+
+/** A promise plus its resolve/reject, so a test can control settlement order explicitly. */
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason: unknown) => void;
+	const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+	return { promise, resolve, reject };
+}
+
+describe('runScopedRequest (scope/selection race safety)', () => {
+	it('clears stale state synchronously via onStart, before the request settles', async () => {
+		const ref = { current: 0 };
+		const events: string[] = [];
+		const first = deferred<string>();
+		const run = runScopedRequest(ref, () => first.promise, {
+			onStart: () => events.push('start'),
+			onSuccess: () => events.push('success'),
+			onError: () => events.push('error'),
+		});
+		// onStart must already have run before the task settles.
+		expect(events).toEqual(['start']);
+		first.resolve('A');
+		await run;
+		expect(events).toEqual(['start', 'success']);
+	});
+
+	it('drops a stale response when a newer request has since started (scope A resolves after B)', async () => {
+		const ref = { current: 0 };
+		const applied: string[] = [];
+		const a = deferred<string>();
+		const runA = runScopedRequest(ref, () => a.promise, { onSuccess: (v) => applied.push(v) });
+		const b = deferred<string>();
+		const runB = runScopedRequest(ref, () => b.promise, { onSuccess: (v) => applied.push(v) });
+		// B starts after A but resolves first; A resolves last and must be ignored.
+		b.resolve('B');
+		await runB;
+		a.resolve('A');
+		await runA;
+		expect(applied).toEqual(['B']);
+	});
+
+	it('a stale rejection is also dropped once a newer request has started', async () => {
+		const ref = { current: 0 };
+		const applied: string[] = [];
+		const errors: unknown[] = [];
+		const a = deferred<string>();
+		const runA = runScopedRequest(ref, () => a.promise, { onSuccess: (v) => applied.push(v), onError: (e) => errors.push(e) });
+		const b = deferred<string>();
+		const runB = runScopedRequest(ref, () => b.promise, { onSuccess: (v) => applied.push(v), onError: (e) => errors.push(e) });
+		b.resolve('B');
+		await runB;
+		a.reject(new Error('stale failure'));
+		await runA;
+		expect(applied).toEqual(['B']);
+		expect(errors).toEqual([]);
+	});
+
+	it('onSettle only fires for the request that is still current', async () => {
+		const ref = { current: 0 };
+		const settled: string[] = [];
+		const a = deferred<string>();
+		const runA = runScopedRequest(ref, () => a.promise, { onSuccess: () => {}, onSettle: () => settled.push('A') });
+		const b = deferred<string>();
+		const runB = runScopedRequest(ref, () => b.promise, { onSuccess: () => {}, onSettle: () => settled.push('B') });
+		b.resolve('B');
+		await runB;
+		a.resolve('A');
+		await runA;
+		expect(settled).toEqual(['B']);
+	});
+});
 
 const root = path.resolve(__dirname, '../../..');
 
@@ -52,6 +123,36 @@ describe('Taiwan-first product shell', () => {
 		expect(source).toContain('onClick={() => void generateResearch()}');
 		expect(source).not.toContain('/api/v1/stocks/ai-analysis');
 		expect(source).not.toContain('/api/v1/ai/ws');
+	});
+
+	it('does not claim Taiwan provider data is connected when only the backend endpoint resolved', () => {
+		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
+		// `config` only means the backend HTTP endpoint was resolved — it says nothing about
+		// whether TWSE/TPEx data actually loaded. The topbar wording must not conflate the two;
+		// per-scope status (available/partial/stale/unavailable) is shown by each Taiwan view
+		// itself, sourced from backend status/freshness fields.
+		expect(app).not.toContain('台股官方資料服務已連線');
+		expect(app).toContain('後端服務已連線');
+	});
+
+	it('clears the previous scope/selection before a new Taiwan request settles, with a race guard', () => {
+		const market = fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanMarketWorkspace.tsx'), 'utf8');
+		expect(market).toContain('runScopedRequest(scopeRequestID');
+		expect(market).toContain('setData(null); setLoading(true)');
+		const stockResearch = fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanStockResearchWorkspace.tsx'), 'utf8');
+		expect(stockResearch).toContain('runScopedRequest(selectRequestID');
+		const overview = fs.readFileSync(path.join(root, 'frontend/src/components/market/TaiwanMarketView.tsx'), 'utf8');
+		expect(overview).toContain('runScopedRequest(selectRequestID');
+	});
+
+	it('keeps data_date and latest_completed_trading_day as distinct, backend-sourced labels', () => {
+		const stockResearch = fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanStockResearchWorkspace.tsx'), 'utf8');
+		expect(stockResearch).toMatch(/資料日期[\s\S]*最新完成交易日/);
+		const market = fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanMarketWorkspace.tsx'), 'utf8');
+		expect(market).toMatch(/資料日期[\s\S]*最新完成交易日/);
+		// Neither computes a trading day from the client clock — only backend response fields.
+		expect(stockResearch).not.toContain('new Date()');
+		expect(market).not.toContain('new Date()');
 	});
 
 	it('builds only Taiwan M2-M5 contracts', () => {
