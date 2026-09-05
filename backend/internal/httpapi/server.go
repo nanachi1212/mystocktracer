@@ -53,6 +53,7 @@ type Server struct {
 	taiwanChip            TaiwanChipProvider
 	taiwanSnapshot        TaiwanSnapshotProvider
 	taiwanBreadth         TaiwanBreadthProvider
+	taiwanScreener        TaiwanScreenerProvider
 	taiwanEmotion         TaiwanEmotionProvider
 	taiwanIndustryRadar   TaiwanIndustryRadarProvider
 	taiwanIntelligence    TaiwanStockIntelligenceProvider
@@ -140,7 +141,7 @@ func NewServer(config any) *Server {
 	if cfg.StockDirectory == nil {
 		cfg.StockDirectory = eastMoneyClient
 	}
-	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanEmotion == nil || cfg.TaiwanIndustryRadar == nil || cfg.TaiwanIntelligence == nil {
+	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanScreener == nil || cfg.TaiwanEmotion == nil || cfg.TaiwanIndustryRadar == nil || cfg.TaiwanIntelligence == nil {
 		taiwanClient := taiwan.NewClient(taiwan.Config{})
 		if cfg.TaiwanDirectory == nil {
 			cfg.TaiwanDirectory = taiwanClient
@@ -159,6 +160,9 @@ func NewServer(config any) *Server {
 		}
 		if cfg.TaiwanBreadth == nil {
 			cfg.TaiwanBreadth = taiwanClient
+		}
+		if cfg.TaiwanScreener == nil {
+			cfg.TaiwanScreener = taiwanClient
 		}
 		if cfg.TaiwanEmotion == nil {
 			cfg.TaiwanEmotion = taiwanClient
@@ -321,6 +325,7 @@ func NewServer(config any) *Server {
 		taiwanChip:            cfg.TaiwanChip,
 		taiwanSnapshot:        cfg.TaiwanSnapshot,
 		taiwanBreadth:         cfg.TaiwanBreadth,
+		taiwanScreener:        cfg.TaiwanScreener,
 		taiwanEmotion:         cfg.TaiwanEmotion,
 		taiwanIndustryRadar:   cfg.TaiwanIndustryRadar,
 		taiwanIntelligence:    cfg.TaiwanIntelligence,
@@ -516,6 +521,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/tw/margin", s.taiwanMarginHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/data-status", s.taiwanDataStatusHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/market-breadth", s.taiwanMarketBreadthHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/screener", s.taiwanScreenerHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/market-emotion", s.taiwanMarketEmotionHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/industry-radar", s.taiwanIndustryRadarHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/stocks/{symbol}/intelligence", s.taiwanStockIntelligenceHandler)

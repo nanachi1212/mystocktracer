@@ -2,8 +2,10 @@ package taiwan
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -165,5 +167,76 @@ func TestMarketBreadthUsesOneBulkDailyRequestPerExchange(t *testing.T) {
 	}
 	if dailyCalls.Load() != 2 || got.TWSE.UniverseCount != 1 || got.TWSE.Advancers != 1 || got.TPEX.Decliners != 1 || got.Combined.UniverseCount != 2 {
 		t.Fatalf("calls=%d breadth=%+v", dailyCalls.Load(), got)
+	}
+}
+
+// TestScreenerSnapshotUsesOneBulkDailyRequestPerExchangeRegardlessOfRowCount proves the Screener's
+// data source makes exactly one TWSE + one TPEx daily request in total, even with a directory and
+// daily-quote fixture of several hundred securities — never one request per security (the same
+// property MarketBreadth already guarantees, since ScreenerSnapshot reuses the identical path).
+func TestScreenerSnapshotUsesOneBulkDailyRequestPerExchangeRegardlessOfRowCount(t *testing.T) {
+	const rowsPerExchange = 300
+	var directoryCalls, dailyCalls atomic.Int32
+
+	var twseDirectory, twseDaily, tpexDirectory, tpexDaily strings.Builder
+	twseDirectory.WriteString("[")
+	tpexDirectory.WriteString("[")
+	twseDaily.WriteString(`{"data":[`)
+	tpexDaily.WriteString(`{"data":[`)
+	for i := 0; i < rowsPerExchange; i++ {
+		if i > 0 {
+			twseDirectory.WriteString(",")
+			tpexDirectory.WriteString(",")
+			twseDaily.WriteString(",")
+			tpexDaily.WriteString(",")
+		}
+		twseCode := fmt.Sprintf("1%03d", i)
+		tpexCode := fmt.Sprintf("2%03d", i)
+		fmt.Fprintf(&twseDirectory, `{"公司代號":"%s","公司簡稱":"twse-%d"}`, twseCode, i)
+		fmt.Fprintf(&tpexDirectory, `{"SecuritiesCompanyCode":"%s","CompanyAbbreviation":"tpex-%d"}`, tpexCode, i)
+		fmt.Fprintf(&twseDaily, `["%s","twse-%d","1000","1","100000","99","101","98","100","+","1"]`, twseCode, i)
+		fmt.Fprintf(&tpexDaily, `["%s","tpex-%d","100","-2","102","103","99","100","2000","200000"]`, tpexCode, i)
+	}
+	twseDirectory.WriteString("]")
+	tpexDirectory.WriteString("]")
+	twseDaily.WriteString("]}")
+	tpexDaily.WriteString("]}")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			directoryCalls.Add(1)
+			_, _ = w.Write([]byte(twseDirectory.String()))
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[]`))
+		case "/mopsfin_t187ap03_O":
+			directoryCalls.Add(1)
+			_, _ = w.Write([]byte(tpexDirectory.String()))
+		case "/rwd/zh/afterTrading/MI_INDEX":
+			dailyCalls.Add(1)
+			_, _ = w.Write([]byte(twseDaily.String()))
+		case "/www/zh-tw/afterTrading/dailyQuotes":
+			dailyCalls.Add(1)
+			_, _ = w.Write([]byte(tpexDaily.String()))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, TWSEReportBaseURL: server.URL, TPExReportBaseURL: server.URL, HTTPClient: server.Client(), Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerSnapshot(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dailyCalls.Load() != 2 {
+		t.Fatalf("expected exactly 2 daily requests (one per exchange) regardless of %d rows per exchange, got %d", rowsPerExchange, dailyCalls.Load())
+	}
+	if len(rows) != rowsPerExchange*2 {
+		t.Fatalf("expected %d total rows, got %d", rowsPerExchange*2, len(rows))
+	}
+	if freshness.DailyStatus != "current" {
+		t.Fatalf("unexpected freshness: %+v", freshness)
 	}
 }

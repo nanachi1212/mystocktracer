@@ -34,3 +34,18 @@ func hasExchangeRows(rows []foundation.TaiwanDailySnapshot, exchange string) boo
 	}
 	return false
 }
+
+// ScreenerSnapshot returns the market-wide daily rows for `now`'s latest completed trading day,
+// reusing the exact same bulk refresh path as MarketBreadth (one TWSE + one TPEx request total,
+// never per-security) so a Screener never causes N+1 provider calls. Filtering/sorting/pagination
+// happen entirely in the httpapi layer over these in-memory rows — this method does no filtering.
+func (c *Client) ScreenerSnapshot(ctx context.Context, now time.Time) ([]foundation.TaiwanDailySnapshot, foundation.TaiwanFreshness, error) {
+	target := c.calendar.LatestCompleted(now, marketCutoffHour, marketCutoffMinute)
+	identities, err := c.Directory(ctx)
+	if err != nil {
+		return nil, foundation.TaiwanFreshness{}, err
+	}
+	c.refreshDaily(ctx, target, identityAllowlist(identities))
+	rows := c.dailyOn(target)
+	return rows, c.Freshness(now), nil
+}

@@ -97,6 +97,10 @@ type TaiwanBreadthProvider interface {
 	MarketBreadth(ctx context.Context, now time.Time) (foundation.TaiwanMarketBreadth, error)
 }
 
+type TaiwanScreenerProvider interface {
+	ScreenerSnapshot(ctx context.Context, now time.Time) ([]foundation.TaiwanDailySnapshot, foundation.TaiwanFreshness, error)
+}
+
 type TaiwanEmotionProvider interface {
 	MarketEmotion(ctx context.Context, now time.Time) (marketemotion.TaiwanMarketEmotion, error)
 }
@@ -156,6 +160,7 @@ type Config struct {
 	TaiwanChip           TaiwanChipProvider
 	TaiwanSnapshot       TaiwanSnapshotProvider
 	TaiwanBreadth        TaiwanBreadthProvider
+	TaiwanScreener       TaiwanScreenerProvider
 	TaiwanEmotion        TaiwanEmotionProvider
 	TaiwanIndustryRadar  TaiwanIndustryRadarProvider
 	TaiwanIntelligence   TaiwanStockIntelligenceProvider
