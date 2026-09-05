@@ -1,12 +1,15 @@
-import { LoaderCircle } from 'lucide-react';
+import { LoaderCircle, Star } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { BackendConfig } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
 import {
-	formatTaiwanPercent, formatTaiwanTWD, runScopedRequest, taiwanErrorMessage, taiwanScopes, taiwanScreenerDefaultFilters,
-	taiwanScreenerOrderOptions, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanSecurityTypeLabel, taiwanStatusLabel,
-	validateTaiwanScreenerFilters, type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
+	addTaiwanWatchlistSecurity, fetchTaiwanWatchlist, formatTaiwanPercent, formatTaiwanTWD, removeTaiwanWatchlistSecurity, runScopedRequest,
+	taiwanErrorMessage, taiwanScopes, taiwanScreenerDefaultFilters, taiwanScreenerOrderOptions, taiwanScreenerPath, taiwanScreenerSortOptions,
+	taiwanSecurityTypeLabel, taiwanStatusLabel, validateTaiwanScreenerFilters,
+	type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
 } from '../lib/taiwan-product';
+
+export type WatchlistMembershipState = 'idle' | 'loading' | 'ready' | 'error';
 
 // M7B — Taiwan Screener. Loads/screens/sorts/paginates entirely through the existing M7A backend
 // contract (GET /api/v1/tw/screener); this component never fetches the full market and filters it
@@ -15,6 +18,14 @@ import {
 // depends on, so Apply, Clear, pagination, and the global refresh all funnel through one request
 // path, and runScopedRequest (the same guard used across every other Taiwan view) guarantees a
 // slower stale response can never overwrite a newer one.
+//
+// M7C — Watchlist integration. Membership is loaded ONCE per mount/refresh via the existing
+// fetchTaiwanWatchlist(config) — deliberately its own effect depending only on [config, refreshKey],
+// never on `applied`, so changing filters/sort/scope/page never re-fetches the Watchlist. Add/remove
+// reuse the existing addTaiwanWatchlistSecurity/removeTaiwanWatchlistSecurity helpers with a
+// pessimistic update (local Set only changes after the server call succeeds), matching the same
+// pattern already used in TaiwanMarketView/TaiwanStockResearchWorkspace — no new Watchlist contract,
+// no per-row membership or quote requests.
 export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: { config: BackendConfig | null; refreshKey: number; onOpenResearch: (canonical: string) => void }) {
 	const [draft, setDraft] = useState<TaiwanScreenerFilters>(taiwanScreenerDefaultFilters);
 	const [applied, setApplied] = useState<TaiwanScreenerFilters>(taiwanScreenerDefaultFilters);
@@ -23,6 +34,12 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
 	const requestID = useRef(0);
+
+	const [watchlistState, setWatchlistState] = useState<WatchlistMembershipState>('idle');
+	const [watchlistedCanonicals, setWatchlistedCanonicals] = useState<Set<string>>(new Set());
+	const [busyCanonicals, setBusyCanonicals] = useState<Set<string>>(new Set());
+	const [mutationErrors, setMutationErrors] = useState<Record<string, string>>({});
+	const watchlistRequestID = useRef(0);
 
 	// Fetches only while this workspace is mounted, and only in reaction to `applied` changing (Apply,
 	// Clear, pagination) or an explicit global refresh — never on a timer, never merely because the
@@ -36,6 +53,19 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 			onSettle: () => setLoading(false),
 		});
 	}, [config, refreshKey, applied]);
+
+	// Watchlist membership: independent of `applied` on purpose — depends only on [config, refreshKey]
+	// so it loads once per mount and once per explicit global refresh, never per filter/sort/page
+	// change. A load failure never touches Screener data/error state above — it only moves this state
+	// to 'error', which the row-level rendering below treats as "unknown", never as "not saved".
+	useEffect(() => {
+		if (!config) return;
+		void runScopedRequest(watchlistRequestID, () => fetchTaiwanWatchlist(config), {
+			onStart: () => setWatchlistState('loading'),
+			onSuccess: (list) => { setWatchlistedCanonicals(new Set(list.map((item) => item.canonical))); setWatchlistState('ready'); },
+			onError: () => setWatchlistState('error'),
+		});
+	}, [config, refreshKey]);
 
 	const applyFilters = () => {
 		const message = validateTaiwanScreenerFilters(draft);
@@ -61,13 +91,49 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 		setApplied((current) => ({ ...current, offset: current.offset + current.limit }));
 	};
 
+	// Pessimistic add/remove: the local Set only changes after the server call actually succeeds, so
+	// a failure always leaves the prior confirmed membership in place — never a false optimistic state.
+	// The busy-set guard at entry (mirrored by disabling the button while busy) makes a second click
+	// for the same canonical a no-op until the first mutation settles, so POST/DELETE can never race
+	// for one security.
+	const toggleWatchlist = async (canonical: string) => {
+		if (!config || watchlistState !== 'ready' || busyCanonicals.has(canonical)) return;
+		const saved = watchlistedCanonicals.has(canonical);
+		setBusyCanonicals((current) => new Set(current).add(canonical));
+		setMutationErrors((current) => {
+			if (!(canonical in current)) return current;
+			const next = { ...current };
+			delete next[canonical];
+			return next;
+		});
+		try {
+			if (saved) {
+				await removeTaiwanWatchlistSecurity(config, canonical);
+				setWatchlistedCanonicals((current) => { const next = new Set(current); next.delete(canonical); return next; });
+			} else {
+				await addTaiwanWatchlistSecurity(config, canonical);
+				setWatchlistedCanonicals((current) => new Set(current).add(canonical));
+			}
+		} catch (reason) {
+			setMutationErrors((current) => ({ ...current, [canonical]: taiwanErrorMessage(reason, saved ? '移除自選失敗' : '加入自選失敗') }));
+		} finally {
+			setBusyCanonicals((current) => { const next = new Set(current); next.delete(canonical); return next; });
+		}
+	};
+
 	return <div className="taiwan-product-workspace taiwan-screener-workspace">
 		<ScreenerFilterPanel draft={draft} onChange={setDraft} onApply={applyFilters} onClear={clearFilters} localError={localError} />
 		{error && <div className="market-partial-warning">{error}</div>}
+		{watchlistState === 'error' && <div className="market-partial-warning">自選股狀態暫時無法取得</div>}
 		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取台股選股資料</div>}
 		{data && <ScreenerSummary data={data} />}
 		{data && data.total === 0 && <div className="taiwan-empty-state"><strong>沒有符合目前條件的台灣證券</strong><p>可放寬篩選條件或按下「清除條件」查看全部結果。</p></div>}
-		{data && data.securities.length > 0 && <ScreenerTable securities={data.securities} onOpenResearch={onOpenResearch} />}
+		{data && data.securities.length > 0 && <ScreenerTable
+			securities={data.securities} onOpenResearch={onOpenResearch}
+			watchlistState={watchlistState} watchlistedCanonicals={watchlistedCanonicals}
+			busyCanonicals={busyCanonicals} mutationErrors={mutationErrors}
+			onToggleWatchlist={(canonical) => void toggleWatchlist(canonical)}
+		/>}
 		{data && <ScreenerPagination data={data} loading={loading} onPrevious={goPrevious} onNext={goNext} />}
 	</div>;
 }
@@ -120,17 +186,39 @@ export function ScreenerSummary({ data }: { data: TaiwanScreenerResponse }) {
 	return <section className="taiwan-status-card"><div><strong>{data.scope}</strong><span className={`taiwan-status ${data.freshness}`}>{taiwanStatusLabel(data.freshness)}</span><span>{data.total.toLocaleString('zh-TW')} 檔符合條件</span></div><small>資料日期 {data.as_of || '未提供'}</small></section>;
 }
 
-export function ScreenerTable({ securities, onOpenResearch }: { securities: TaiwanScreenerSecurity[]; onOpenResearch: (canonical: string) => void }) {
+export function ScreenerTable({ securities, onOpenResearch, watchlistState, watchlistedCanonicals, busyCanonicals, mutationErrors, onToggleWatchlist }: {
+	securities: TaiwanScreenerSecurity[];
+	onOpenResearch: (canonical: string) => void;
+	watchlistState: WatchlistMembershipState;
+	watchlistedCanonicals: Set<string>;
+	busyCanonicals: Set<string>;
+	mutationErrors: Record<string, string>;
+	onToggleWatchlist: (canonical: string) => void;
+}) {
 	return <div className="taiwan-screener-table-wrap"><table className="taiwan-screener-table">
-		<thead><tr><th>證券</th><th>市場</th><th>價格</th><th>漲跌幅</th><th>成交量</th><th>成交金額</th><th>資料日期</th></tr></thead>
-		<tbody>{securities.map((item) => <ScreenerRow key={item.canonical} security={item} onOpen={() => onOpenResearch(item.canonical)} />)}</tbody>
+		<thead><tr><th>證券</th><th>市場</th><th>價格</th><th>漲跌幅</th><th>成交量</th><th>成交金額</th><th>資料日期</th><th>自選</th></tr></thead>
+		<tbody>{securities.map((item) => <ScreenerRow
+			key={item.canonical} security={item} onOpen={() => onOpenResearch(item.canonical)}
+			membershipState={watchlistState} saved={watchlistedCanonicals.has(item.canonical)}
+			busy={busyCanonicals.has(item.canonical)} mutationError={mutationErrors[item.canonical]}
+			onToggleWatchlist={() => onToggleWatchlist(item.canonical)}
+		/>)}</tbody>
 	</table></div>;
 }
 
 // Pure/presentational row. Clicking the identity area hands the exact backend `canonical` (never
 // code alone, never re-inferred) to the caller's existing stock-research handoff — this component
-// owns no navigation state of its own.
-export function ScreenerRow({ security, onOpen }: { security: TaiwanScreenerSecurity; onOpen: () => void }) {
+// owns no navigation state of its own. The Watchlist action is a separate sibling <td>/button (never
+// nested inside the identity button), so clicking it can never also trigger onOpen.
+export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mutationError, onToggleWatchlist }: {
+	security: TaiwanScreenerSecurity;
+	onOpen: () => void;
+	membershipState: WatchlistMembershipState;
+	saved: boolean;
+	busy: boolean;
+	mutationError?: string;
+	onToggleWatchlist: () => void;
+}) {
 	const tone = security.change_percent == null ? '' : security.change_percent > 0 ? 'up' : security.change_percent < 0 ? 'down' : 'flat';
 	return <tr>
 		<td><button type="button" className="taiwan-screener-identity" onClick={onOpen}><strong>{security.name} {security.code}</strong></button></td>
@@ -140,5 +228,32 @@ export function ScreenerRow({ security, onOpen }: { security: TaiwanScreenerSecu
 		<td>{security.volume == null ? '—' : security.volume.toLocaleString('zh-TW')}</td>
 		<td>{formatTaiwanTWD(security.amount)}</td>
 		<td>{security.trade_date || '—'}</td>
+		<td><ScreenerWatchlistAction membershipState={membershipState} saved={saved} busy={busy} mutationError={mutationError} onToggle={onToggleWatchlist} /></td>
 	</tr>;
+}
+
+// Pure/presentational. `membershipState !== 'ready'` (idle/loading/error) never renders an add/remove
+// button — an unknown membership must never be misrepresented as "not saved". Only 'ready' shows the
+// actionable toggle, mirroring the existing `.taiwan-watchlist-toggle` style/semantics used in
+// TaiwanMarketView/TaiwanStockResearchWorkspace (same Star icon, same `.saved` styling).
+export function ScreenerWatchlistAction({ membershipState, saved, busy, mutationError, onToggle }: {
+	membershipState: WatchlistMembershipState;
+	saved: boolean;
+	busy: boolean;
+	mutationError?: string;
+	onToggle: () => void;
+}) {
+	if (membershipState === 'error') {
+		return <span className="taiwan-screener-watchlist-unavailable">自選狀態無法取得</span>;
+	}
+	if (membershipState !== 'ready') {
+		return <span className="taiwan-screener-watchlist-unavailable">自選狀態讀取中</span>;
+	}
+	return <div>
+		<button type="button" className={`taiwan-watchlist-toggle${saved ? ' saved' : ''}`} onClick={onToggle} disabled={busy}>
+			{busy ? <LoaderCircle className="spin" size={14} /> : <Star size={14} />}
+			{saved ? '移除自選' : '加入自選'}
+		</button>
+		{mutationError && <span className="taiwan-watchlist-toggle-error">{mutationError}</span>}
+	</div>;
 }
