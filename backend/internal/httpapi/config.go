@@ -16,6 +16,7 @@ import (
 	"easy-stock/backend/internal/sector"
 	"easy-stock/backend/internal/stockanalysis"
 	"easy-stock/backend/internal/strategy/inflection"
+	"easy-stock/backend/internal/taiwanwatchlist"
 )
 
 type RealtimeProvider interface {
@@ -166,12 +167,14 @@ type Config struct {
 	PortfolioDBPath      string
 	MarketEmotionDBPath  string
 	ThemeRadarDBPath     string
+	WatchlistDBPath      string
 	DuanxianxiaBaseURL   string
 	WeChatAPIURL         string
 	ReviewHTTP           *http.Client
 	ReviewStore          *review.Store
 	PortfolioStore       *portfolioinspection.Store
 	MarketEmotionStore   *marketemotion.Store
+	WatchlistStore       *taiwanwatchlist.Store
 	ReviewImporter       ReviewImporter
 	SettingsPath         string
 	SettingsStore        *appsettings.Store
