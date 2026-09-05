@@ -253,6 +253,10 @@ func (c *Client) statement(ctx context.Context, s foundation.SecurityIdentity) (
 	if income == nil {
 		return foundation.FinancialStatementPeriod{}, fmt.Errorf("financial category unsupported")
 	}
+	item, err := parseIncomeStatementRow(s, category, incomeURL, income)
+	if err != nil {
+		return foundation.FinancialStatementPeriod{}, err
+	}
 	balanceURL := base + balancePrefix + category
 	balances, err := c.fundamentalsRows(ctx, balanceURL, 7*24*time.Hour)
 	if err != nil {
@@ -262,6 +266,46 @@ func (c *Client) statement(ctx context.Context, s foundation.SecurityIdentity) (
 	if balance == nil {
 		return foundation.FinancialStatementPeriod{}, fmt.Errorf("matching balance sheet unavailable")
 	}
+	item.SourceURL = incomeURL + " | " + balanceURL
+	for key, target := range map[string]**int64{
+		"total_assets": &item.TotalAssets, "total_liabilities": &item.TotalLiabilities, "equity": &item.Equity, "equity_parent": &item.EquityParent,
+	} {
+		var keys []string
+		switch key {
+		case "total_assets":
+			keys = []string{"資產總計"}
+		case "total_liabilities":
+			keys = []string{"負債總計"}
+		case "equity":
+			keys = []string{"權益總計"}
+		case "equity_parent":
+			keys = []string{"歸屬於母公司業主之權益合計"}
+		}
+		raw := firstMap(balance, keys...)
+		value, parseErr := optionalThousandTWD(raw)
+		if parseErr != nil {
+			return foundation.FinancialStatementPeriod{}, fmt.Errorf("%s: %w", key, parseErr)
+		}
+		*target, item.RawValues[key] = value, raw
+	}
+	item.BookValuePerShare, err = optionalFloat(firstMap(balance, "每股參考淨值"))
+	if err != nil {
+		return foundation.FinancialStatementPeriod{}, fmt.Errorf("book value per share: %w", err)
+	}
+	return item, nil
+}
+
+// parseIncomeStatementRow parses one official income-statement row (any of the six categories) into
+// fiscal year/quarter, revenue/gross profit/operating income/net income(parent), and cumulative EPS —
+// extracted out of statement() so both the existing single-security path (which additionally joins a
+// balance-sheet row for total_assets/equity/book_value_per_share) and the M7E-B bulk
+// ScreenerFinancials reader (income-statement only, no balance sheet) share the exact same parsing
+// logic. GrossMargin/OperatingMargin/NetMargin are computed here exactly as before (unchanged
+// behavior, including the pre-existing net_margin revenue-key ambiguity for financial-sector
+// categories — M7E-B deliberately does not fix that here, since net_margin is out of scope for this
+// phase); the M7E-B Screener layer applies its own additive "ci only" policy on top of this result for
+// gross_margin/operating_margin, it does not change how this function computes them.
+func parseIncomeStatementRow(s foundation.SecurityIdentity, category, sourceURL string, income map[string]string) (foundation.FinancialStatementPeriod, error) {
 	year, err := rocYear(firstMap(income, "年度", "Year"))
 	if err != nil {
 		return foundation.FinancialStatementPeriod{}, err
@@ -271,36 +315,26 @@ func (c *Client) statement(ctx context.Context, s foundation.SecurityIdentity) (
 		return foundation.FinancialStatementPeriod{}, fmt.Errorf("invalid fiscal quarter")
 	}
 	periodEnd := time.Date(year, time.Month(quarter*3)+1, 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
-	item := foundation.FinancialStatementPeriod{Canonical: s.Canonical, Code: s.Code, Exchange: s.Exchange, FiscalYear: year, FiscalQuarter: quarter, PeriodStart: fmt.Sprintf("%04d-01-01", year), PeriodEnd: periodEnd, StatementType: "unknown", AccountingCategory: category, Revision: firstMap(income, "出表日期", "Date"), IsCumulative: true, Currency: "TWD", Unit: "TWD", RawUnit: "thousand_TWD", RawValues: map[string]string{}, Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":financial_statement", SourceURL: incomeURL + " | " + balanceURL, RetrievedAt: time.Now(), Status: "official"}
+	item := foundation.FinancialStatementPeriod{Canonical: s.Canonical, Code: s.Code, Exchange: s.Exchange, FiscalYear: year, FiscalQuarter: quarter, PeriodStart: fmt.Sprintf("%04d-01-01", year), PeriodEnd: periodEnd, StatementType: "unknown", AccountingCategory: category, Revision: firstMap(income, "出表日期", "Date"), IsCumulative: true, Currency: "TWD", Unit: "TWD", RawUnit: "thousand_TWD", RawValues: map[string]string{}, Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":financial_statement", SourceURL: sourceURL, RetrievedAt: time.Now(), Status: "official"}
 	for key, target := range map[string]**int64{
 		"revenue": &item.Revenue, "gross_profit": &item.GrossProfit, "operating_income": &item.OperatingIncome, "pretax_income": &item.PretaxIncome, "net_income": &item.NetIncome, "net_income_parent": &item.NetIncomeParent,
-		"total_assets": &item.TotalAssets, "total_liabilities": &item.TotalLiabilities, "equity": &item.Equity, "equity_parent": &item.EquityParent,
 	} {
-		var row map[string]string
 		var keys []string
 		switch key {
 		case "revenue":
-			row, keys = income, []string{"營業收入", "收益合計", "淨收益"}
+			keys = []string{"營業收入", "收益合計", "淨收益"}
 		case "gross_profit":
-			row, keys = income, []string{"營業毛利（毛損）淨額", "營業毛利（毛損）"}
+			keys = []string{"營業毛利（毛損）淨額", "營業毛利（毛損）"}
 		case "operating_income":
-			row, keys = income, []string{"營業利益（損失）"}
+			keys = []string{"營業利益（損失）"}
 		case "pretax_income":
-			row, keys = income, []string{"稅前淨利（淨損）", "繼續營業單位稅前損益"}
+			keys = []string{"稅前淨利（淨損）", "繼續營業單位稅前損益"}
 		case "net_income":
-			row, keys = income, []string{"本期淨利（淨損）", "本期稅後淨利（淨損）"}
+			keys = []string{"本期淨利（淨損）", "本期稅後淨利（淨損）"}
 		case "net_income_parent":
-			row, keys = income, []string{"淨利（淨損）歸屬於母公司業主"}
-		case "total_assets":
-			row, keys = balance, []string{"資產總計"}
-		case "total_liabilities":
-			row, keys = balance, []string{"負債總計"}
-		case "equity":
-			row, keys = balance, []string{"權益總計"}
-		case "equity_parent":
-			row, keys = balance, []string{"歸屬於母公司業主之權益合計"}
+			keys = []string{"淨利（淨損）歸屬於母公司業主"}
 		}
-		raw := firstMap(row, keys...)
+		raw := firstMap(income, keys...)
 		value, parseErr := optionalThousandTWD(raw)
 		if parseErr != nil {
 			return foundation.FinancialStatementPeriod{}, fmt.Errorf("%s: %w", key, parseErr)
@@ -310,10 +344,6 @@ func (c *Client) statement(ctx context.Context, s foundation.SecurityIdentity) (
 	item.CumulativeEPS, err = optionalFloat(firstMap(income, "基本每股盈餘（元）"))
 	if err != nil {
 		return foundation.FinancialStatementPeriod{}, fmt.Errorf("cumulative EPS: %w", err)
-	}
-	item.BookValuePerShare, err = optionalFloat(firstMap(balance, "每股參考淨值"))
-	if err != nil {
-		return foundation.FinancialStatementPeriod{}, fmt.Errorf("book value per share: %w", err)
 	}
 	item.RawValues["cumulative_eps"] = firstMap(income, "基本每股盈餘（元）")
 	item.GrossMargin, item.OperatingMargin, item.NetMargin = ratio(item.GrossProfit, item.Revenue), ratio(item.OperatingIncome, item.Revenue), ratio(item.NetIncomeParent, item.Revenue)
@@ -615,6 +645,139 @@ func (c *Client) valuationDomainFreshness(now time.Time, rows []foundation.Valua
 	}
 	target := c.calendar.LatestCompleted(now, marketCutoffHour, marketCutoffMinute)
 	return foundation.TaiwanValuationFreshness{AsOf: &latest, Status: freshnessStatus(latest, target), DaysBehind: daysBehind(latest, target, c.calendar)}
+}
+
+// ==================================================
+// M7E-B — Screener bulk financial-statement reader (cumulative EPS / gross margin / operating margin)
+// ==================================================
+//
+// ScreenerFinancials reuses the exact same official income-statement bulk endpoints (6 categories ×
+// 2 exchanges = 12 requests total, bounded regardless of security count), the exact same
+// fundamentalsRows 7-day URL cache, and the exact same parseIncomeStatementRow parser used by the
+// existing single-security statement() path — it never calls the balance sheet (book_value_per_share
+// and net_margin are out of scope for M7E-B), never calls FinMind, and never loops per security.
+//
+// PIT note: no PublishedAt/AvailableAt is assigned or exposed — see M7E-B.0/M7E-B.1 for the evidence
+// that no official income-statement payload carries a publication timestamp.
+//
+// Mixed-period safety (M7E-B.1): official quarterly filings are cumulative (YTD) figures, and a
+// straggler company can in principle still be on an older fiscal quarter while the rest of the market
+// has already moved to a newer one (e.g. a filing extension). Comparing a cumulative Q1 value against
+// a cumulative Q2 value would silently rank/filter incompatible measurement horizons. This reader
+// therefore determines one common target financial period — the maximum (FiscalYear, FiscalQuarter)
+// tuple observed among all successfully parsed rows — and nulls out the three Screener metric fields
+// (CumulativeEPS/GrossMargin/OperatingMargin) for any row whose own period differs from that target.
+// Every row still keeps its own true FiscalYear/FiscalQuarter (surfaced by the httpapi layer as
+// `financial_period`) — this reader never drops or reinterprets an older-period row, it only silences
+// its metrics from cross-period comparison.
+func (c *Client) ScreenerFinancials(ctx context.Context, now time.Time) ([]foundation.FinancialStatementPeriod, foundation.TaiwanFundamentalsDomainFreshness, error) {
+	identities, err := c.Directory(ctx)
+	if err != nil {
+		return nil, foundation.TaiwanFundamentalsDomainFreshness{}, err
+	}
+	allow := identityAllowlist(identities)
+
+	var rows []foundation.FinancialStatementPeriod
+	attempted, succeeded := 0, 0
+	for _, exchange := range []string{"TWSE", "TPEX"} {
+		prefix, base := "/opendata/t187ap06_L_", c.twseBaseURL
+		if exchange == "TPEX" {
+			prefix, base = "/mopsfin_t187ap06_O_", c.tpexBaseURL
+		}
+		for _, category := range statementCategories {
+			attempted++
+			u := base + prefix + category
+			raw, fetchErr := c.fundamentalsRows(ctx, u, 7*24*time.Hour)
+			if fetchErr != nil {
+				continue
+			}
+			succeeded++
+			for _, row := range raw {
+				code := companyCode(row)
+				if code == "" {
+					// TPEx currently returns a single blank placeholder row for categories with no
+					// real companies (basi/fh/ins/mim) — an empty code can never match a real
+					// identity in allow[exchange], but this explicit check documents the intent and
+					// avoids even attempting the (harmless) lookup.
+					continue
+				}
+				identity, ok := allow[exchange][code]
+				if !ok {
+					continue
+				}
+				item, parseErr := parseIncomeStatementRow(identity, category, u, row)
+				if parseErr != nil {
+					continue
+				}
+				rows = append(rows, item)
+			}
+		}
+	}
+
+	target := targetFinancialPeriod(rows)
+	for i := range rows {
+		if rows[i].FiscalYear != target.year || rows[i].FiscalQuarter != target.quarter {
+			rows[i].CumulativeEPS, rows[i].GrossMargin, rows[i].OperatingMargin = nil, nil, nil
+			continue
+		}
+		// Margins remain additionally scoped to the "ci" (general industry) category only — a
+		// non-ci row on the target period still keeps its cumulative EPS, but never exposes
+		// gross/operating margin, even when the underlying payload happens to carry compatible
+		// fields (e.g. `ins`/insurance), because cross-industry accounting semantics are not
+		// comparable enough for a whole-market Screener (M7E-B.1).
+		if rows[i].AccountingCategory != "ci" {
+			rows[i].GrossMargin, rows[i].OperatingMargin = nil, nil
+		}
+	}
+
+	return rows, financialsDomainFreshness(target, attempted, succeeded), nil
+}
+
+// financialPeriod is an internal (year, quarter) tuple used to determine the market-wide common
+// target financial period by real integer comparison — never by comparing formatted "YYYY-QN"
+// strings, which would be fragile across a year boundary if quarter formatting ever changed.
+type financialPeriod struct {
+	year, quarter int
+}
+
+func (p financialPeriod) after(other financialPeriod) bool {
+	if p.year != other.year {
+		return p.year > other.year
+	}
+	return p.quarter > other.quarter
+}
+
+// targetFinancialPeriod returns the maximum (FiscalYear, FiscalQuarter) observed among the given
+// rows. The zero value {0,0} (returned when rows is empty) never matches any real parsed row, since
+// rocYear() always produces a year >= 1911.
+func targetFinancialPeriod(rows []foundation.FinancialStatementPeriod) financialPeriod {
+	var target financialPeriod
+	for _, row := range rows {
+		candidate := financialPeriod{year: row.FiscalYear, quarter: row.FiscalQuarter}
+		if candidate.after(target) {
+			target = candidate
+		}
+	}
+	return target
+}
+
+// financialsDomainFreshness reports the market-wide target period as a plain "YYYY-QN" identifier —
+// never a fabricated quarter-end date — and a truthful coverage status: "available" when every one
+// of the 12 category/exchange requests succeeded, "partial" when at least one failed but some
+// succeeded (so some financial data is genuinely usable), and "unavailable" when none succeeded.
+func financialsDomainFreshness(target financialPeriod, attempted, succeeded int) foundation.TaiwanFundamentalsDomainFreshness {
+	if succeeded == 0 {
+		return foundation.TaiwanFundamentalsDomainFreshness{Status: "unavailable"}
+	}
+	if target.year == 0 {
+		return foundation.TaiwanFundamentalsDomainFreshness{Status: "unavailable"}
+	}
+	period := fmt.Sprintf("%d-Q%d", target.year, target.quarter)
+	status := "available"
+	if succeeded < attempted {
+		status = "partial"
+	}
+	return foundation.TaiwanFundamentalsDomainFreshness{AsOf: &period, Status: status}
 }
 
 func normalizeDividendStatus(raw string) string {

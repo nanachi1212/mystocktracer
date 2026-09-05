@@ -131,6 +131,14 @@ type TaiwanScreenerDividendsProvider interface {
 	ScreenerDividends(ctx context.Context, now time.Time) ([]foundation.DividendRecord, foundation.TaiwanFundamentalsDomainFreshness, error)
 }
 
+// TaiwanScreenerFinancialsProvider is the M7E-B analogue of the M7E-A providers above — a separate,
+// narrow capability so existing M7A/M7D/M7E-A Screener test fakes never need to implement a financials
+// method they don't use. Called ONLY when a Screener request actually needs the financials domain (an
+// active cumulative_eps/gross_margin/operating_margin filter or sort key) — never unconditionally.
+type TaiwanScreenerFinancialsProvider interface {
+	ScreenerFinancials(ctx context.Context, now time.Time) ([]foundation.FinancialStatementPeriod, foundation.TaiwanFundamentalsDomainFreshness, error)
+}
+
 type TaiwanEmotionProvider interface {
 	MarketEmotion(ctx context.Context, now time.Time) (marketemotion.TaiwanMarketEmotion, error)
 }
@@ -196,6 +204,7 @@ type Config struct {
 	TaiwanScreenerRevenue       TaiwanScreenerRevenueProvider
 	TaiwanScreenerValuation     TaiwanScreenerValuationProvider
 	TaiwanScreenerDividends     TaiwanScreenerDividendsProvider
+	TaiwanScreenerFinancials    TaiwanScreenerFinancialsProvider
 	TaiwanEmotion               TaiwanEmotionProvider
 	TaiwanIndustryRadar         TaiwanIndustryRadarProvider
 	TaiwanIntelligence          TaiwanStockIntelligenceProvider

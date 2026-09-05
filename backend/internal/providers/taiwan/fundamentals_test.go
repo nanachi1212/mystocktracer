@@ -428,6 +428,465 @@ func TestScreenerDividendsUsesOneBulkRequestPerExchangeRegardlessOfRowCount(t *t
 	}
 }
 
+// ==================================================
+// M7E-B — Screener bulk financial-statement reader (cumulative EPS / gross margin / operating margin)
+// ==================================================
+
+func financialsCategoryPath(exchange, category string) string {
+	if exchange == "TPEX" {
+		return "/mopsfin_t187ap06_O_" + category
+	}
+	return "/opendata/t187ap06_L_" + category
+}
+
+// defaultFinancialsBodies seeds all 12 category/exchange income-statement endpoints with an empty
+// (but successful) JSON array — tests override only the categories they care about.
+func defaultFinancialsBodies() map[string]string {
+	bodies := map[string]string{}
+	for _, exchange := range []string{"TWSE", "TPEX"} {
+		for _, category := range statementCategories {
+			bodies[financialsCategoryPath(exchange, category)] = "[]"
+		}
+	}
+	return bodies
+}
+
+// newFinancialsServer serves the Taiwan directory plus the 12 income-statement category endpoints
+// from `bodies` (URL path -> JSON body; an empty-string body simulates a failed/500 category
+// request rather than an empty array). It fails the test immediately if a balance-sheet or FinMind
+// request is ever made — ScreenerFinancials must be income-statement only.
+func newFinancialsServer(t *testing.T, twseDirectory, tpexDirectory string, bodies map[string]string, calls *atomic.Int32) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			_, _ = w.Write([]byte(twseDirectory))
+			return
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[]`))
+			return
+		case "/mopsfin_t187ap03_O":
+			_, _ = w.Write([]byte(tpexDirectory))
+			return
+		}
+		if strings.Contains(r.URL.Path, "t187ap07_") {
+			t.Errorf("ScreenerFinancials must never request a balance-sheet endpoint, got %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("dataset") != "" {
+			t.Errorf("ScreenerFinancials must never call FinMind, got %s", r.URL.String())
+			http.NotFound(w, r)
+			return
+		}
+		body, ok := bodies[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if calls != nil {
+			calls.Add(1)
+		}
+		if body == "" {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+}
+
+// TestScreenerFinancialsUsesTwelveBulkRequestsRegardlessOfRowCount proves ScreenerFinancials makes
+// exactly 12 requests total (6 categories x 2 exchanges), even with 300+ securities per exchange, and
+// that a second call within the existing 7-day URL cache adds zero new requests.
+func TestScreenerFinancialsUsesTwelveBulkRequestsRegardlessOfRowCount(t *testing.T) {
+	const rowsPerExchange = 300
+	var calls atomic.Int32
+
+	var twseDirectory, tpexDirectory, twseCI, tpexCI strings.Builder
+	twseDirectory.WriteString("[")
+	tpexDirectory.WriteString("[")
+	twseCI.WriteString("[")
+	tpexCI.WriteString("[")
+	for i := 0; i < rowsPerExchange; i++ {
+		if i > 0 {
+			twseDirectory.WriteString(",")
+			tpexDirectory.WriteString(",")
+			twseCI.WriteString(",")
+			tpexCI.WriteString(",")
+		}
+		twseCode := fmt.Sprintf("7%03d", i)
+		tpexCode := fmt.Sprintf("8%03d", i)
+		fmt.Fprintf(&twseDirectory, `{"公司代號":"%s","公司簡稱":"twse-%d"}`, twseCode, i)
+		fmt.Fprintf(&tpexDirectory, `{"SecuritiesCompanyCode":"%s","CompanyAbbreviation":"tpex-%d"}`, tpexCode, i)
+		fmt.Fprintf(&twseCI, `{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"%s","營業收入":"1000","營業毛利（毛損）淨額":"400","營業利益（損失）":"300","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"1.50"}`, twseCode)
+		fmt.Fprintf(&tpexCI, `{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"%s","營業收入":"1000","營業毛利（毛損）淨額":"400","營業利益（損失）":"300","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"1.50"}`, tpexCode)
+	}
+	twseDirectory.WriteString("]")
+	tpexDirectory.WriteString("]")
+	twseCI.WriteString("]")
+	tpexCI.WriteString("]")
+
+	bodies := defaultFinancialsBodies()
+	bodies[financialsCategoryPath("TWSE", "ci")] = twseCI.String()
+	bodies[financialsCategoryPath("TPEX", "ci")] = tpexCI.String()
+
+	server := newFinancialsServer(t, twseDirectory.String(), tpexDirectory.String(), bodies, &calls)
+	defer server.Close()
+
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 12 {
+		t.Fatalf("expected exactly 12 requests (6 categories x 2 exchanges) regardless of %d rows per exchange, got %d", rowsPerExchange, calls.Load())
+	}
+	if len(rows) != rowsPerExchange*2 {
+		t.Fatalf("expected %d total rows, got %d", rowsPerExchange*2, len(rows))
+	}
+	if freshness.Status != "available" || freshness.AsOf == nil || *freshness.AsOf != "2026-Q2" {
+		t.Fatalf("unexpected freshness: %+v", freshness)
+	}
+	for _, row := range rows {
+		if row.CumulativeEPS == nil || *row.CumulativeEPS != 1.5 {
+			t.Fatalf("expected cumulative_eps=1.5, got %+v", row)
+		}
+		if row.GrossMargin == nil || *row.GrossMargin != 40 || row.OperatingMargin == nil || *row.OperatingMargin != 30 {
+			t.Fatalf("expected gross_margin=40 operating_margin=30 for ci category, got %+v", row)
+		}
+	}
+
+	// Warm cache: a second call within the 7-day TTL must add zero new requests.
+	callsBefore := calls.Load()
+	rows2, _, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != callsBefore {
+		t.Fatalf("warm cache call added %d new requests, want 0", calls.Load()-callsBefore)
+	}
+	if len(rows2) != len(rows) {
+		t.Fatalf("warm cache row count mismatch: %d vs %d", len(rows2), len(rows))
+	}
+}
+
+// TestScreenerFinancialsMixedPeriodGateOlderQuarterMetricsNulled (M7E-B.1) proves that a security
+// still on an older fiscal quarter than the market-wide target keeps its own true financial_period
+// (FiscalYear/FiscalQuarter) but has all three Screener metric fields nulled — a cumulative Q1 value
+// must never be compared against a cumulative Q2 value.
+func TestScreenerFinancialsMixedPeriodGateOlderQuarterMetricsNulled(t *testing.T) {
+	var calls atomic.Int32
+	twseDirectory := `[{"公司代號":"1001","公司簡稱":"A"},{"公司代號":"1002","公司簡稱":"B"}]`
+	twseCI := `[{"出表日期":"1150905","年度":"115","季別":"1","公司代號":"1001","營業收入":"1000","營業毛利（毛損）淨額":"400","營業利益（損失）":"300","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"1.00"},{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"1002","營業收入":"2000","營業毛利（毛損）淨額":"800","營業利益（損失）":"600","淨利（淨損）歸屬於母公司業主":"400","基本每股盈餘（元）":"2.00"}]`
+	bodies := defaultFinancialsBodies()
+	bodies[financialsCategoryPath("TWSE", "ci")] = twseCI
+	server := newFinancialsServer(t, twseDirectory, `[]`, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if freshness.AsOf == nil || *freshness.AsOf != "2026-Q2" {
+		t.Fatalf("expected target period 2026-Q2 (the max observed), got %+v", freshness)
+	}
+	byCode := map[string]foundation.FinancialStatementPeriod{}
+	for _, row := range rows {
+		byCode[row.Code] = row
+	}
+	q1 := byCode["1001"]
+	if q1.FiscalYear != 2026 || q1.FiscalQuarter != 1 {
+		t.Fatalf("1001 must keep its own true period 2026-Q1, got %+v", q1)
+	}
+	if q1.CumulativeEPS != nil || q1.GrossMargin != nil || q1.OperatingMargin != nil {
+		t.Fatalf("older-period row (Q1, target is Q2) must have nulled metrics, got %+v", q1)
+	}
+	q2 := byCode["1002"]
+	if q2.FiscalYear != 2026 || q2.FiscalQuarter != 2 {
+		t.Fatalf("1002 period wrong: %+v", q2)
+	}
+	if q2.CumulativeEPS == nil || *q2.CumulativeEPS != 2.0 || q2.GrossMargin == nil || q2.OperatingMargin == nil {
+		t.Fatalf("target-period row (Q2) must keep all metrics, got %+v", q2)
+	}
+}
+
+// TestScreenerFinancialsYearTransitionUsesTupleComparisonNotLexical proves the target period is
+// chosen by real (year, quarter) integer comparison, verified across a fiscal-year boundary.
+func TestScreenerFinancialsYearTransitionUsesTupleComparisonNotLexical(t *testing.T) {
+	var calls atomic.Int32
+	twseDirectory := `[{"公司代號":"2001","公司簡稱":"A"},{"公司代號":"2002","公司簡稱":"B"}]`
+	twseCI := `[{"出表日期":"1160305","年度":"115","季別":"4","公司代號":"2001","營業收入":"1000","營業毛利（毛損）淨額":"400","營業利益（損失）":"300","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"1.00"},{"出表日期":"1160305","年度":"116","季別":"1","公司代號":"2002","營業收入":"2000","營業毛利（毛損）淨額":"800","營業利益（損失）":"600","淨利（淨損）歸屬於母公司業主":"400","基本每股盈餘（元）":"2.00"}]`
+	bodies := defaultFinancialsBodies()
+	bodies[financialsCategoryPath("TWSE", "ci")] = twseCI
+	server := newFinancialsServer(t, twseDirectory, `[]`, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2027, 3, 5, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if freshness.AsOf == nil || *freshness.AsOf != "2027-Q1" {
+		t.Fatalf("expected target 2027-Q1 across the fiscal-year boundary, got %+v", freshness)
+	}
+	byCode := map[string]foundation.FinancialStatementPeriod{}
+	for _, row := range rows {
+		byCode[row.Code] = row
+	}
+	if byCode["2001"].CumulativeEPS != nil {
+		t.Fatalf("2026-Q4 row must be nulled once 2027-Q1 is the target, got %+v", byCode["2001"])
+	}
+	if byCode["2002"].CumulativeEPS == nil {
+		t.Fatalf("2027-Q1 row (the target) must keep its EPS, got %+v", byCode["2002"])
+	}
+}
+
+// TestScreenerFinancialsInvalidQuarterSkipsRowNotWholeDomain proves a single malformed row (invalid
+// fiscal quarter) is skipped without failing the rest of the category/domain.
+func TestScreenerFinancialsInvalidQuarterSkipsRowNotWholeDomain(t *testing.T) {
+	var calls atomic.Int32
+	twseDirectory := `[{"公司代號":"3001","公司簡稱":"A"},{"公司代號":"3002","公司簡稱":"B"}]`
+	twseCI := `[{"出表日期":"1150905","年度":"115","季別":"9","公司代號":"3001","營業收入":"1000","營業毛利（毛損）淨額":"400","營業利益（損失）":"300","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"1.00"},{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"3002","營業收入":"2000","營業毛利（毛損）淨額":"800","營業利益（損失）":"600","淨利（淨損）歸屬於母公司業主":"400","基本每股盈餘（元）":"2.00"}]`
+	bodies := defaultFinancialsBodies()
+	bodies[financialsCategoryPath("TWSE", "ci")] = twseCI
+	server := newFinancialsServer(t, twseDirectory, `[]`, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, _, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Code != "3002" {
+		t.Fatalf("expected only the valid row (invalid quarter=9 skipped), got %+v", rows)
+	}
+}
+
+// TestScreenerFinancialsCumulativeEPSAllCategoriesMarginsCIOnly (M7E-B.1) proves cumulative_eps is
+// available for every financial category, but gross_margin/operating_margin are nil for every
+// category except "ci" -- explicitly including "ins" (insurance), whose payload happens to carry
+// both 營業收入 and 營業利益（損失）, to prove the ci-only policy is actively enforced, not merely a
+// side effect of missing source fields.
+func TestScreenerFinancialsCumulativeEPSAllCategoriesMarginsCIOnly(t *testing.T) {
+	var calls atomic.Int32
+	directory := `[{"公司代號":"4001","公司簡稱":"CI"},{"公司代號":"4002","公司簡稱":"BASI"},{"公司代號":"4003","公司簡稱":"BD"},{"公司代號":"4004","公司簡稱":"FH"},{"公司代號":"4005","公司簡稱":"INS"},{"公司代號":"4006","公司簡稱":"MIM"}]`
+	ci := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"4001","營業收入":"1000","營業毛利（毛損）淨額":"400","營業利益（損失）":"300","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"1.11"}]`
+	basi := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"4002","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"2.22"}]`
+	bd := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"4003","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"3.33"}]`
+	fh := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"4004","淨收益":"999","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"4.44"}]`
+	ins := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"4005","營業收入":"5000","營業利益（損失）":"1000","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"5.55"}]`
+	mim := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"4006","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"6.66"}]`
+
+	bodies := defaultFinancialsBodies()
+	bodies[financialsCategoryPath("TWSE", "ci")] = ci
+	bodies[financialsCategoryPath("TWSE", "basi")] = basi
+	bodies[financialsCategoryPath("TWSE", "bd")] = bd
+	bodies[financialsCategoryPath("TWSE", "fh")] = fh
+	bodies[financialsCategoryPath("TWSE", "ins")] = ins
+	bodies[financialsCategoryPath("TWSE", "mim")] = mim
+
+	server := newFinancialsServer(t, directory, `[]`, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, _, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byCode := map[string]foundation.FinancialStatementPeriod{}
+	for _, row := range rows {
+		byCode[row.Code] = row
+	}
+	if len(byCode) != 6 {
+		t.Fatalf("expected all 6 categories represented, got %+v", byCode)
+	}
+	for code, wantEPS := range map[string]float64{"4001": 1.11, "4002": 2.22, "4003": 3.33, "4004": 4.44, "4005": 5.55, "4006": 6.66} {
+		row := byCode[code]
+		if row.CumulativeEPS == nil || *row.CumulativeEPS != wantEPS {
+			t.Fatalf("%s: expected cumulative_eps=%v available for every category, got %+v", code, wantEPS, row)
+		}
+	}
+	if byCode["4001"].GrossMargin == nil || byCode["4001"].OperatingMargin == nil {
+		t.Fatalf("ci category must expose margins, got %+v", byCode["4001"])
+	}
+	for _, code := range []string{"4002", "4003", "4004", "4005", "4006"} {
+		row := byCode[code]
+		if row.GrossMargin != nil || row.OperatingMargin != nil {
+			t.Fatalf("%s (non-ci) must have nil margins even when the payload contains compatible fields (ins case), got %+v", code, row)
+		}
+	}
+}
+
+// TestScreenerFinancialsMissingZeroNegativeSemantics audits missing/real-zero/negative behavior for
+// cumulative_eps and both margins.
+func TestScreenerFinancialsMissingZeroNegativeSemantics(t *testing.T) {
+	var calls atomic.Int32
+	directory := `[{"公司代號":"5001","公司簡稱":"A"},{"公司代號":"5002","公司簡稱":"B"},{"公司代號":"5003","公司簡稱":"C"},{"公司代號":"5004","公司簡稱":"D"}]`
+	ci := `[
+		{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"5001","營業收入":"","營業毛利（毛損）淨額":"","營業利益（損失）":"","淨利（淨損）歸屬於母公司業主":"","基本每股盈餘（元）":""},
+		{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"5002","營業收入":"0","營業毛利（毛損）淨額":"0","營業利益（損失）":"0","淨利（淨損）歸屬於母公司業主":"0","基本每股盈餘（元）":"0"},
+		{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"5003","營業收入":"1000","營業毛利（毛損）淨額":"-200","營業利益（損失）":"-300","淨利（淨損）歸屬於母公司業主":"-400","基本每股盈餘（元）":"-1.23"},
+		{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"5004","營業收入":"0","營業毛利（毛損）淨額":"100","營業利益（損失）":"100","淨利（淨損）歸屬於母公司業主":"100","基本每股盈餘（元）":"1.00"}
+	]`
+	bodies := defaultFinancialsBodies()
+	bodies[financialsCategoryPath("TWSE", "ci")] = ci
+	server := newFinancialsServer(t, directory, `[]`, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, _, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byCode := map[string]foundation.FinancialStatementPeriod{}
+	for _, row := range rows {
+		byCode[row.Code] = row
+	}
+
+	missing := byCode["5001"]
+	if missing.CumulativeEPS != nil || missing.GrossMargin != nil || missing.OperatingMargin != nil || missing.Revenue != nil {
+		t.Fatalf("all-blank row must be entirely nil (missing != zero), got %+v", missing)
+	}
+	zero := byCode["5002"]
+	if zero.CumulativeEPS == nil || *zero.CumulativeEPS != 0 {
+		t.Fatalf("real zero EPS must remain 0, not nil, got %+v", zero)
+	}
+	if zero.GrossMargin != nil || zero.OperatingMargin != nil {
+		t.Fatalf("zero-denominator (revenue=0) margins must be nil, not a fabricated ratio, got %+v", zero)
+	}
+	negative := byCode["5003"]
+	if negative.CumulativeEPS == nil || *negative.CumulativeEPS != -1.23 {
+		t.Fatalf("negative EPS must be preserved, got %+v", negative)
+	}
+	if negative.GrossMargin == nil || *negative.GrossMargin != -20 || negative.OperatingMargin == nil || *negative.OperatingMargin != -30 {
+		t.Fatalf("negative numerator with positive revenue must yield a valid negative margin, got %+v", negative)
+	}
+	zeroRevenuePositive := byCode["5004"]
+	if zeroRevenuePositive.GrossMargin != nil || zeroRevenuePositive.OperatingMargin != nil {
+		t.Fatalf("zero denominator must yield nil margin even with a positive numerator, got %+v", zeroRevenuePositive)
+	}
+}
+
+// TestScreenerFinancialsExactCanonicalNeverCollapsesAcrossExchanges proves the same bare company
+// code on TWSE and TPEx never merges into one row.
+func TestScreenerFinancialsExactCanonicalNeverCollapsesAcrossExchanges(t *testing.T) {
+	var calls atomic.Int32
+	twseDirectory := `[{"公司代號":"6001","公司簡稱":"TWSE-A"}]`
+	tpexDirectory := `[{"SecuritiesCompanyCode":"6001","CompanyAbbreviation":"TPEX-A"}]`
+	twseCI := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"6001","營業收入":"1000","營業毛利（毛損）淨額":"400","營業利益（損失）":"300","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"1.00"}]`
+	tpexCI := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"6001","營業收入":"9000","營業毛利（毛損）淨額":"4000","營業利益（損失）":"3000","淨利（淨損）歸屬於母公司業主":"2000","基本每股盈餘（元）":"9.00"}]`
+	bodies := defaultFinancialsBodies()
+	bodies[financialsCategoryPath("TWSE", "ci")] = twseCI
+	bodies[financialsCategoryPath("TPEX", "ci")] = tpexCI
+	server := newFinancialsServer(t, twseDirectory, tpexDirectory, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, _, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byCanonical := map[string]foundation.FinancialStatementPeriod{}
+	for _, row := range rows {
+		byCanonical[row.Canonical] = row
+	}
+	if len(byCanonical) != 2 {
+		t.Fatalf("same code on two exchanges must remain two distinct rows, got %+v", byCanonical)
+	}
+	twse := byCanonical["6001.TWSE"]
+	tpex := byCanonical["6001.TPEX"]
+	if twse.CumulativeEPS == nil || *twse.CumulativeEPS != 1.0 {
+		t.Fatalf("6001.TWSE wrong EPS: %+v", twse)
+	}
+	if tpex.CumulativeEPS == nil || *tpex.CumulativeEPS != 9.0 {
+		t.Fatalf("6001.TPEX wrong EPS: %+v", tpex)
+	}
+}
+
+// TestScreenerFinancialsEmptyPlaceholderRowIgnored proves a TPEx-style blank placeholder row (empty
+// company code, empty everything) for a category with no real companies is silently ignored — never
+// an empty canonical, never a usable row, never a parse failure for the rest of the domain.
+func TestScreenerFinancialsEmptyPlaceholderRowIgnored(t *testing.T) {
+	var calls atomic.Int32
+	twseDirectory := `[{"公司代號":"7001","公司簡稱":"A"}]`
+	tpexFH := `[{"Date":"1150905","Year":"","Season":"","公司代號":"","公司名稱":"","淨收益":"","基本每股盈餘（元）":""}]`
+	twseCI := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"7001","營業收入":"1000","營業毛利（毛損）淨額":"400","營業利益（損失）":"300","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"1.00"}]`
+	bodies := defaultFinancialsBodies()
+	bodies[financialsCategoryPath("TWSE", "ci")] = twseCI
+	bodies[financialsCategoryPath("TPEX", "fh")] = tpexFH
+	server := newFinancialsServer(t, twseDirectory, `[]`, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, _, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Code != "7001" {
+		t.Fatalf("blank placeholder row must be ignored: expected only 7001, got %+v", rows)
+	}
+	for _, row := range rows {
+		if row.Canonical == "" || row.Code == "" {
+			t.Fatalf("no row should ever have an empty canonical/code, got %+v", row)
+		}
+	}
+}
+
+// TestScreenerFinancialsPartialCategoryFailureRetainsSuccessfulRows proves one failed category
+// endpoint never discards the other 11 successful ones, and the domain status truthfully reads
+// "partial" rather than "available" or "unavailable".
+func TestScreenerFinancialsPartialCategoryFailureRetainsSuccessfulRows(t *testing.T) {
+	var calls atomic.Int32
+	twseDirectory := `[{"公司代號":"8001","公司簡稱":"A"}]`
+	ci := `[{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"8001","營業收入":"1000","營業毛利（毛損）淨額":"400","營業利益（損失）":"300","淨利（淨損）歸屬於母公司業主":"200","基本每股盈餘（元）":"1.00"}]`
+	bodies := defaultFinancialsBodies()
+	bodies[financialsCategoryPath("TWSE", "ci")] = ci
+	bodies[financialsCategoryPath("TWSE", "fh")] = "" // simulate a failed category request (HTTP 500)
+	server := newFinancialsServer(t, twseDirectory, `[]`, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Code != "8001" {
+		t.Fatalf("successful category rows must survive a sibling category's failure, got %+v", rows)
+	}
+	if freshness.Status != "partial" {
+		t.Fatalf("expected partial status (11/12 category requests succeeded), got %+v", freshness)
+	}
+}
+
+// TestScreenerFinancialsAllEndpointsFailYieldsUnavailable proves that when every one of the 12
+// category requests fails, the domain truthfully reports unavailable with zero rows — never a
+// fabricated partial result.
+func TestScreenerFinancialsAllEndpointsFailYieldsUnavailable(t *testing.T) {
+	var calls atomic.Int32
+	twseDirectory := `[{"公司代號":"9001","公司簡稱":"A"}]`
+	bodies := defaultFinancialsBodies()
+	for path := range bodies {
+		bodies[path] = ""
+	}
+	server := newFinancialsServer(t, twseDirectory, `[]`, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerFinancials(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("expected zero rows when every endpoint fails, got %+v", rows)
+	}
+	if freshness.Status != "unavailable" {
+		t.Fatalf("expected unavailable status, got %+v", freshness)
+	}
+}
+
 func TestFundamentalsCacheDoesNotHoldLockDuringFetch(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})

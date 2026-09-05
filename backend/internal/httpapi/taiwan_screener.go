@@ -53,6 +53,19 @@ type taiwanScreenerRow struct {
 	CashDividend   *float64 `json:"cash_dividend"`
 	StockDividend  *float64 `json:"stock_dividend"`
 	TotalDividend  *float64 `json:"total_dividend"`
+	// M7E-B — financial statement (income-statement only; live-current, official-bulk-sourced).
+	// financial_period is the security's OWN actual reporting period (e.g. "2026-Q2"), always set
+	// whenever a valid statement row was parsed for it — independent of whether the metric fields
+	// below are populated. cumulative_eps/gross_margin/operating_margin are populated ONLY when
+	// financial_period equals the domain's common target period (see taiwanScreenerResponse.
+	// FinancialsPeriod): a cumulative Q1 value is never compared against a cumulative Q2 value.
+	// gross_margin/operating_margin are additionally scoped to the "ci" (general industry) category
+	// only — every other category (including insurance, which happens to carry compatible fields)
+	// always leaves them nil, per the M7E-B.1 cross-industry accounting-semantics policy.
+	FinancialPeriod *string  `json:"financial_period"`
+	CumulativeEPS   *float64 `json:"cumulative_eps"`
+	GrossMargin     *float64 `json:"gross_margin"`
+	OperatingMargin *float64 `json:"operating_margin"`
 }
 
 type taiwanScreenerResponse struct {
@@ -89,6 +102,15 @@ type taiwanScreenerResponse struct {
 	DividendsAsOf       *string `json:"dividends_as_of,omitempty"`
 	DividendsStatus     string  `json:"dividends_status,omitempty"`
 	DividendsDaysBehind *int    `json:"dividends_days_behind,omitempty"`
+	// M7E-B — additive, present only when the financials domain was actually requested.
+	// FinancialsPeriod is the market-wide common TARGET period ("2026-Q2") used to gate which rows'
+	// metric fields are populated (see taiwanScreenerRow.FinancialPeriod) — never a fabricated
+	// quarter-end date. FinancialsStatus additionally supports "partial" (at least one of the 12
+	// category/exchange requests failed but some succeeded), beyond the existing available/
+	// unavailable vocabulary — no days-behind (quarterly filings have no truthful trading-day
+	// cadence) and never a published_at/available_at claim.
+	FinancialsPeriod *string `json:"financials_period,omitempty"`
+	FinancialsStatus string  `json:"financials_status,omitempty"`
 }
 
 type taiwanScreenerQuery struct {
@@ -111,14 +133,18 @@ type taiwanScreenerQuery struct {
 	// M7E-A revenue/valuation/dividend filters.
 	minMonthlyRevenue, maxMonthlyRevenue *float64
 	minRevenueYoY, maxRevenueYoY         *float64
-	minPE, maxPE                        *float64
-	minPB, maxPB                        *float64
+	minPE, maxPE                         *float64
+	minPB, maxPB                         *float64
 	minDividendYield, maxDividendYield   *float64
 	minCashDividend, maxCashDividend     *float64
 	minStockDividend, maxStockDividend   *float64
 	minTotalDividend, maxTotalDividend   *float64
-	sort                                 string
-	order                                string // "asc" | "desc"
+	// M7E-B financial statement filters (cumulative EPS + ci-only margins).
+	minCumulativeEPS, maxCumulativeEPS     *float64
+	minGrossMargin, maxGrossMargin         *float64
+	minOperatingMargin, maxOperatingMargin *float64
+	sort                                   string
+	order                                  string // "asc" | "desc"
 }
 
 var taiwanScreenerSortKeys = map[string]bool{
@@ -127,6 +153,7 @@ var taiwanScreenerSortKeys = map[string]bool{
 	"margin_balance": true, "margin_change": true, "short_balance": true, "short_change": true, "short_margin_ratio": true,
 	"monthly_revenue": true, "revenue_yoy": true, "pe": true, "pb": true, "dividend_yield": true,
 	"cash_dividend": true, "stock_dividend": true, "total_dividend": true,
+	"cumulative_eps": true, "gross_margin": true, "operating_margin": true,
 }
 
 // taiwanScreenerNeedsInstitutional/taiwanScreenerNeedsMargin decide whether this specific request
@@ -186,6 +213,19 @@ func taiwanScreenerNeedsDividends(q taiwanScreenerQuery) bool {
 	return q.minCashDividend != nil || q.maxCashDividend != nil ||
 		q.minStockDividend != nil || q.maxStockDividend != nil ||
 		q.minTotalDividend != nil || q.maxTotalDividend != nil
+}
+
+// taiwanScreenerNeedsFinancials is the M7E-B analogue — the sole gate for fetching the income-statement
+// financials domain (12 bounded requests). A vanilla request, and one that only engages M7A/M7D/
+// M7E-A fields, must never trigger it.
+func taiwanScreenerNeedsFinancials(q taiwanScreenerQuery) bool {
+	switch q.sort {
+	case "cumulative_eps", "gross_margin", "operating_margin":
+		return true
+	}
+	return q.minCumulativeEPS != nil || q.maxCumulativeEPS != nil ||
+		q.minGrossMargin != nil || q.maxGrossMargin != nil ||
+		q.minOperatingMargin != nil || q.maxOperatingMargin != nil
 }
 
 func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +326,23 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	filtered := filterAndSortTaiwanScreener(rows, institutional, margin, revenue, valuation, dividends, query)
+	// M7E-B lazy domain loading: financials (income statement only) is fetched ONLY when this request
+	// actually engages it, following the exact same pattern as revenue/valuation/dividends above.
+	var financials map[string]foundation.FinancialStatementPeriod
+	var financialsFreshness foundation.TaiwanFundamentalsDomainFreshness
+	financialsRequested := taiwanScreenerNeedsFinancials(query)
+	if financialsRequested && s.taiwanScreenerFinancials != nil {
+		finRows, finFreshness, finErr := s.taiwanScreenerFinancials.ScreenerFinancials(ctx, time.Now())
+		financialsFreshness = finFreshness
+		if finErr == nil {
+			financials = make(map[string]foundation.FinancialStatementPeriod, len(finRows))
+			for _, row := range finRows {
+				financials[row.Canonical] = row
+			}
+		}
+	}
+
+	filtered := filterAndSortTaiwanScreener(rows, institutional, margin, revenue, valuation, dividends, financials, query)
 	total := len(filtered)
 	page := paginateTaiwanScreener(filtered, offset, limit)
 
@@ -336,6 +392,13 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 			response.DividendsStatus = "unavailable"
 		}
 	}
+	if financialsRequested {
+		response.FinancialsPeriod = financialsFreshness.AsOf
+		response.FinancialsStatus = financialsFreshness.Status
+		if response.FinancialsStatus == "" {
+			response.FinancialsStatus = "unavailable"
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": response})
 }
 
@@ -354,7 +417,7 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		query.sort = "amount"
 	}
 	if !taiwanScreenerSortKeys[query.sort] {
-		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend"
+		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend, cumulative_eps, gross_margin, operating_margin"
 	}
 
 	query.order = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order")))
@@ -481,6 +544,28 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		}
 	}
 
+	// M7E-B financial-statement range params — same pattern as the M7E-A ranges above.
+	financialsRanges := []struct {
+		minKey, maxKey string
+		min, max       **float64
+		label          string
+	}{
+		{"min_cumulative_eps", "max_cumulative_eps", &query.minCumulativeEPS, &query.maxCumulativeEPS, "min_cumulative_eps must not be greater than max_cumulative_eps"},
+		{"min_gross_margin", "max_gross_margin", &query.minGrossMargin, &query.maxGrossMargin, "min_gross_margin must not be greater than max_gross_margin"},
+		{"min_operating_margin", "max_operating_margin", &query.minOperatingMargin, &query.maxOperatingMargin, "min_operating_margin must not be greater than max_operating_margin"},
+	}
+	for _, item := range financialsRanges {
+		if *item.min, err = parseOptionalScreenerFloat(r, item.minKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if *item.max, err = parseOptionalScreenerFloat(r, item.maxKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if rangeInvalid(*item.min, *item.max) {
+			return query, 0, 0, item.label
+		}
+	}
+
 	limit, err := marketLimitQuery(r, 50, 200)
 	if err != nil {
 		return query, 0, 0, err.Error()
@@ -521,13 +606,13 @@ func rangeInvalid(min, max *float64) bool {
 // requested (min/max present) AND the row's value for that field is unavailable (nil) — a filter
 // that was never requested never excludes a row for that field, and an unavailable value is never
 // treated as 0.
-func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, query taiwanScreenerQuery) []taiwanScreenerRow {
+func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod, query taiwanScreenerQuery) []taiwanScreenerRow {
 	filtered := make([]taiwanScreenerRow, 0, len(rows))
 	for _, raw := range rows {
 		if query.scope != "" && query.scope != "combined" && !strings.EqualFold(raw.Exchange, query.scope) {
 			continue
 		}
-		row := toTaiwanScreenerRow(raw, institutional, margin, revenue, valuation, dividends)
+		row := toTaiwanScreenerRow(raw, institutional, margin, revenue, valuation, dividends, financials)
 		if !passesRange(row.Price, query.minPrice, query.maxPrice) {
 			continue
 		}
@@ -591,6 +676,15 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 		if !passesRange(row.TotalDividend, query.minTotalDividend, query.maxTotalDividend) {
 			continue
 		}
+		if !passesRange(row.CumulativeEPS, query.minCumulativeEPS, query.maxCumulativeEPS) {
+			continue
+		}
+		if !passesRange(row.GrossMargin, query.minGrossMargin, query.maxGrossMargin) {
+			continue
+		}
+		if !passesRange(row.OperatingMargin, query.minOperatingMargin, query.maxOperatingMargin) {
+			continue
+		}
 		filtered = append(filtered, row)
 	}
 
@@ -620,7 +714,7 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 	return filtered
 }
 
-func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord) taiwanScreenerRow {
+func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod) taiwanScreenerRow {
 	out := taiwanScreenerRow{
 		Canonical: row.Canonical, Code: row.Code, Name: row.Name, Exchange: row.Exchange, SecurityType: string(row.Type),
 		TradeDate: row.TradeDate, Price: row.Close, Change: row.Change,
@@ -652,6 +746,16 @@ func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[s
 	}
 	if div, ok := dividends[row.Canonical]; ok {
 		out.CashDividend, out.StockDividend, out.TotalDividend = div.CashDividend, div.StockDividend, div.TotalDividend
+	}
+	// M7E-B — financial_period is always set from the security's own parsed statement row (its true
+	// reporting period); the three metric fields are copied verbatim from the provider result, which
+	// has already nulled them out for any row not on the domain's common target period, and additionally
+	// nulled gross/operating margin for any non-"ci" category (see ScreenerFinancials). This handler
+	// never re-derives or re-gates those fields itself.
+	if fin, ok := financials[row.Canonical]; ok {
+		period := fmt.Sprintf("%d-Q%d", fin.FiscalYear, fin.FiscalQuarter)
+		out.FinancialPeriod = &period
+		out.CumulativeEPS, out.GrossMargin, out.OperatingMargin = fin.CumulativeEPS, fin.GrossMargin, fin.OperatingMargin
 	}
 	return out
 }
@@ -719,6 +823,12 @@ func taiwanScreenerSortValue(row taiwanScreenerRow, field string) *float64 {
 		return row.StockDividend
 	case "total_dividend":
 		return row.TotalDividend
+	case "cumulative_eps":
+		return row.CumulativeEPS
+	case "gross_margin":
+		return row.GrossMargin
+	case "operating_margin":
+		return row.OperatingMargin
 	}
 	return nil
 }
