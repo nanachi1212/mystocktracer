@@ -4,8 +4,8 @@ export type TaiwanScope = 'twse' | 'tpex' | 'combined';
 
 export const taiwanPrimaryNavigation = [
 	['taiwan-overview', '台股總覽'], ['taiwan-breadth', '市場廣度'], ['taiwan-emotion', '市場情緒'],
-	['taiwan-industry', '產業雷達'], ['taiwan-stock', '個股研究'], ['taiwan-research', 'AI 研究'],
-	['taiwan-watchlist', '自選股'],
+	['taiwan-industry', '產業雷達'], ['taiwan-screener', '台股選股器'], ['taiwan-stock', '個股研究'],
+	['taiwan-research', 'AI 研究'], ['taiwan-watchlist', '自選股'],
 ] as const;
 
 export const taiwanDefaultWorkspace = 'taiwan-overview';
@@ -26,6 +26,114 @@ export const taiwanScopes: { id: TaiwanScope; label: string }[] = [
 	{ id: 'twse', label: '上市（TWSE）' },
 	{ id: 'tpex', label: '上櫃（TPEx）' },
 ];
+
+// M7B — Taiwan Screener. Wire shape of one row from the existing M7A backend contract
+// (GET /api/v1/tw/screener). Every numeric field is nullable and must stay that way end-to-end —
+// a missing quote/volume/amount/change_percent is never normalized to 0.
+export type TaiwanScreenerSecurity = {
+	canonical: string; code: string; name: string; exchange: string; security_type: string; trade_date: string;
+	price: number | null; change: number | null; change_percent: number | null; volume: number | null; amount: number | null;
+};
+
+export type TaiwanScreenerResponse = {
+	scope: string; as_of: string | null; freshness: string; total: number; offset: number; limit: number;
+	securities: TaiwanScreenerSecurity[];
+};
+
+export type TaiwanScreenerSort = 'price' | 'change_percent' | 'volume' | 'amount';
+export type TaiwanScreenerOrder = 'asc' | 'desc';
+
+export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string }[] = [
+	{ id: 'price', label: '股價' },
+	{ id: 'change_percent', label: '漲跌幅' },
+	{ id: 'volume', label: '成交量' },
+	{ id: 'amount', label: '成交金額' },
+];
+
+export const taiwanScreenerOrderOptions: { id: TaiwanScreenerOrder; label: string }[] = [
+	{ id: 'desc', label: '高到低' },
+	{ id: 'asc', label: '低到高' },
+];
+
+export const TAIWAN_SCREENER_PAGE_SIZE = 50;
+
+// Range fields stay as raw strings (not numbers) so a blank input, a bare "-", or a mid-edit value
+// can all be represented without forcing a premature 0 — the query builder below is the only place
+// that turns a filled-in field into a number.
+export type TaiwanScreenerFilters = {
+	scope: TaiwanScope;
+	minPrice: string; maxPrice: string;
+	minChangePercent: string; maxChangePercent: string;
+	minVolume: string; maxVolume: string;
+	minAmount: string; maxAmount: string;
+	sort: TaiwanScreenerSort;
+	order: TaiwanScreenerOrder;
+	limit: number;
+	offset: number;
+};
+
+// A fresh object every call — callers hold this in React state, so a shared mutable literal here
+// would let one workspace instance's edits leak into another's "defaults".
+export function taiwanScreenerDefaultFilters(): TaiwanScreenerFilters {
+	return {
+		scope: 'combined',
+		minPrice: '', maxPrice: '',
+		minChangePercent: '', maxChangePercent: '',
+		minVolume: '', maxVolume: '',
+		minAmount: '', maxAmount: '',
+		sort: 'amount', order: 'desc',
+		limit: TAIWAN_SCREENER_PAGE_SIZE, offset: 0,
+	};
+}
+
+function taiwanScreenerRangeValue(raw: string): number | null {
+	if (raw.trim() === '') return null;
+	const value = Number(raw);
+	return Number.isFinite(value) ? value : null;
+}
+
+// Builds the exact M7A query contract. Blank optional fields are omitted; an explicitly entered 0
+// is preserved (Number("0") is finite, so it is not treated as blank); a non-numeric or
+// non-finite (NaN/Infinity) entry is silently omitted rather than sent upstream. scope/sort/order
+// always come from validated UI choices, so they are always included.
+export function taiwanScreenerPath(filters: TaiwanScreenerFilters): string {
+	const params = new URLSearchParams();
+	params.set('scope', filters.scope);
+	params.set('sort', filters.sort);
+	params.set('order', filters.order);
+	params.set('limit', String(filters.limit));
+	params.set('offset', String(Math.max(0, filters.offset)));
+	const setRange = (key: string, raw: string) => {
+		const value = taiwanScreenerRangeValue(raw);
+		if (value != null) params.set(key, String(value));
+	};
+	setRange('min_price', filters.minPrice);
+	setRange('max_price', filters.maxPrice);
+	setRange('min_change_percent', filters.minChangePercent);
+	setRange('max_change_percent', filters.maxChangePercent);
+	setRange('min_volume', filters.minVolume);
+	setRange('max_volume', filters.maxVolume);
+	setRange('min_amount', filters.minAmount);
+	setRange('max_amount', filters.maxAmount);
+	return `/api/v1/tw/screener?${params.toString()}`;
+}
+
+// Local, best-effort validation only — the backend remains authoritative. Checks each min/max pair
+// independently and returns the first violation found (blank/non-numeric fields never trigger it).
+export function validateTaiwanScreenerFilters(filters: TaiwanScreenerFilters): string {
+	const pairs: [string, string, string][] = [
+		['minPrice', 'maxPrice', '最低價格不可高於最高價格'],
+		['minChangePercent', 'maxChangePercent', '最低漲跌幅不可高於最高漲跌幅'],
+		['minVolume', 'maxVolume', '最低成交量不可高於最高成交量'],
+		['minAmount', 'maxAmount', '最低成交金額不可高於最高成交金額'],
+	];
+	for (const [minKey, maxKey, message] of pairs) {
+		const min = taiwanScreenerRangeValue(filters[minKey as keyof TaiwanScreenerFilters] as string);
+		const max = taiwanScreenerRangeValue(filters[maxKey as keyof TaiwanScreenerFilters] as string);
+		if (min != null && max != null && min > max) return message;
+	}
+	return '';
+}
 
 // Wire shape of one saved Taiwan security (M6A backend). Quote/price data is
 // intentionally absent here — the watchlist persists identity only; latest

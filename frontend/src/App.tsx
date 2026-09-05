@@ -71,13 +71,14 @@ import { TradingMastery } from './components/TradingMastery';
 import { StockAIAnalysisWorkspace, StockAIWorkspaceMode } from './components/StockAIAnalysisWorkspace';
 import { PortfolioInspectionWorkspace } from './components/PortfolioInspectionWorkspace';
 import { TaiwanMarketWorkspace } from './components/TaiwanMarketWorkspace';
+import { TaiwanScreenerWorkspace } from './components/TaiwanScreenerWorkspace';
 import { TaiwanStockResearchWorkspace } from './components/TaiwanStockResearchWorkspace';
 import { TaiwanStockResearchErrorBoundary } from './components/TaiwanStockResearchErrorBoundary';
 import { TaiwanWatchlistWorkspace } from './components/TaiwanWatchlistWorkspace';
 import { logRuntimeEvent } from './lib/runtime-log';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
-type WorkspaceMode = 'taiwan-overview' | 'taiwan-breadth' | 'taiwan-emotion' | 'taiwan-industry' | 'taiwan-stock' | 'taiwan-research' | 'taiwan-watchlist' | 'themes' | 'limit-up' | 'mastery' | 'reviews' | 'stock-ai' | 'portfolio-inspection' | 'ai' | 'market';
+type WorkspaceMode = 'taiwan-overview' | 'taiwan-breadth' | 'taiwan-emotion' | 'taiwan-industry' | 'taiwan-screener' | 'taiwan-stock' | 'taiwan-research' | 'taiwan-watchlist' | 'themes' | 'limit-up' | 'mastery' | 'reviews' | 'stock-ai' | 'portfolio-inspection' | 'ai' | 'market';
 
 const emptyStockPagination = (): ThemeScreenPagination => ({
 	page: 1,
@@ -93,6 +94,7 @@ export function App() {
 		if (window.location.hash === '#taiwan-breadth') return 'taiwan-breadth';
 		if (window.location.hash === '#taiwan-emotion') return 'taiwan-emotion';
 		if (window.location.hash === '#taiwan-industry') return 'taiwan-industry';
+		if (window.location.hash === '#taiwan-screener') return 'taiwan-screener';
 		if (window.location.hash === '#taiwan-stock') return 'taiwan-stock';
 		if (window.location.hash === '#taiwan-research') return 'taiwan-research';
 		if (window.location.hash === '#taiwan-watchlist') return 'taiwan-watchlist';
@@ -699,6 +701,7 @@ export function App() {
 		'taiwan-breadth': ['市場廣度', '上漲、下跌家數與成交方向'],
 		'taiwan-emotion': ['市場情緒', '以確定性規則呈現市場參與與訊號分歧'],
 		'taiwan-industry': ['產業雷達', '官方產業分類的相對市場廣度與成交方向'],
+		'taiwan-screener': ['台股選股器', '以官方市場快照篩選、排序台灣證券'],
 		'taiwan-stock': ['個股研究', '官方證據與確定性解讀，不提供投資推薦'],
 		'taiwan-research': ['AI 研究', '由使用者明確啟動的台股證據摘要'],
 		'taiwan-watchlist': ['自選股', '已儲存的台灣證券與最新報價'],
@@ -715,6 +718,7 @@ export function App() {
 					<button type="button" className={workspaceMode === 'taiwan-breadth' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-breadth')} title="市場廣度"><Activity size={18} /><span>市場廣度</span></button>
 					<button type="button" className={workspaceMode === 'taiwan-emotion' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-emotion')} title="市場情緒"><Gauge size={18} /><span>市場情緒</span></button>
 					<button type="button" className={workspaceMode === 'taiwan-industry' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-industry')} title="產業雷達"><BarChart3 size={18} /><span>產業雷達</span></button>
+					<button type="button" className={workspaceMode === 'taiwan-screener' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-screener')} title="台股選股器"><Search size={18} /><span>台股選股器</span></button>
 					<button type="button" className={workspaceMode === 'taiwan-stock' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-stock')} title="個股研究"><BrainCircuit size={18} /><span>個股研究</span></button>
 					<button type="button" className={workspaceMode === 'taiwan-research' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-research')} title="AI 研究"><Bot size={18} /><span>AI 研究</span></button>
 					<button type="button" className={workspaceMode === 'taiwan-watchlist' ? 'active' : ''} onClick={() => switchWorkspace('taiwan-watchlist')} title="自選股"><Star size={18} /><span>自選股</span></button>
@@ -754,7 +758,7 @@ export function App() {
 				</div>
 			</header>
 
-			{workspaceMode === 'taiwan-overview' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="overview" /> : workspaceMode === 'taiwan-breadth' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="breadth" /> : workspaceMode === 'taiwan-emotion' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="emotion" /> : workspaceMode === 'taiwan-industry' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="industry" /> : workspaceMode === 'taiwan-stock' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} externalSymbolRequest={requestedTaiwanSymbol} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-research' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} externalSymbolRequest={requestedTaiwanSymbol} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-watchlist' ? <TaiwanWatchlistWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} /> : workspaceMode === 'themes' ? <>
+			{workspaceMode === 'taiwan-overview' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="overview" /> : workspaceMode === 'taiwan-breadth' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="breadth" /> : workspaceMode === 'taiwan-emotion' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="emotion" /> : workspaceMode === 'taiwan-industry' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="industry" /> : workspaceMode === 'taiwan-screener' ? <TaiwanScreenerWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} /> : workspaceMode === 'taiwan-stock' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} externalSymbolRequest={requestedTaiwanSymbol} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-research' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} externalSymbolRequest={requestedTaiwanSymbol} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-watchlist' ? <TaiwanWatchlistWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} /> : workspaceMode === 'themes' ? <>
 			<section className="market-strip" aria-label="市场概览">
 				<div><Activity size={16} aria-hidden="true" /><span>主线平均热度</span><strong>{marketPulse.average || '--'}</strong></div>
 				<div><Flame size={16} aria-hidden="true" /><span>活跃主线</span><strong>{marketPulse.active}</strong></div>

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatTaiwanRatio, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest, taiwanComponentList, taiwanDefaultWorkspace, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath, taiwanStatusLabel } from './taiwan-product';
+import { formatTaiwanRatio, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest, taiwanComponentList, taiwanDefaultWorkspace, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath, taiwanScreenerDefaultFilters, taiwanScreenerPath, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters } from './taiwan-product';
 
 /** A promise plus its resolve/reject, so a test can control settlement order explicitly. */
 function deferred<T>() {
@@ -102,7 +102,7 @@ describe('Taiwan-first product shell', () => {
 	});
 
 	it('keeps only Taiwan-safe primary navigation labels', () => {
-		expect(taiwanPrimaryNavigation.map((item) => item[1])).toEqual(['台股總覽', '市場廣度', '市場情緒', '產業雷達', '個股研究', 'AI 研究', '自選股']);
+		expect(taiwanPrimaryNavigation.map((item) => item[1])).toEqual(['台股總覽', '市場廣度', '市場情緒', '產業雷達', '台股選股器', '個股研究', 'AI 研究', '自選股']);
 		expect(taiwanPrimaryNavigation.join(' ')).not.toMatch(/遊資|連板|龍虎榜|打板|首板|炸板/);
 		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
 		const primaryNav = app.slice(app.indexOf('<aside className="app-sidebar"'), app.indexOf('<div className="sidebar-guidance">'));
@@ -331,5 +331,99 @@ describe('P1D Taiwan overview startup fan-out', () => {
 		const source = overviewSource();
 		expect(source).toContain('runScopedRequest(selectRequestID');
 		expect(source).toContain('setQuote(null); setLines([]); setInstitutional(null); setMargin(null); setFundamentals(null);');
+	});
+});
+
+describe('M7B — Taiwan Screener navigation', () => {
+	it('taiwan-screener appears in Taiwan primary navigation with the correct label', () => {
+		expect(taiwanPrimaryNavigation.some(([id, label]) => id === 'taiwan-screener' && label === '台股選股器')).toBe(true);
+	});
+
+	it('#taiwan-screener resolves to the taiwan-screener workspace', () => {
+		expect(resolveTaiwanWorkspace('#taiwan-screener')).toBe('taiwan-screener');
+	});
+});
+
+describe('M7B — Taiwan Screener query builder', () => {
+	it('the default filter set uses combined scope, amount sort, desc order, limit 50, offset 0', () => {
+		const defaults = taiwanScreenerDefaultFilters();
+		expect(defaults.scope).toBe('combined');
+		expect(defaults.sort).toBe('amount');
+		expect(defaults.order).toBe('desc');
+		expect(defaults.limit).toBe(50);
+		expect(defaults.offset).toBe(0);
+	});
+
+	it('builds the default query with scope/sort/order/limit/offset but no blank range filters', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		expect(path).toBe('/api/v1/tw/screener?scope=combined&sort=amount&order=desc&limit=50&offset=0');
+	});
+
+	it('omits blank optional range filters', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minPrice: '', maxPrice: '  ' };
+		const path = taiwanScreenerPath(filters);
+		expect(path).not.toContain('min_price');
+		expect(path).not.toContain('max_price');
+	});
+
+	it('preserves an explicit zero filter value', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minChangePercent: '0' };
+		const path = taiwanScreenerPath(filters);
+		expect(path).toContain('min_change_percent=0');
+	});
+
+	it('never sends a NaN or Infinity value from invalid input', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minVolume: 'abc', maxVolume: 'Infinity' };
+		const path = taiwanScreenerPath(filters);
+		expect(path).not.toContain('min_volume');
+		expect(path).not.toContain('max_volume');
+		expect(path).not.toMatch(/NaN|Infinity/);
+	});
+
+	it('includes every populated range filter using the exact M7A parameter names', () => {
+		const filters: TaiwanScreenerFilters = {
+			scope: 'twse', minPrice: '10', maxPrice: '20', minChangePercent: '-5', maxChangePercent: '5',
+			minVolume: '1000', maxVolume: '2000', minAmount: '100000', maxAmount: '200000',
+			sort: 'volume', order: 'asc', limit: 50, offset: 100,
+		};
+		const path = taiwanScreenerPath(filters);
+		expect(path).toContain('scope=twse');
+		expect(path).toContain('min_price=10');
+		expect(path).toContain('max_price=20');
+		expect(path).toContain('min_change_percent=-5');
+		expect(path).toContain('max_change_percent=5');
+		expect(path).toContain('min_volume=1000');
+		expect(path).toContain('max_volume=2000');
+		expect(path).toContain('min_amount=100000');
+		expect(path).toContain('max_amount=200000');
+		expect(path).toContain('sort=volume');
+		expect(path).toContain('order=asc');
+		expect(path).toContain('offset=100');
+	});
+
+	it('never clamps offset below zero silently swaps to zero instead of a negative value', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), offset: -5 };
+		expect(taiwanScreenerPath(filters)).toContain('offset=0');
+	});
+});
+
+describe('M7B — Taiwan Screener local range validation', () => {
+	it('rejects an inverted price range', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minPrice: '100', maxPrice: '50' };
+		expect(validateTaiwanScreenerFilters(filters)).toBe('最低價格不可高於最高價格');
+	});
+
+	it('rejects an inverted change-percent range', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minChangePercent: '10', maxChangePercent: '5' };
+		expect(validateTaiwanScreenerFilters(filters)).toBe('最低漲跌幅不可高於最高漲跌幅');
+	});
+
+	it('accepts an equal min/max value (boundary, not an inversion)', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minVolume: '100', maxVolume: '100' };
+		expect(validateTaiwanScreenerFilters(filters)).toBe('');
+	});
+
+	it('accepts a blank pair without complaint', () => {
+		expect(validateTaiwanScreenerFilters(taiwanScreenerDefaultFilters())).toBe('');
 	});
 });

@@ -6728,6 +6728,29 @@ a:focus-visible {
 .taiwan-margin-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:1px; border-top:1px solid var(--line-soft); background:var(--line-soft); }.taiwan-margin-grid article { display:grid; gap:4px; padding:11px; background:#fff; }.taiwan-margin-grid span { color:#7b8797; font-size:8px; }.taiwan-margin-grid strong { font-size:11px; }
 .taiwan-fundamentals-panel { overflow:hidden; border:1px solid var(--line); border-radius:10px; background:#fff; }.taiwan-fundamentals-panel > header { display:flex; justify-content:space-between; align-items:end; padding:12px 14px; border-bottom:1px solid var(--line-soft); }.taiwan-fundamentals-panel h3 { margin:0; }.taiwan-fundamentals-panel header span,.taiwan-fundamentals-panel header small { color:#7b8797; font-size:8px; }
 .taiwan-fundamentals-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:12px; }.taiwan-fundamentals-grid article { display:grid; gap:5px; padding:11px; border:1px solid var(--line-soft); border-radius:8px; }.taiwan-fundamentals-grid article span,.taiwan-fundamentals-grid article small,.taiwan-fundamentals-grid article p { margin:0; color:#718096; font-size:9px; }
+.taiwan-screener-filters { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.taiwan-screener-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.taiwan-screener-filter-grid label { display: grid; gap: 4px; min-width: 0; }
+.taiwan-screener-filter-grid span { color: var(--muted); font-size: 9px; }
+.taiwan-screener-filter-grid input, .taiwan-screener-filter-grid select { min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; min-width: 0; }
+.taiwan-screener-filter-error { margin: 0; color: #b5303a; font-size: 10px; }
+.taiwan-screener-filter-actions { display: flex; gap: 8px; }
+.taiwan-screener-apply, .taiwan-screener-clear { min-height: 34px; padding: 0 14px; border-radius: 8px; cursor: pointer; }
+.taiwan-screener-apply { border: 0; background: var(--blue); color: #fff; }
+.taiwan-screener-clear { border: 1px solid var(--line); background: #fff; color: var(--muted); }
+.taiwan-screener-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.taiwan-screener-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.taiwan-screener-table th, .taiwan-screener-table td { padding: 9px 12px; border-bottom: 1px solid var(--line-soft); text-align: left; white-space: nowrap; }
+.taiwan-screener-table th { color: var(--muted); font-size: 9px; font-weight: 600; }
+.taiwan-screener-table td.up { color: var(--up); }
+.taiwan-screener-table td.down { color: var(--down); }
+.taiwan-screener-identity { padding: 0; border: none; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.taiwan-screener-identity:hover strong, .taiwan-screener-identity:focus-visible strong { text-decoration: underline; }
+.taiwan-screener-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; color: var(--muted); font-size: 10px; }
+.taiwan-screener-pagination div { display: flex; gap: 8px; }
+.taiwan-screener-pagination button { min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; }
+.taiwan-screener-pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 900px) { .taiwan-screener-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .market-index-selector button { display: grid; gap: 4px; min-width: 0; min-height: 72px; padding: 9px 10px; border: 1px solid #d9e1ea; border-radius: 9px; background: #ffffff; color: #66768b; text-align: left; cursor: pointer; }
 .market-index-selector button:hover { border-color: #a9c5e2; }
 .market-index-selector button.active { border-color: #6fa3da; background: linear-gradient(145deg, #f2f8ff, #ffffff); box-shadow: 0 6px 16px rgba(34, 97, 162, .1); }
