@@ -1,8 +1,11 @@
+import { requestJSON, type BackendConfig } from './backend';
+
 export type TaiwanScope = 'twse' | 'tpex' | 'combined';
 
 export const taiwanPrimaryNavigation = [
 	['taiwan-overview', '台股總覽'], ['taiwan-breadth', '市場廣度'], ['taiwan-emotion', '市場情緒'],
 	['taiwan-industry', '產業雷達'], ['taiwan-stock', '個股研究'], ['taiwan-research', 'AI 研究'],
+	['taiwan-watchlist', '自選股'],
 ] as const;
 
 export const taiwanDefaultWorkspace = 'taiwan-overview';
@@ -15,12 +18,51 @@ export function resolveTaiwanWorkspace(hash: string) {
 export const taiwanMarketPath = (kind: 'market-breadth' | 'market-emotion' | 'industry-radar', scope: TaiwanScope) => `/api/v1/tw/${kind}?scope=${scope}`;
 export const taiwanIntelligencePath = (symbol: string) => `/api/v1/tw/stocks/${encodeURIComponent(symbol)}/intelligence`;
 export const taiwanResearchPath = (symbol: string) => `/api/v1/tw/stocks/${encodeURIComponent(symbol)}/research`;
+export const taiwanWatchlistPath = () => '/api/v1/tw/watchlist';
+export const taiwanWatchlistRemovePath = (canonical: string) => `/api/v1/tw/watchlist/${encodeURIComponent(canonical)}`;
 
 export const taiwanScopes: { id: TaiwanScope; label: string }[] = [
 	{ id: 'combined', label: '台灣市場' },
 	{ id: 'twse', label: '上市（TWSE）' },
 	{ id: 'tpex', label: '上櫃（TPEx）' },
 ];
+
+// Wire shape of one saved Taiwan security (M6A backend). Quote/price data is
+// intentionally absent here — the watchlist persists identity only; latest
+// prices are composed separately from the existing /tw/quotes endpoint (M6B).
+export type TaiwanWatchlistSecurity = { canonical: string; code: string; name: string; exchange: string; security_type: string; created_at: string };
+
+export async function fetchTaiwanWatchlist(config: BackendConfig): Promise<TaiwanWatchlistSecurity[]> {
+	const payload = await requestJSON<{ data: { securities: TaiwanWatchlistSecurity[] } }>(config, taiwanWatchlistPath());
+	return payload.data.securities;
+}
+
+export async function isTaiwanSecurityWatchlisted(config: BackendConfig, canonical: string): Promise<boolean> {
+	const securities = await fetchTaiwanWatchlist(config);
+	return securities.some((item) => item.canonical === canonical);
+}
+
+export async function addTaiwanWatchlistSecurity(config: BackendConfig, canonical: string): Promise<TaiwanWatchlistSecurity> {
+	const payload = await requestJSON<{ data: { security: TaiwanWatchlistSecurity } }>(config, taiwanWatchlistPath(), {
+		method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: canonical }),
+	});
+	return payload.data.security;
+}
+
+export async function removeTaiwanWatchlistSecurity(config: BackendConfig, canonical: string): Promise<void> {
+	await requestJSON(config, taiwanWatchlistRemovePath(canonical), { method: 'DELETE' });
+}
+
+// The backend /tw/quotes endpoint supports at most 10 symbols per request (all-or-nothing per
+// call, not per-symbol) — chunk a larger Watchlist into deterministic groups so each group can be
+// fetched (and can fail) independently via Promise.allSettled, without ever exceeding that limit.
+export const TAIWAN_QUOTES_BATCH_LIMIT = 10;
+
+export function chunkTaiwanSymbols(symbols: string[], size: number = TAIWAN_QUOTES_BATCH_LIMIT): string[][] {
+	const groups: string[][] = [];
+	for (let i = 0; i < symbols.length; i += size) groups.push(symbols.slice(i, i + size));
+	return groups;
+}
 
 const labels: Record<string, string> = {
 	current: '最新', stale: '資料較舊', partial: '部分資料', unavailable: '無法取得',

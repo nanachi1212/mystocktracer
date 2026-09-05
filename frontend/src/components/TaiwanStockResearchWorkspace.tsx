@@ -1,9 +1,9 @@
-import { Bot, LoaderCircle, Search } from 'lucide-react';
+import { Bot, LoaderCircle, Search, Star } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { BackendConfig, SecurityIdentity } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
-import { formatTaiwanPercent, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel } from '../lib/taiwan-product';
+import { addTaiwanWatchlistSecurity, formatTaiwanPercent, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel } from '../lib/taiwan-product';
 
 export type Evidence = { status: string; freshness?: string; as_of?: string; reason?: string; data?: Record<string, unknown> };
 export type Component = { state: string; status: string; freshness?: string; as_of?: string; reasons: string[] };
@@ -35,6 +35,12 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 	const selectRequestID = useRef(0);
 	const selectedRef = useRef<SecurityIdentity | null>(null);
 	useEffect(() => { selectedRef.current = selected; }, [selected]);
+	// Watchlist membership/mutation state, independent of the intelligence/research `error` above —
+	// a failed membership check or toggle must never clear or interfere with the displayed research.
+	const [inWatchlist, setInWatchlist] = useState<boolean | null>(null);
+	const [watchlistBusy, setWatchlistBusy] = useState(false);
+	const [watchlistError, setWatchlistError] = useState('');
+	const watchlistCheckID = useRef(0);
 
 	const search = async (value = query) => {
 		if (!config || !value.trim()) return;
@@ -50,6 +56,13 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 	const select = async (security: SecurityIdentity) => {
 		if (!config) return;
 		setSelected(security);
+		// Independent of the main intelligence fetch below: check Watchlist membership for the
+		// newly selected security. Scoped so a stale check for a since-abandoned selection can
+		// never overwrite the current one. A failure here is silent (button stays hidden).
+		setInWatchlist(null); setWatchlistError('');
+		void runScopedRequest(watchlistCheckID, () => isTaiwanSecurityWatchlisted(config, security.canonical), {
+			onSuccess: (saved) => setInWatchlist(saved),
+		});
 		// Clear the previous selection's data immediately so a still-loading new symbol never
 		// renders under the old symbol's heading/evidence — and drop a stale response if the
 		// user has since selected another symbol (last-wins by selection order, not arrival order).
@@ -59,6 +72,22 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 			onError: (reason) => { setIntelligence(null); setError(taiwanErrorMessage(reason, '台灣個股研究資料載入失敗')); },
 			onSettle: () => setLoading(false),
 		});
+	};
+
+	// Adds/removes the currently selected security from the Watchlist. Deliberately does not
+	// touch `selected`/intelligence/research — Watchlist membership is independent of the
+	// currently displayed research, so a toggle (success or failure) never reloads or clears it.
+	const toggleWatchlist = async () => {
+		if (!config || !selected || watchlistBusy || inWatchlist === null) return;
+		setWatchlistBusy(true); setWatchlistError('');
+		try {
+			if (inWatchlist) { await removeTaiwanWatchlistSecurity(config, selected.canonical); setInWatchlist(false); }
+			else { await addTaiwanWatchlistSecurity(config, selected.canonical); setInWatchlist(true); }
+		} catch (reason) {
+			setWatchlistError(taiwanErrorMessage(reason, inWatchlist ? '移除自選股失敗' : '加入自選股失敗'));
+		} finally {
+			setWatchlistBusy(false);
+		}
 	};
 	const generateResearch = async () => {
 		if (!config || !selected) return;
@@ -83,6 +112,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 		<form className="market-filter" onSubmit={submit}><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="輸入 2330、台積電、2330.TWSE 或 6488.TPEX" aria-label="台灣證券名稱或代碼" /></label><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : '搜尋'}</button></form>
 		{error && <div className="market-partial-warning">{error}</div>}
 		{matches.length > 1 && <div className="taiwan-search-results">{matches.map((item) => <button type="button" key={item.canonical} onClick={() => void select(item)}><strong>{item.code} {item.name}</strong><span>{item.exchange} · {taiwanSecurityTypeLabel(item.security_type)}</span></button>)}</div>}
+		{selected && inWatchlist !== null && <div><button type="button" className={`taiwan-watchlist-toggle${inWatchlist ? ' saved' : ''}`} onClick={() => void toggleWatchlist()} disabled={watchlistBusy}>{watchlistBusy ? <LoaderCircle className="spin" size={14} /> : <Star size={14} />}{inWatchlist ? '移除自選' : '加入自選'}</button>{watchlistError && <span className="taiwan-watchlist-toggle-error">{watchlistError}</span>}</div>}
 		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取官方個股資料</div>}
 		{intelligence && <>
 			<section className="taiwan-stock-heading"><div><span>{intelligence.identity.exchange} · {taiwanSecurityTypeLabel(intelligence.identity.security_type)} · {intelligence.identity.currency}</span><h2>{intelligence.identity.name} {intelligence.identity.code}</h2><small>{intelligence.identity.canonical_symbol}{intelligence.identity.industry_name ? ` · ${intelligence.identity.industry_name}` : ''}</small></div>{intelligence.quote.data && <div><strong>{intelligence.quote.data.price.toLocaleString('zh-TW')}</strong><em className={intelligence.quote.data.change_percent > 0 ? 'up' : intelligence.quote.data.change_percent < 0 ? 'down' : 'flat'}>{formatTaiwanPercent(intelligence.quote.data.change_percent, true)}</em></div>}</section>
