@@ -38,6 +38,14 @@ export type TaiwanScreenerSecurity = {
 	price: number | null; change: number | null; change_percent: number | null; volume: number | null; amount: number | null;
 	foreign_net: number | null; trust_net: number | null; dealer_net: number | null; institutional_net: number | null;
 	margin_balance: number | null; margin_change: number | null; short_balance: number | null; short_change: number | null; short_margin_ratio: number | null;
+	// M7E-A — revenue/valuation/dividends (live-current, official-bulk-sourced; nil when that domain
+	// was not requested, or when the security has no row in that domain's backend payload). Units are
+	// reused exactly as the backend already expresses them — never rescaled here: monthly_revenue is
+	// TWD (the backend already converted it from the source's thousand-TWD raw value), revenue_yoy/
+	// dividend_yield are the backend's own percentage-scale numbers.
+	monthly_revenue: number | null; revenue_yoy: number | null;
+	pe: number | null; pb: number | null; dividend_yield: number | null;
+	cash_dividend: number | null; stock_dividend: number | null; total_dividend: number | null;
 };
 
 export type TaiwanScreenerResponse = {
@@ -49,12 +57,21 @@ export type TaiwanScreenerResponse = {
 	// TaiwanFreshness model; never a published_at/available_at timestamp.
 	institutional_as_of?: string | null; institutional_status?: string; institutional_days_behind?: number | null;
 	margin_as_of?: string | null; margin_status?: string; margin_days_behind?: number | null;
+	// M7E-A — same additive-only-when-requested contract. revenue_as_of/dividends_as_of are the
+	// backend's own period/year identifiers (e.g. "2026-08", "2025") — never a calendar date the
+	// frontend invents. revenue_days_behind/dividends_days_behind are normally absent (the backend
+	// never fabricates a trading-day cadence for monthly/annual data); valuation_days_behind may be
+	// present since valuation shares the daily trading cadence.
+	revenue_as_of?: string | null; revenue_status?: string; revenue_days_behind?: number | null;
+	valuation_as_of?: string | null; valuation_status?: string; valuation_days_behind?: number | null;
+	dividends_as_of?: string | null; dividends_status?: string; dividends_days_behind?: number | null;
 };
 
 export type TaiwanScreenerSort =
 	| 'price' | 'change_percent' | 'volume' | 'amount'
 	| 'foreign_net' | 'trust_net' | 'dealer_net' | 'institutional_net'
-	| 'margin_balance' | 'margin_change' | 'short_balance' | 'short_change' | 'short_margin_ratio';
+	| 'margin_balance' | 'margin_change' | 'short_balance' | 'short_change' | 'short_margin_ratio'
+	| 'monthly_revenue' | 'revenue_yoy' | 'pe' | 'pb' | 'dividend_yield' | 'cash_dividend' | 'stock_dividend' | 'total_dividend';
 export type TaiwanScreenerOrder = 'asc' | 'desc';
 
 export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string }[] = [
@@ -71,10 +88,21 @@ export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string 
 	{ id: 'short_balance', label: '融券餘額' },
 	{ id: 'short_change', label: '融券增減' },
 	{ id: 'short_margin_ratio', label: '券資比' },
+	{ id: 'monthly_revenue', label: '月營收' },
+	{ id: 'revenue_yoy', label: '月營收年增率' },
+	{ id: 'pe', label: '本益比（PE）' },
+	{ id: 'pb', label: '股價淨值比（PB）' },
+	{ id: 'dividend_yield', label: '殖利率' },
+	{ id: 'cash_dividend', label: '現金股利' },
+	{ id: 'stock_dividend', label: '股票股利' },
+	{ id: 'total_dividend', label: '合計股利' },
 ];
 
 const taiwanScreenerInstitutionalSortKeys = new Set<TaiwanScreenerSort>(['foreign_net', 'trust_net', 'dealer_net', 'institutional_net']);
 const taiwanScreenerMarginSortKeys = new Set<TaiwanScreenerSort>(['margin_balance', 'margin_change', 'short_balance', 'short_change', 'short_margin_ratio']);
+const taiwanScreenerRevenueSortKeys = new Set<TaiwanScreenerSort>(['monthly_revenue', 'revenue_yoy']);
+const taiwanScreenerValuationSortKeys = new Set<TaiwanScreenerSort>(['pe', 'pb', 'dividend_yield']);
+const taiwanScreenerDividendSortKeys = new Set<TaiwanScreenerSort>(['cash_dividend', 'stock_dividend', 'total_dividend']);
 
 export const taiwanScreenerOrderOptions: { id: TaiwanScreenerOrder; label: string }[] = [
 	{ id: 'desc', label: '高到低' },
@@ -103,6 +131,15 @@ export type TaiwanScreenerFilters = {
 	minShortBalance: string; maxShortBalance: string;
 	minShortChange: string; maxShortChange: string;
 	minShortMarginRatio: string; maxShortMarginRatio: string;
+	// M7E-A fundamentals: revenue, valuation, dividends.
+	minMonthlyRevenue: string; maxMonthlyRevenue: string;
+	minRevenueYoY: string; maxRevenueYoY: string;
+	minPE: string; maxPE: string;
+	minPB: string; maxPB: string;
+	minDividendYield: string; maxDividendYield: string;
+	minCashDividend: string; maxCashDividend: string;
+	minStockDividend: string; maxStockDividend: string;
+	minTotalDividend: string; maxTotalDividend: string;
 	sort: TaiwanScreenerSort;
 	order: TaiwanScreenerOrder;
 	limit: number;
@@ -127,6 +164,14 @@ export function taiwanScreenerDefaultFilters(): TaiwanScreenerFilters {
 		minShortBalance: '', maxShortBalance: '',
 		minShortChange: '', maxShortChange: '',
 		minShortMarginRatio: '', maxShortMarginRatio: '',
+		minMonthlyRevenue: '', maxMonthlyRevenue: '',
+		minRevenueYoY: '', maxRevenueYoY: '',
+		minPE: '', maxPE: '',
+		minPB: '', maxPB: '',
+		minDividendYield: '', maxDividendYield: '',
+		minCashDividend: '', maxCashDividend: '',
+		minStockDividend: '', maxStockDividend: '',
+		minTotalDividend: '', maxTotalDividend: '',
 		sort: 'amount', order: 'desc',
 		limit: TAIWAN_SCREENER_PAGE_SIZE, offset: 0,
 	};
@@ -144,6 +189,26 @@ export function taiwanScreenerHasInstitutionalCriteria(filters: TaiwanScreenerFi
 export function taiwanScreenerHasMarginCriteria(filters: TaiwanScreenerFilters): boolean {
 	if (taiwanScreenerMarginSortKeys.has(filters.sort)) return true;
 	return [filters.minMarginBalance, filters.maxMarginBalance, filters.minMarginChange, filters.maxMarginChange, filters.minShortBalance, filters.maxShortBalance, filters.minShortChange, filters.maxShortChange, filters.minShortMarginRatio, filters.maxShortMarginRatio]
+		.some((raw) => taiwanScreenerRangeValue(raw) != null);
+}
+
+// M7E-A — same pattern as institutional/margin above: true if an active min/max filter for that
+// domain is set OR the sort key belongs to that domain. Must be called with `applied`, never `draft`.
+export function taiwanScreenerHasRevenueCriteria(filters: TaiwanScreenerFilters): boolean {
+	if (taiwanScreenerRevenueSortKeys.has(filters.sort)) return true;
+	return [filters.minMonthlyRevenue, filters.maxMonthlyRevenue, filters.minRevenueYoY, filters.maxRevenueYoY]
+		.some((raw) => taiwanScreenerRangeValue(raw) != null);
+}
+
+export function taiwanScreenerHasValuationCriteria(filters: TaiwanScreenerFilters): boolean {
+	if (taiwanScreenerValuationSortKeys.has(filters.sort)) return true;
+	return [filters.minPE, filters.maxPE, filters.minPB, filters.maxPB, filters.minDividendYield, filters.maxDividendYield]
+		.some((raw) => taiwanScreenerRangeValue(raw) != null);
+}
+
+export function taiwanScreenerHasDividendCriteria(filters: TaiwanScreenerFilters): boolean {
+	if (taiwanScreenerDividendSortKeys.has(filters.sort)) return true;
+	return [filters.minCashDividend, filters.maxCashDividend, filters.minStockDividend, filters.maxStockDividend, filters.minTotalDividend, filters.maxTotalDividend]
 		.some((raw) => taiwanScreenerRangeValue(raw) != null);
 }
 
@@ -194,6 +259,22 @@ export function taiwanScreenerPath(filters: TaiwanScreenerFilters): string {
 	setRange('max_short_change', filters.maxShortChange);
 	setRange('min_short_margin_ratio', filters.minShortMarginRatio);
 	setRange('max_short_margin_ratio', filters.maxShortMarginRatio);
+	setRange('min_monthly_revenue', filters.minMonthlyRevenue);
+	setRange('max_monthly_revenue', filters.maxMonthlyRevenue);
+	setRange('min_revenue_yoy', filters.minRevenueYoY);
+	setRange('max_revenue_yoy', filters.maxRevenueYoY);
+	setRange('min_pe', filters.minPE);
+	setRange('max_pe', filters.maxPE);
+	setRange('min_pb', filters.minPB);
+	setRange('max_pb', filters.maxPB);
+	setRange('min_dividend_yield', filters.minDividendYield);
+	setRange('max_dividend_yield', filters.maxDividendYield);
+	setRange('min_cash_dividend', filters.minCashDividend);
+	setRange('max_cash_dividend', filters.maxCashDividend);
+	setRange('min_stock_dividend', filters.minStockDividend);
+	setRange('max_stock_dividend', filters.maxStockDividend);
+	setRange('min_total_dividend', filters.minTotalDividend);
+	setRange('max_total_dividend', filters.maxTotalDividend);
 	return `/api/v1/tw/screener?${params.toString()}`;
 }
 
@@ -214,6 +295,14 @@ export function validateTaiwanScreenerFilters(filters: TaiwanScreenerFilters): s
 		['minShortBalance', 'maxShortBalance', '最低融券餘額不可高於最高融券餘額'],
 		['minShortChange', 'maxShortChange', '最低融券增減不可高於最高融券增減'],
 		['minShortMarginRatio', 'maxShortMarginRatio', '最低券資比不可高於最高券資比'],
+		['minMonthlyRevenue', 'maxMonthlyRevenue', '最低月營收不可高於最高月營收'],
+		['minRevenueYoY', 'maxRevenueYoY', '最低月營收年增率不可高於最高月營收年增率'],
+		['minPE', 'maxPE', '最低本益比不可高於最高本益比'],
+		['minPB', 'maxPB', '最低股價淨值比不可高於最高股價淨值比'],
+		['minDividendYield', 'maxDividendYield', '最低殖利率不可高於最高殖利率'],
+		['minCashDividend', 'maxCashDividend', '最低現金股利不可高於最高現金股利'],
+		['minStockDividend', 'maxStockDividend', '最低股票股利不可高於最高股票股利'],
+		['minTotalDividend', 'maxTotalDividend', '最低合計股利不可高於最高合計股利'],
 	];
 	for (const [minKey, maxKey, message] of pairs) {
 		const min = taiwanScreenerRangeValue(filters[minKey as keyof TaiwanScreenerFilters] as string);
@@ -304,6 +393,19 @@ export function formatTaiwanSignedShares(value?: number | null) {
 // means 0.4%) — this only appends the % sign, it never re-scales the value.
 export function formatTaiwanRatioPercent(value?: number | null) {
 	return value == null ? '—' : `${value.toLocaleString('zh-TW', { maximumFractionDigits: 2 })}%`;
+}
+
+// M7E-A — monthly_revenue is already TWD (the backend's thousandTWD() converted it from the
+// source's thousand-TWD raw value) — this never divides by 1,000 or otherwise rescales, it only adds
+// locale grouping for readability. No leading + sign for an absolute revenue amount.
+export function formatTaiwanRevenueTWD(value?: number | null) {
+	return value == null ? '—' : value.toLocaleString('zh-TW');
+}
+
+// M7E-A — PE/PB and per-share dividend values: plain decimal formatting, no sign, no unit. Missing
+// stays "—"; a genuine 0 (e.g. no stock dividend this year) stays "0", never fabricated or hidden.
+export function formatTaiwanPlainNumber(value?: number | null) {
+	return value == null ? '—' : value.toLocaleString('zh-TW', { maximumFractionDigits: 2 });
 }
 
 // Runs an async task as the latest "generation" of a scoped request (e.g. a market scope tab or

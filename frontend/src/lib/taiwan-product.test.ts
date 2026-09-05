@@ -1,7 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatTaiwanRatio, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest, taiwanComponentList, taiwanDefaultWorkspace, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath, taiwanScreenerDefaultFilters, taiwanScreenerPath, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters } from './taiwan-product';
+import {
+	formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
+	taiwanComponentList, taiwanDefaultWorkspace, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath,
+	taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
+	taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters,
+} from './taiwan-product';
 
 /** A promise plus its resolve/reject, so a test can control settlement order explicitly. */
 function deferred<T>() {
@@ -426,5 +431,146 @@ describe('M7B — Taiwan Screener local range validation', () => {
 
 	it('accepts a blank pair without complaint', () => {
 		expect(validateTaiwanScreenerFilters(taiwanScreenerDefaultFilters())).toBe('');
+	});
+});
+
+describe('M7E-A — Taiwan Screener fundamentals query builder', () => {
+	it('16. sort dropdown offers exactly 21 options (M7A 4 + M7D 9 + M7E-A 8)', () => {
+		expect(taiwanScreenerSortOptions.length).toBe(21);
+	});
+
+	it('preserves every M7A/M7D sort id and adds the 8 new M7E-A sort ids', () => {
+		const ids = taiwanScreenerSortOptions.map((item) => item.id);
+		for (const id of ['price', 'change_percent', 'volume', 'amount', 'foreign_net', 'trust_net', 'dealer_net', 'institutional_net', 'margin_balance', 'margin_change', 'short_balance', 'short_change', 'short_margin_ratio']) {
+			expect(ids).toContain(id);
+		}
+		for (const id of ['monthly_revenue', 'revenue_yoy', 'pe', 'pb', 'dividend_yield', 'cash_dividend', 'stock_dividend', 'total_dividend']) {
+			expect(ids).toContain(id);
+		}
+	});
+
+	it('12. default filters include the 16 new fundamentals fields, all blank', () => {
+		const defaults = taiwanScreenerDefaultFilters();
+		for (const key of ['minMonthlyRevenue', 'maxMonthlyRevenue', 'minRevenueYoY', 'maxRevenueYoY', 'minPE', 'maxPE', 'minPB', 'maxPB', 'minDividendYield', 'maxDividendYield', 'minCashDividend', 'maxCashDividend', 'minStockDividend', 'maxStockDividend', 'minTotalDividend', 'maxTotalDividend'] as const) {
+			expect(defaults[key]).toBe('');
+		}
+		expect(taiwanScreenerPath(defaults)).not.toMatch(/min_monthly_revenue|max_monthly_revenue|min_revenue_yoy|max_revenue_yoy|min_pe|max_pe|min_pb|max_pb|min_dividend_yield|max_dividend_yield|min_cash_dividend|max_cash_dividend|min_stock_dividend|max_stock_dividend|min_total_dividend|max_total_dividend/);
+	});
+
+	it('7. Apply serializes monthly_revenue verbatim in TWD, never divided by 1,000', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minMonthlyRevenue: '1000000000' };
+		const path = taiwanScreenerPath(filters);
+		expect(path).toContain('min_monthly_revenue=1000000000');
+	});
+
+	it('8. Apply serializes revenue_yoy verbatim (never divided or multiplied by 100)', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '12.16' };
+		const path = taiwanScreenerPath(filters);
+		expect(path).toContain('min_revenue_yoy=12.16');
+	});
+
+	it('9. Apply serializes PE/PB/dividend_yield', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minPE: '0', minPB: '1.5', minDividendYield: '5.3' };
+		const path = taiwanScreenerPath(filters);
+		expect(path).toContain('min_pe=0');
+		expect(path).toContain('min_pb=1.5');
+		expect(path).toContain('min_dividend_yield=5.3');
+	});
+
+	it('10. Apply serializes cash/stock/total dividends', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minCashDividend: '5', minStockDividend: '0', minTotalDividend: '5' };
+		const path = taiwanScreenerPath(filters);
+		expect(path).toContain('min_cash_dividend=5');
+		expect(path).toContain('min_stock_dividend=0');
+		expect(path).toContain('min_total_dividend=5');
+	});
+
+	it('11. combined fundamentals filters serialize together (revenue + valuation + dividend in one query)', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '0', minPE: '0', minCashDividend: '0' };
+		const path = taiwanScreenerPath(filters);
+		expect(path).toContain('min_revenue_yoy=0');
+		expect(path).toContain('min_pe=0');
+		expect(path).toContain('min_cash_dividend=0');
+	});
+
+	it('never sends NaN/Infinity/blank for any new fundamentals field', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minPE: 'abc', maxPE: 'Infinity', minMonthlyRevenue: '', maxRevenueYoY: '   ' };
+		const path = taiwanScreenerPath(filters);
+		expect(path).not.toMatch(/min_pe=|max_pe=|min_monthly_revenue=|max_revenue_yoy=/);
+		expect(path).not.toMatch(/NaN|Infinity/);
+	});
+
+	it('rejects inverted fundamentals ranges', () => {
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minMonthlyRevenue: '100', maxMonthlyRevenue: '50' })).toBe('最低月營收不可高於最高月營收');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minRevenueYoY: '10', maxRevenueYoY: '5' })).toBe('最低月營收年增率不可高於最高月營收年增率');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minPE: '10', maxPE: '5' })).toBe('最低本益比不可高於最高本益比');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minPB: '10', maxPB: '5' })).toBe('最低股價淨值比不可高於最高股價淨值比');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minDividendYield: '10', maxDividendYield: '5' })).toBe('最低殖利率不可高於最高殖利率');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minCashDividend: '10', maxCashDividend: '5' })).toBe('最低現金股利不可高於最高現金股利');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minStockDividend: '10', maxStockDividend: '5' })).toBe('最低股票股利不可高於最高股票股利');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minTotalDividend: '10', maxTotalDividend: '5' })).toBe('最低合計股利不可高於最高合計股利');
+	});
+});
+
+describe('M7E-A — domain criteria helpers (applied-only)', () => {
+	it('taiwanScreenerHasRevenueCriteria is true only when a revenue filter or sort is active', () => {
+		expect(taiwanScreenerHasRevenueCriteria(taiwanScreenerDefaultFilters())).toBe(false);
+		expect(taiwanScreenerHasRevenueCriteria({ ...taiwanScreenerDefaultFilters(), minRevenueYoY: '0' })).toBe(true);
+		expect(taiwanScreenerHasRevenueCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'monthly_revenue' })).toBe(true);
+		expect(taiwanScreenerHasRevenueCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'revenue_yoy' })).toBe(true);
+	});
+
+	it('taiwanScreenerHasValuationCriteria is true only when a valuation filter or sort is active', () => {
+		expect(taiwanScreenerHasValuationCriteria(taiwanScreenerDefaultFilters())).toBe(false);
+		expect(taiwanScreenerHasValuationCriteria({ ...taiwanScreenerDefaultFilters(), minPE: '0' })).toBe(true);
+		expect(taiwanScreenerHasValuationCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'pb' })).toBe(true);
+		expect(taiwanScreenerHasValuationCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'dividend_yield' })).toBe(true);
+	});
+
+	it('taiwanScreenerHasDividendCriteria is true only when a dividend filter or sort is active', () => {
+		expect(taiwanScreenerHasDividendCriteria(taiwanScreenerDefaultFilters())).toBe(false);
+		expect(taiwanScreenerHasDividendCriteria({ ...taiwanScreenerDefaultFilters(), minCashDividend: '0' })).toBe(true);
+		expect(taiwanScreenerHasDividendCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'total_dividend' })).toBe(true);
+	});
+
+	it('17. Clear (taiwanScreenerDefaultFilters()) resets all fundamentals fields and criteria go false', () => {
+		const cleared = taiwanScreenerDefaultFilters();
+		expect(taiwanScreenerHasRevenueCriteria(cleared)).toBe(false);
+		expect(taiwanScreenerHasValuationCriteria(cleared)).toBe(false);
+		expect(taiwanScreenerHasDividendCriteria(cleared)).toBe(false);
+	});
+});
+
+describe('M7E-A — number formatting', () => {
+	it('21-23. monthly_revenue: null -> —, 0 -> 0, positive -> locale-grouped integer, never divided by 1,000', () => {
+		expect(formatTaiwanRevenueTWD(null)).toBe('—');
+		expect(formatTaiwanRevenueTWD(0)).toBe('0');
+		expect(formatTaiwanRevenueTWD(52340000000)).toBe((52340000000).toLocaleString('zh-TW'));
+		expect(formatTaiwanRevenueTWD(52340000000)).not.toContain('52340000');
+	});
+
+	it('24. revenue_yoy: null -> —, 0 -> 0%, positive -> +signed, negative -> signed', () => {
+		expect(formatTaiwanPercent(null, true)).toBe('—');
+		expect(formatTaiwanPercent(0, true)).toBe('0%');
+		expect(formatTaiwanPercent(12.16, true)).toBe('+12.16%');
+		expect(formatTaiwanPercent(-8.4, true)).toBe('-8.4%');
+	});
+
+	it('25-26. PE/PB: null -> —, real zero remains 0, plain decimal formatting', () => {
+		expect(formatTaiwanPlainNumber(null)).toBe('—');
+		expect(formatTaiwanPlainNumber(0)).toBe('0');
+		expect(formatTaiwanPlainNumber(27.94)).toBe((27.94).toLocaleString('zh-TW', { maximumFractionDigits: 2 }));
+	});
+
+	it('27. dividend_yield: null -> —, 0 -> 0%, positive -> unsigned percent (no leading +)', () => {
+		expect(formatTaiwanPercent(null)).toBe('—');
+		expect(formatTaiwanPercent(0)).toBe('0%');
+		expect(formatTaiwanPercent(5.3)).toBe('5.3%');
+	});
+
+	it('28-30. dividends: null -> —, zero -> 0, normal decimal formatting', () => {
+		expect(formatTaiwanPlainNumber(null)).toBe('—');
+		expect(formatTaiwanPlainNumber(0)).toBe('0');
+		expect(formatTaiwanPlainNumber(5)).toBe((5).toLocaleString('zh-TW', { maximumFractionDigits: 2 }));
 	});
 });

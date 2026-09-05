@@ -3,7 +3,8 @@ import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
-	taiwanScreenerDefaultFilters, taiwanScreenerHasInstitutionalCriteria, taiwanScreenerHasMarginCriteria, taiwanScreenerPath,
+	taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasInstitutionalCriteria, taiwanScreenerHasMarginCriteria,
+	taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria, taiwanScreenerPath,
 	type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
 } from '../lib/taiwan-product';
 import {
@@ -21,6 +22,8 @@ const security = (overrides: Partial<TaiwanScreenerSecurity> = {}): TaiwanScreen
 	price: 2410, change: 20, change_percent: 0.84, volume: 14102018, amount: 33917316870,
 	foreign_net: null, trust_net: null, dealer_net: null, institutional_net: null,
 	margin_balance: null, margin_change: null, short_balance: null, short_change: null, short_margin_ratio: null,
+	monthly_revenue: null, revenue_yoy: null, pe: null, pb: null, dividend_yield: null,
+	cash_dividend: null, stock_dividend: null, total_dividend: null,
 	...overrides,
 });
 
@@ -30,16 +33,17 @@ const response = (overrides: Partial<TaiwanScreenerResponse> = {}): TaiwanScreen
 });
 
 // M7C — default row-level Watchlist props: "ready, not saved, not busy, no error" unless overridden.
-// M7D — showInstitutional/showMargin default false (legacy row shape) unless a test opts in.
-const rowWatchlistProps = (overrides: Partial<{ membershipState: WatchlistMembershipState; saved: boolean; busy: boolean; mutationError?: string; showInstitutional: boolean; showMargin: boolean }> = {}) => ({
+// M7D/M7E-A — showInstitutional/showMargin/showRevenue/showValuation/showDividends default false
+// (legacy row shape) unless a test opts in.
+const rowWatchlistProps = (overrides: Partial<{ membershipState: WatchlistMembershipState; saved: boolean; busy: boolean; mutationError?: string; showInstitutional: boolean; showMargin: boolean; showRevenue: boolean; showValuation: boolean; showDividends: boolean }> = {}) => ({
 	membershipState: 'ready' as WatchlistMembershipState, saved: false, busy: false, mutationError: undefined as string | undefined, onToggleWatchlist: () => {},
-	showInstitutional: false, showMargin: false,
+	showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false,
 	...overrides,
 });
 
-const tableWatchlistProps = (overrides: Partial<{ watchlistState: WatchlistMembershipState; watchlistedCanonicals: Set<string>; busyCanonicals: Set<string>; mutationErrors: Record<string, string>; showInstitutional: boolean; showMargin: boolean }> = {}) => ({
+const tableWatchlistProps = (overrides: Partial<{ watchlistState: WatchlistMembershipState; watchlistedCanonicals: Set<string>; busyCanonicals: Set<string>; mutationErrors: Record<string, string>; showInstitutional: boolean; showMargin: boolean; showRevenue: boolean; showValuation: boolean; showDividends: boolean }> = {}) => ({
 	watchlistState: 'ready' as WatchlistMembershipState, watchlistedCanonicals: new Set<string>(), busyCanonicals: new Set<string>(), mutationErrors: {} as Record<string, string>, onToggleWatchlist: () => {},
-	showInstitutional: false, showMargin: false,
+	showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false,
 	...overrides,
 });
 
@@ -607,18 +611,18 @@ describe('M7D -- Clear / pagination / global refresh preserve advanced semantics
 
 describe('M7D -- missing/zero/sign rendering (institutional)', () => {
 	it('17. null institutional values render —', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: null, trust_net: null, dealer_net: null, institutional_net: null }), showInstitutional: true, showMargin: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: null, trust_net: null, dealer_net: null, institutional_net: null }), showInstitutional: true, showMargin: false, showRevenue: false, showValuation: false, showDividends: false })}</tr></tbody></table>);
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(4);
 	});
 
 	it('18. zero institutional value renders real 0, not missing', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 0, trust_net: 0, dealer_net: 0, institutional_net: 0 }), showInstitutional: true, showMargin: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 0, trust_net: 0, dealer_net: 0, institutional_net: 0 }), showInstitutional: true, showMargin: false, showRevenue: false, showValuation: false, showDividends: false })}</tr></tbody></table>);
 		expect(html).toContain('外資 0');
 		expect(html).not.toContain('外資 —');
 	});
 
 	it('19. positive/negative institutional values render explicit signs, never "+0"', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 534504, trust_net: -12000, dealer_net: 0 }), showInstitutional: true, showMargin: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 534504, trust_net: -12000, dealer_net: 0 }), showInstitutional: true, showMargin: false, showRevenue: false, showValuation: false, showDividends: false })}</tr></tbody></table>);
 		expect(html).toContain('+534,504');
 		expect(html).toContain('-12,000');
 		expect(html).not.toContain('+0');
@@ -627,18 +631,18 @@ describe('M7D -- missing/zero/sign rendering (institutional)', () => {
 
 describe('M7D -- missing/zero/ratio rendering (margin)', () => {
 	it('20. null margin values render —', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: null, margin_change: null, short_balance: null, short_change: null, short_margin_ratio: null }), showInstitutional: false, showMargin: true })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: null, margin_change: null, short_balance: null, short_change: null, short_margin_ratio: null }), showInstitutional: false, showMargin: true, showRevenue: false, showValuation: false, showDividends: false })}</tr></tbody></table>);
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(5);
 	});
 
 	it('21. zero margin value renders real zero', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: 0, short_balance: 0 }), showInstitutional: false, showMargin: true })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: 0, short_balance: 0 }), showInstitutional: false, showMargin: true, showRevenue: false, showValuation: false, showDividends: false })}</tr></tbody></table>);
 		expect(html).toContain('融資 0');
 		expect(html).toContain('融券 0');
 	});
 
 	it('22. short_margin_ratio renders as a percentage without re-scaling the raw backend value', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ short_margin_ratio: 8.2 }), showInstitutional: false, showMargin: true })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ short_margin_ratio: 8.2 }), showInstitutional: false, showMargin: true, showRevenue: false, showValuation: false, showDividends: false })}</tr></tbody></table>);
 		expect(html).toContain('8.2%');
 	});
 });
@@ -772,6 +776,368 @@ describe('M7D -- race safety and cold-start unchanged', () => {
 	});
 
 	it('38. cold overview cold-start still does not preload the Screener or Watchlist', () => {
+		const source = overviewSource();
+		const mountEffect = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('[config, refreshKey]'));
+		expect(mountEffect).not.toMatch(/screener/i);
+		expect(mountEffect).not.toMatch(/watchlist/i);
+	});
+});
+
+// ==================================================
+// M7E-A -- Revenue + Valuation + Dividends filter UI
+// ==================================================
+
+const withFundamentals = (overrides: Partial<TaiwanScreenerFilters> = {}): TaiwanScreenerFilters => ({ ...taiwanScreenerDefaultFilters(), ...overrides });
+
+describe('M7E-A -- 基本面 group exists, default collapsed, collapse/expand has no request semantics', () => {
+	it('1. renders the 基本面 group toggle with 營收/估值/股利 subsections once expanded', () => {
+		const collapsed = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		expect(collapsed).toContain('基本面');
+	});
+
+	it('2. defaults collapsed: fundamentals min/max inputs are not present in the initial render', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		expect(html).not.toContain('最低月營收');
+		expect(html).not.toContain('最低本益比');
+		expect(html).not.toContain('最低現金股利');
+	});
+
+	it('3. the 基本面 toggle is local useState, never calls onChange/onApply/onClear, and does not reset by Clear', () => {
+		const source = workspaceSource();
+		const panel = source.slice(source.indexOf('export function ScreenerFilterPanel'), source.indexOf('export function ScreenerSummary'));
+		expect(panel).toContain('useState(false)');
+		const fundamentalsToggle = panel.slice(panel.indexOf('基本面') - 400, panel.indexOf('基本面'));
+		expect(fundamentalsToggle).toContain('setFundamentalsExpanded');
+		expect(fundamentalsToggle).not.toMatch(/onChange\(|onApply\(|onClear\(/);
+	});
+
+	it('expanding 基本面 reveals 營收/估值/股利 subsections with their labeled fields', () => {
+		const source = workspaceSource();
+		const panel = source.slice(source.indexOf('export function ScreenerFilterPanel'), source.indexOf('export function ScreenerSummary'));
+		expect(panel).toContain('營收');
+		expect(panel).toContain('估值');
+		expect(panel).toContain('股利');
+		expect(panel).toContain('最低月營收（元）');
+		expect(panel).toContain('最低本益比（PE）');
+		expect(panel).toContain('最低現金股利');
+	});
+});
+
+describe('M7E-A -- draft typing sends no request (revenue/valuation/dividends)', () => {
+	it('4-6. every fundamentals input writes via the same set() helper used by basic fields, never a request call', () => {
+		const source = workspaceSource();
+		const panel = source.slice(source.indexOf('export function ScreenerFilterPanel'), source.indexOf('export function ScreenerSummary'));
+		expect(panel).toContain("set('minMonthlyRevenue'");
+		expect(panel).toContain("set('minPE'");
+		expect(panel).toContain("set('minCashDividend'");
+		expect(panel).not.toMatch(/requestJSON|taiwanScreenerPath\(/);
+	});
+});
+
+describe('M7E-A -- query construction', () => {
+	it('7. Apply serializes monthly_revenue in raw TWD', () => {
+		expect(taiwanScreenerPath(withFundamentals({ minMonthlyRevenue: '1000000000' }))).toContain('min_monthly_revenue=1000000000');
+	});
+
+	it('8. Apply serializes revenue_yoy verbatim', () => {
+		expect(taiwanScreenerPath(withFundamentals({ minRevenueYoY: '12.16' }))).toContain('min_revenue_yoy=12.16');
+	});
+
+	it('9. Apply serializes PE/PB/dividend_yield', () => {
+		const path = taiwanScreenerPath(withFundamentals({ minPE: '0', maxPB: '5', minDividendYield: '5.3' }));
+		expect(path).toContain('min_pe=0');
+		expect(path).toContain('max_pb=5');
+		expect(path).toContain('min_dividend_yield=5.3');
+	});
+
+	it('10. Apply serializes dividends', () => {
+		const path = taiwanScreenerPath(withFundamentals({ minCashDividend: '5', minStockDividend: '0', minTotalDividend: '5' }));
+		expect(path).toContain('min_cash_dividend=5');
+		expect(path).toContain('min_stock_dividend=0');
+		expect(path).toContain('min_total_dividend=5');
+	});
+
+	it('11. combined fundamentals params serialize together in one query', () => {
+		const path = taiwanScreenerPath(withFundamentals({ minRevenueYoY: '0', minPE: '0', minCashDividend: '0' }));
+		expect(path).toContain('min_revenue_yoy=0');
+		expect(path).toContain('min_pe=0');
+		expect(path).toContain('min_cash_dividend=0');
+	});
+
+	it('12. blank fundamentals params are omitted entirely', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		for (const key of ['monthly_revenue', 'revenue_yoy', 'min_pe=', 'max_pe=', 'min_pb=', 'max_pb=', 'dividend_yield', 'cash_dividend', 'stock_dividend', 'total_dividend']) {
+			expect(path).not.toContain(key);
+		}
+	});
+});
+
+describe('M7E-A -- advanced sort', () => {
+	it('13. sort=monthly_revenue / revenue_yoy query', () => {
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'monthly_revenue' }))).toContain('sort=monthly_revenue');
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'revenue_yoy' }))).toContain('sort=revenue_yoy');
+	});
+
+	it('14. sort=pe / pb / dividend_yield query', () => {
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'pe' }))).toContain('sort=pe');
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'pb' }))).toContain('sort=pb');
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'dividend_yield' }))).toContain('sort=dividend_yield');
+	});
+
+	it('15. sort=cash_dividend / stock_dividend / total_dividend query', () => {
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'cash_dividend' }))).toContain('sort=cash_dividend');
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'stock_dividend' }))).toContain('sort=stock_dividend');
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'total_dividend' }))).toContain('sort=total_dividend');
+	});
+
+	it('16. sort dropdown includes all 8 new fundamentals options plus every legacy option (21 total)', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		for (const label of ['月營收', '月營收年增率', '本益比（PE）', '股價淨值比（PB）', '殖利率', '現金股利', '股票股利', '合計股利']) {
+			expect(html).toContain(label);
+		}
+	});
+});
+
+describe('M7E-A -- Clear/Apply/pagination/refresh preserve fundamentals', () => {
+	it('17. Clear (taiwanScreenerDefaultFilters()) resets all fundamentals fields', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const clearFilters = () => {'), source.indexOf('const goPrevious = () => {'));
+		expect(fn).toContain('taiwanScreenerDefaultFilters()');
+	});
+
+	it('18. Apply resets offset to 0 even with fundamentals criteria present', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const applyFilters = () => {'), source.indexOf('const clearFilters = () => {'));
+		expect(fn).toContain('setApplied({ ...draft, offset: 0 })');
+	});
+
+	it('19-20. pagination/refresh spread the full applied object (including fundamentals fields), never rebuild it field-by-field', () => {
+		const source = workspaceSource();
+		const previous = source.slice(source.indexOf('const goPrevious = () => {'), source.indexOf('const goNext = () => {'));
+		const next = source.slice(source.indexOf('const goNext = () => {'), source.indexOf('// Pessimistic add/remove'));
+		expect(previous).toContain('setApplied((current) => ({ ...current, offset:');
+		expect(next).toContain('setApplied((current) => ({ ...current, offset:');
+		expect(source).toContain('}, [config, refreshKey, applied]);');
+	});
+});
+
+describe('M7E-A -- missing/zero rendering (revenue)', () => {
+	it('21. null revenue values render —', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ monthly_revenue: null, revenue_yoy: null }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false })}</tr></tbody></table>);
+		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('22-23. zero revenue renders 0 (not —), and grouped formatting applies to a real value', () => {
+		const zero = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ monthly_revenue: 0, revenue_yoy: 0 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false })}</tr></tbody></table>);
+		expect(zero).toContain('月營收 0');
+		expect(zero).toContain('年增 0%');
+		const grouped = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ monthly_revenue: 52340000000 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false })}</tr></tbody></table>);
+		expect(grouped).toContain((52340000000).toLocaleString('zh-TW'));
+		expect(grouped).not.toContain('52340000000');
+	});
+
+	it('24. revenue_yoy renders signed percent (positive/negative/zero)', () => {
+		const up = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ revenue_yoy: 12.16 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false })}</tr></tbody></table>);
+		expect(up).toContain('+12.16%');
+		const down = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ revenue_yoy: -8.4 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false })}</tr></tbody></table>);
+		expect(down).toContain('-8.4%');
+	});
+});
+
+describe('M7E-A -- missing/zero rendering (valuation)', () => {
+	it('25. null PE/PB render —', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ pe: null, pb: null, dividend_yield: null }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: true, showDividends: false })}</tr></tbody></table>);
+		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(3);
+	});
+
+	it('26. real zero PE/PB remains 0, not missing', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ pe: 0, pb: 0 }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: true, showDividends: false })}</tr></tbody></table>);
+		expect(html).toContain('PE 0');
+		expect(html).toContain('PB 0');
+	});
+
+	it('27. dividend_yield renders as an unsigned percentage, no re-scaling', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ dividend_yield: 5.3 }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: true, showDividends: false })}</tr></tbody></table>);
+		expect(html).toContain('殖利率 5.3%');
+	});
+});
+
+describe('M7E-A -- missing/zero rendering (dividends)', () => {
+	it('28. null dividend values render —', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ cash_dividend: null, stock_dividend: null, total_dividend: null }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: true })}</tr></tbody></table>);
+		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(3);
+	});
+
+	it('29-30. zero dividend renders 0, and decimal formatting applies to a real value', () => {
+		const zero = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ cash_dividend: 5, stock_dividend: 0, total_dividend: 5 }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: true })}</tr></tbody></table>);
+		expect(zero).toContain('股票 0');
+		expect(zero).toContain('現金 5');
+		expect(zero).toContain('合計 5');
+	});
+});
+
+describe('M7E-A -- adaptive result presentation driven by APPLIED filters, not draft', () => {
+	it('31. revenue criteria (applied) shows the revenue block', () => {
+		const applied = withFundamentals({ minRevenueYoY: '0' });
+		const show = taiwanScreenerHasRevenueCriteria(applied);
+		expect(show).toBe(true);
+		const html = renderToStaticMarkup(<ScreenerTable securities={[security()]} onOpenResearch={() => {}} {...tableWatchlistProps({ showRevenue: show })} />);
+		expect(html).toContain('進階資料');
+		expect(html).toContain('月營收');
+	});
+
+	it('32. valuation criteria (applied) shows the valuation block', () => {
+		const applied = withFundamentals({ minPE: '0' });
+		const show = taiwanScreenerHasValuationCriteria(applied);
+		expect(show).toBe(true);
+		const html = renderToStaticMarkup(<ScreenerTable securities={[security()]} onOpenResearch={() => {}} {...tableWatchlistProps({ showValuation: show })} />);
+		expect(html).toContain('進階資料');
+		expect(html).toContain('PE');
+	});
+
+	it('33. dividend criteria (applied) shows the dividend block', () => {
+		const applied = withFundamentals({ minCashDividend: '0' });
+		const show = taiwanScreenerHasDividendCriteria(applied);
+		expect(show).toBe(true);
+		const html = renderToStaticMarkup(<ScreenerTable securities={[security()]} onOpenResearch={() => {}} {...tableWatchlistProps({ showDividends: show })} />);
+		expect(html).toContain('進階資料');
+		expect(html).toContain('現金');
+	});
+
+	it('34. multiple fundamentals domains (and M7D domains) show together in the same compact cell', () => {
+		const applied = withFundamentals({ minForeignNet: '0', minPE: '0', minCashDividend: '0' });
+		const html = renderToStaticMarkup(<ScreenerTable securities={[security({ foreign_net: 100 })]} onOpenResearch={() => {}} {...tableWatchlistProps({
+			showInstitutional: taiwanScreenerHasInstitutionalCriteria(applied), showValuation: taiwanScreenerHasValuationCriteria(applied), showDividends: taiwanScreenerHasDividendCriteria(applied),
+		})} />);
+		expect(html).toContain('外資');
+		expect(html).toContain('PE');
+		expect(html).toContain('現金');
+	});
+
+	it('35. draft-only fundamentals typing must not alter currently displayed result presentation', () => {
+		const source = workspaceSource();
+		expect(source).toContain('taiwanScreenerHasRevenueCriteria(applied)');
+		expect(source).toContain('taiwanScreenerHasValuationCriteria(applied)');
+		expect(source).toContain('taiwanScreenerHasDividendCriteria(applied)');
+		expect(source).not.toMatch(/taiwanScreenerHasRevenueCriteria\(draft\)|taiwanScreenerHasValuationCriteria\(draft\)|taiwanScreenerHasDividendCriteria\(draft\)/);
+	});
+
+	it('neither fundamentals nor M7D criteria active keeps the byte-identical legacy table', () => {
+		const applied = taiwanScreenerDefaultFilters();
+		expect(taiwanScreenerHasRevenueCriteria(applied)).toBe(false);
+		expect(taiwanScreenerHasValuationCriteria(applied)).toBe(false);
+		expect(taiwanScreenerHasDividendCriteria(applied)).toBe(false);
+		const html = renderToStaticMarkup(<ScreenerTable securities={[security()]} onOpenResearch={() => {}} {...tableWatchlistProps()} />);
+		expect(html).not.toContain('進階資料');
+	});
+});
+
+describe('M7E-A -- domain freshness / unavailable state', () => {
+	it('36. revenue freshness renders the backend period as-is, never converted to a fake date', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="營收資料" asOf="2026-07" status="available" unavailableMessage="營收資料暫時無法取得" />);
+		expect(html).toContain('營收資料：2026-07');
+		expect(html).not.toContain('2026-07-31');
+	});
+
+	it('37. valuation freshness renders the backend trade date and status', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="估值資料" asOf="2026-09-04" status="current" unavailableMessage="估值資料暫時無法取得" />);
+		expect(html).toContain('估值資料：2026-09-04');
+		expect(html).toContain('最新');
+	});
+
+	it('38. dividends freshness renders the backend year identifier, never converted to a fake date', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="股利資料" asOf="2025" status="available" unavailableMessage="股利資料暫時無法取得" />);
+		expect(html).toContain('股利資料：2025');
+		expect(html).not.toContain('2025-01-01');
+		expect(html).not.toContain('2025-12-31');
+	});
+
+	it('39-40. period/year is never reinterpreted as a full calendar date anywhere in the workspace source', () => {
+		const source = workspaceSource();
+		expect(source).not.toMatch(/revenue_as_of.*-31|dividends_as_of.*-01-01/);
+	});
+
+	it('41. revenue unavailable shows the safe warning, never a fabricated as_of', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="營收資料" asOf={null} status="unavailable" unavailableMessage="營收資料暫時無法取得" />);
+		expect(html).toContain('營收資料暫時無法取得');
+		expect(html).not.toContain('2026');
+	});
+
+	it('42. valuation unavailable shows the safe warning', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="估值資料" asOf={null} status="unavailable" unavailableMessage="估值資料暫時無法取得" />);
+		expect(html).toContain('估值資料暫時無法取得');
+	});
+
+	it('43. dividends unavailable shows the safe warning', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="股利資料" asOf={null} status="unavailable" unavailableMessage="股利資料暫時無法取得" />);
+		expect(html).toContain('股利資料暫時無法取得');
+	});
+
+	it('44. unavailable warning and the zero-result empty state are independent -- both can render together', () => {
+		const source = workspaceSource();
+		// The domain-freshness warning block and the total===0 empty-state block are two separate,
+		// unconditional-on-each-other JSX expressions in the render tree -- neither is gated by the other.
+		expect(source).toMatch(/data && showRevenue && <ScreenerDomainFreshness/);
+		expect(source).toMatch(/data && data\.total === 0 && <div className="taiwan-empty-state">/);
+	});
+
+	it('freshness blocks are gated by showRevenue/showValuation/showDividends in the workspace body', () => {
+		const source = workspaceSource();
+		expect(source).toMatch(/data && showRevenue && <ScreenerDomainFreshness/);
+		expect(source).toMatch(/data && showValuation && <ScreenerDomainFreshness/);
+		expect(source).toMatch(/data && showDividends && <ScreenerDomainFreshness/);
+	});
+});
+
+describe('M7E-A -- no request fan-out introduced', () => {
+	it('45-47. still issues exactly one requestJSON call (Screener) and never a second endpoint for revenue/valuation/dividends', () => {
+		const source = workspaceSource();
+		const matches = source.match(/requestJSON</g) || [];
+		expect(matches.length).toBe(1);
+		expect(source).not.toMatch(/\/api\/v1\/tw\/revenue|\/api\/v1\/tw\/valuation|\/api\/v1\/tw\/dividends/);
+	});
+
+	it('53-56. no fundamentals/FinMind/per-security/AI/Hermes fan-out introduced by fundamentals filters', () => {
+		const source = workspaceSource();
+		expect(source).not.toMatch(/\/api\/v1\/tw\/fundamentals|FinMind|taiwanIntelligencePath|taiwanResearchPath|hermes|Hermes/i);
+	});
+});
+
+describe('M7E-A -- research navigation and Watchlist action remain unaffected by fundamentals columns', () => {
+	it('48. exact 2330.TWSE navigation preserved even with the revenue/valuation/dividend columns rendered', () => {
+		let opened = '';
+		const twse = security({ canonical: '2330.TWSE', monthly_revenue: 100 });
+		const element = ScreenerRow({ security: twse, onOpen: () => { opened = twse.canonical; }, ...rowWatchlistProps({ showRevenue: true }) });
+		const identityCell = (element.props.children as unknown[])[0] as { props: { children: { props: { onClick: () => void } } } };
+		identityCell.props.children.props.onClick();
+		expect(opened).toBe('2330.TWSE');
+	});
+
+	it('49. exact 6488.TPEX navigation preserved with valuation/dividend columns rendered', () => {
+		let opened = '';
+		const tpex = security({ canonical: '6488.TPEX', code: '6488', name: '環球晶', exchange: 'TPEX', pe: 10, cash_dividend: 3 });
+		const element = ScreenerRow({ security: tpex, onOpen: () => { opened = tpex.canonical; }, ...rowWatchlistProps({ showValuation: true, showDividends: true }) });
+		const identityCell = (element.props.children as unknown[])[0] as { props: { children: { props: { onClick: () => void } } } };
+		identityCell.props.children.props.onClick();
+		expect(opened).toBe('6488.TPEX');
+	});
+
+	it('50. the Watchlist toggle still never triggers onOpen, even with fundamentals columns present', () => {
+		let toggled = false;
+		const element = ScreenerWatchlistAction({ membershipState: 'ready', saved: false, busy: false, onToggle: () => { toggled = true; } });
+		const button = (element.props.children as unknown[])[0] as { type: string; props: { onClick: () => void } };
+		button.props.onClick();
+		expect(toggled).toBe(true);
+	});
+});
+
+describe('M7E-A -- race safety and cold-start unchanged', () => {
+	it('51. still uses the shared runScopedRequest race guard for the Screener fetch (fundamentals fields do not change this)', () => {
+		const source = workspaceSource();
+		expect(source).toContain('runScopedRequest(requestID');
+	});
+
+	it('52. cold overview cold-start still does not preload the Screener or Watchlist', () => {
 		const source = overviewSource();
 		const mountEffect = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('[config, refreshKey]'));
 		expect(mountEffect).not.toMatch(/screener/i);
