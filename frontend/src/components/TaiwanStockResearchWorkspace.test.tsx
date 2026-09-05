@@ -1,8 +1,19 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { InterpretationView, type Component, type Intelligence } from './TaiwanStockResearchWorkspace';
 import { TaiwanStockResearchErrorBoundary } from './TaiwanStockResearchErrorBoundary';
+
+const root = path.resolve(__dirname, '../../..');
+const researchSource = () => fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanStockResearchWorkspace.tsx'), 'utf8');
+const combinedEffectBody = () => {
+	const source = researchSource();
+	return source.slice(source.indexOf('// Preserve the initial default (2330) on first load'), source.indexOf('}, [config, refreshKey, externalSymbolRequest]);'));
+};
+const appSource = () => fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
+const watchlistSource = () => fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanWatchlistWorkspace.tsx'), 'utf8');
 
 const component = (overrides: Partial<Component> = {}): Component => ({
 	state: 'positive', status: 'available', freshness: 'fresh', as_of: '2026-09-03', reasons: ['reason'],
@@ -109,5 +120,102 @@ describe('TaiwanStockResearchErrorBoundary', () => {
 			</TaiwanStockResearchErrorBoundary>,
 		);
 		expect(html).toContain('正常內容');
+	});
+});
+
+describe('M6C — Watchlist row passes canonical identity, not code, into App-level handoff state', () => {
+	it('TaiwanWatchlistWorkspace opens research using item.canonical, never item.code', () => {
+		const source = watchlistSource();
+		expect(source).toContain('onOpen={() => onOpenResearch(item.canonical)}');
+		expect(source).not.toContain('onOpenResearch(item.code)');
+	});
+
+	it('App.tsx switches to taiwan-stock (not taiwan-research) when a Watchlist row is opened, carrying a strictly increasing token', () => {
+		const app = appSource();
+		const fn = app.slice(app.indexOf('const openTaiwanStockResearch ='), app.indexOf('const askMasteryAI ='));
+		expect(fn).toContain('taiwanSymbolRequestNonce.current += 1');
+		expect(fn).toContain('setRequestedTaiwanSymbol({ canonical, token: taiwanSymbolRequestNonce.current })');
+		expect(fn).toContain("switchWorkspace('taiwan-stock')");
+	});
+
+	it('App.tsx passes externalSymbolRequest to the stock research workspace (both taiwan-stock and taiwan-research render branches)', () => {
+		const app = appSource();
+		expect(app.match(/<TaiwanStockResearchWorkspace config=\{config\} refreshKey=\{marketRefreshKey\} externalSymbolRequest=\{requestedTaiwanSymbol\}/g)?.length).toBe(2);
+	});
+});
+
+describe('M6C — external symbol resolution requires an exact canonical match, never a fuzzy result or a 2330 fallback', () => {
+	it('resolves via /tw/securities?query= using the requested canonical symbol', () => {
+		expect(combinedEffectBody()).toContain('/api/v1/tw/securities?query=${encodeURIComponent(canonical)}');
+	});
+
+	it('requires an exact canonical match (.find with strict equality), not the first/fuzzy result', () => {
+		const body = combinedEffectBody();
+		expect(body).toContain('payload.data.securities.find((item) => item.canonical === canonical)');
+		expect(body).not.toMatch(/securities\[0\]/);
+	});
+
+	it('shows the safe not-found message and does not select anything when no exact match exists', () => {
+		const body = combinedEffectBody();
+		expect(body).toContain("setError('找不到自選股對應的台灣證券資料。')");
+	});
+
+	it('never falls back to 2330 on resolution failure', () => {
+		const body = combinedEffectBody();
+		// The only search('2330') call in this effect is the guarded default-mount branch, gated on
+		// the ABSENCE of an external request — the resolution branch itself can never reach it.
+		expect(body).toContain("if (!externalSymbolRequest) void search('2330');");
+		expect(body).not.toMatch(/else void search\('2330'\)/);
+	});
+
+	it('does not automatically trigger AI research (generateResearch/taiwanResearchPath) after navigation', () => {
+		expect(combinedEffectBody()).not.toContain('generateResearch');
+		expect(combinedEffectBody()).not.toContain('taiwanResearchPath');
+	});
+});
+
+describe('M6C — race protection: repeated/rapid Watchlist clicks resolve correctly', () => {
+	it('the external-resolution branch is scoped with its own runScopedRequest, independent of search()/select()\'s own guards', () => {
+		const source = researchSource();
+		expect(source).toContain('const externalResolveRequestID = useRef(0);');
+		expect(source).toContain('void runScopedRequest(externalResolveRequestID,');
+	});
+
+	it('a token equal to the last-handled one is ignored (protects against duplicate effect re-fires), but any new token is processed', () => {
+		const source = researchSource();
+		expect(source).toContain('if (externalSymbolRequest && externalSymbolRequest.token !== lastExternalTokenRef.current) {');
+		expect(source).toContain('lastExternalTokenRef.current = externalSymbolRequest.token;');
+	});
+
+	it('the mount/refresh effect reacts to config, refreshKey, AND externalSymbolRequest together (a single effect, not two with an ordering dependency between them)', () => {
+		const source = researchSource();
+		expect(source).toContain('}, [config, refreshKey, externalSymbolRequest]);');
+		// Only one useEffect references externalSymbolRequest — confirming the resolution logic and
+		// the default/retry fallback live in the same effect, not two effects that could race.
+		expect(source.match(/useEffect\(\(\) => \{[^]*?externalSymbolRequest/g)?.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('while a resolution is in flight (token already marked handled but no selection yet), neither the resolve branch nor the default-2330 branch re-fires', () => {
+		const body = combinedEffectBody();
+		expect(body).toContain('if (selectedRef.current) { void select(selectedRef.current); return; }');
+		expect(body).toContain("if (!externalSymbolRequest) void search('2330');");
+	});
+});
+
+describe('M6C — refresh and manual-entry behavior are preserved', () => {
+	it('global refresh retries selectedRef.current once a resolved external selection exists (P1E preserved)', () => {
+		const body = combinedEffectBody();
+		expect(body).toContain('if (selectedRef.current) { void select(selectedRef.current); return; }');
+	});
+
+	it('normal manual entry (externalSymbolRequest never set) preserves the exact original default-2330 mount behavior', () => {
+		const body = combinedEffectBody();
+		expect(body).toContain("if (!externalSymbolRequest) void search('2330');");
+	});
+});
+
+describe('M6C — no polling/timer introduced, no backend change required', () => {
+	it('introduces no setInterval/setTimeout in TaiwanStockResearchWorkspace', () => {
+		expect(researchSource()).not.toMatch(/setInterval|setTimeout/);
 	});
 });

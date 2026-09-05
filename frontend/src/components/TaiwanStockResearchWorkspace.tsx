@@ -23,7 +23,13 @@ type Research = { status: string; model_version: string; generated_at?: string; 
 const componentLabels: Record<string, string> = { price: '價格', market: '市場', price_market_relationship: '個股與市場關係', industry: '產業', institutional: '法人', margin: '融資融券', fundamentals: '基本面' };
 const researchLabels: Record<string, string> = { price: '價格', market: '市場', industry: '產業', institutional: '法人', margin: '融資融券', fundamentals: '基本面' };
 
-export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: BackendConfig | null; refreshKey: number }) {
+// M6C: an optional request from outside this workspace (a Watchlist row click) to load one exact
+// canonical Taiwan security. `token` is a strictly increasing nonce, not just the canonical string
+// — clicking the same saved security twice in a row must still be treated as a new request even
+// though the canonical value did not change.
+export type ExternalTaiwanSymbolRequest = { canonical: string; token: number };
+
+export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbolRequest }: { config: BackendConfig | null; refreshKey: number; externalSymbolRequest?: ExternalTaiwanSymbolRequest | null }) {
 	const [query, setQuery] = useState('2330');
 	const [matches, setMatches] = useState<SecurityIdentity[]>([]);
 	const [selected, setSelected] = useState<SecurityIdentity | null>(null);
@@ -41,6 +47,11 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 	const [watchlistBusy, setWatchlistBusy] = useState(false);
 	const [watchlistError, setWatchlistError] = useState('');
 	const watchlistCheckID = useRef(0);
+	// M6C: tracks the last externalSymbolRequest.token already handled, and scopes the exact-symbol
+	// resolution lookup so a stale in-flight resolution (a rapid second click) can never overwrite
+	// a newer one — the same runScopedRequest pattern already used for select()/search() above.
+	const lastExternalTokenRef = useRef<number | null>(null);
+	const externalResolveRequestID = useRef(0);
 
 	const search = async (value = query) => {
 		if (!config || !value.trim()) return;
@@ -100,13 +111,38 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey }: { config: B
 	};
 	// Preserve the initial default (2330) on first load, but a later refresh (refreshKey change)
 	// must retry whatever the user currently has selected rather than silently resetting to 2330.
-	// This only depends on [config, refreshKey] — not `selected` — so selecting a stock does not
-	// itself re-trigger a fetch; only a refreshKey change (or config resolving) does.
+	// M6C: a Watchlist-originated request (externalSymbolRequest) takes precedence — a new token
+	// triggers an exact-canonical resolution instead of the default/retry path below. This is
+	// deliberately ONE effect (not two) reacting to both refreshKey and externalSymbolRequest:
+	// splitting "decide to resolve the external request" and "decide to fall back to default/retry"
+	// into separate effects created a real ordering bug under React StrictMode's dev-only double
+	// effect invocation (the fallback effect could observe "already marked handled" before the
+	// resolution actually completed, and briefly fire search('2330') underneath it). A single
+	// effect makes the precedence atomic: while a request's resolution is in flight (its token
+	// already marked handled but `selectedRef.current` not yet populated), neither branch below
+	// runs — we simply wait for that in-flight resolution instead of guessing a fallback.
 	useEffect(() => {
 		if (!config) return;
-		if (selectedRef.current) void select(selectedRef.current);
-		else void search('2330');
-	}, [config, refreshKey]);
+		if (externalSymbolRequest && externalSymbolRequest.token !== lastExternalTokenRef.current) {
+			lastExternalTokenRef.current = externalSymbolRequest.token;
+			const canonical = externalSymbolRequest.canonical;
+			// Requires an exact `canonical` match from /tw/securities — never a fuzzy/first result.
+			// Scoped so a stale in-flight resolution (a rapid second click) cannot overwrite a newer
+			// one; select()'s own runScopedRequest guard then protects the intelligence fetch itself.
+			void runScopedRequest(externalResolveRequestID, () => requestJSON<{ data: { securities: SecurityIdentity[] } }>(config, `/api/v1/tw/securities?query=${encodeURIComponent(canonical)}`), {
+				onStart: () => { setLoading(true); setError(''); },
+				onSuccess: (payload) => {
+					const exact = payload.data.securities.find((item) => item.canonical === canonical);
+					if (!exact) { setLoading(false); setError('找不到自選股對應的台灣證券資料。'); return; }
+					void select(exact);
+				},
+				onError: (reason) => { setLoading(false); setError(taiwanErrorMessage(reason, '找不到自選股對應的台灣證券資料。')); },
+			});
+			return;
+		}
+		if (selectedRef.current) { void select(selectedRef.current); return; }
+		if (!externalSymbolRequest) void search('2330');
+	}, [config, refreshKey, externalSymbolRequest]);
 	const submit = (event: FormEvent) => { event.preventDefault(); void search(); };
 	return <div className="taiwan-product-workspace taiwan-stock-research">
 		<form className="market-filter" onSubmit={submit}><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="輸入 2330、台積電、2330.TWSE 或 6488.TPEX" aria-label="台灣證券名稱或代碼" /></label><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : '搜尋'}</button></form>

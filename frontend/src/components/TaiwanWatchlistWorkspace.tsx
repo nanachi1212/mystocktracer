@@ -24,7 +24,7 @@ async function fetchWatchlistQuotes(config: BackendConfig, canonicals: string[])
 	return quotes;
 }
 
-export function TaiwanWatchlistWorkspace({ config, refreshKey }: { config: BackendConfig | null; refreshKey: number }) {
+export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }: { config: BackendConfig | null; refreshKey: number; onOpenResearch: (canonical: string) => void }) {
 	const [securities, setSecurities] = useState<TaiwanWatchlistSecurity[]>([]);
 	const [quotes, setQuotes] = useState<QuoteLookup>({});
 	const [loading, setLoading] = useState(false);
@@ -68,17 +68,21 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey }: { config: Backe
 		{error && <div className="market-partial-warning">{error}</div>}
 		{!loading && securities.length === 0 && !error && <div className="taiwan-empty-state"><strong>目前還沒有自選股</strong><p>可從台股總覽或個股研究加入。</p></div>}
 		{securities.length > 0 && <div className="taiwan-watchlist-list">{securities.map((item) => (
-			<WatchlistRow key={item.canonical} security={item} quote={quotes[item.canonical]} busy={removingSymbol === item.canonical} onRemove={() => void remove(item.canonical)} />
+			<WatchlistRow key={item.canonical} security={item} quote={quotes[item.canonical]} busy={removingSymbol === item.canonical} onOpen={() => onOpenResearch(item.canonical)} onRemove={() => void remove(item.canonical)} />
 		))}</div>}
 	</div>;
 }
 
 // Pure/presentational: one saved security's row. A missing `quote` (chunk failed, or the symbol
 // was simply absent from a successful chunk) always renders the explicit unavailable state below
-// — never a fabricated 0 price/percentage, and never omitting the security itself.
-export function WatchlistRow({ security, quote, busy, onRemove }: { security: TaiwanWatchlistSecurity; quote?: Quote; busy: boolean; onRemove: () => void }) {
+// — never a fabricated 0 price/percentage, and never omitting the security itself. The identity
+// area is its own <button>, a sibling of the remove button (never nested inside one another) —
+// valid markup, keyboard accessible, and clicking remove can never also trigger onOpen. Navigation
+// is available regardless of whether `quote` loaded — a saved security must stay openable even
+// when its live quote is currently unavailable.
+export function WatchlistRow({ security, quote, busy, onOpen, onRemove }: { security: TaiwanWatchlistSecurity; quote?: Quote; busy: boolean; onOpen: () => void; onRemove: () => void }) {
 	return <article className="taiwan-watchlist-row">
-		<div className="taiwan-watchlist-identity"><strong>{security.name} {security.code}</strong><span>{security.exchange} · {taiwanSecurityTypeLabel(security.security_type)}</span></div>
+		<button type="button" className="taiwan-watchlist-identity" onClick={onOpen}><strong>{security.name} {security.code}</strong><span>{security.exchange} · {taiwanSecurityTypeLabel(security.security_type)}</span></button>
 		{quote
 			? <div className="taiwan-watchlist-quote"><strong>{quote.price.toLocaleString('zh-TW')}</strong><em className={quote.change_percent > 0 ? 'up' : quote.change_percent < 0 ? 'down' : 'flat'}>{quote.change_percent > 0 ? '+' : ''}{quote.change_percent.toFixed(2)}%</em></div>
 			: <div className="taiwan-watchlist-quote"><span>報價暫時無法取得</span></div>}

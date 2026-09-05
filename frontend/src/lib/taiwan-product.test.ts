@@ -208,14 +208,17 @@ describe('P1E refresh behavior — retries the current selection instead of a fi
 		const source = researchSource();
 		expect(source).toContain('const selectedRef = useRef<SecurityIdentity | null>(null);');
 		expect(source).toContain('useEffect(() => { selectedRef.current = selected; }, [selected]);');
-		expect(source).toContain('if (selectedRef.current) void select(selectedRef.current);');
-		expect(source).toContain("else void search('2330');");
+		// M6C merged this into one effect (also reacting to externalSymbolRequest — see the M6C
+		// describe block in TaiwanStockResearchWorkspace.test.tsx), but the P1E guarantee itself —
+		// refresh retries selectedRef.current instead of unconditionally resetting to 2330 — holds.
+		expect(source).toContain('if (selectedRef.current) { void select(selectedRef.current); return; }');
+		expect(source).toContain("if (!externalSymbolRequest) void search('2330');");
 		expect(source).not.toMatch(/\[config, refreshKey, selected\]/);
 	});
 
-	it('TaiwanStockResearchWorkspace: the initial default (2330) is preserved for a fresh mount with nothing selected yet', () => {
+	it('TaiwanStockResearchWorkspace: the initial default (2330) is preserved for a fresh mount with nothing selected yet (and no external Watchlist request)', () => {
 		const source = researchSource();
-		expect(source).toMatch(/if \(selectedRef\.current\) void select\(selectedRef\.current\);\s*else void search\('2330'\);/);
+		expect(source).toMatch(/if \(selectedRef\.current\) \{ void select\(selectedRef\.current\); return; \}\s*if \(!externalSymbolRequest\) void search\('2330'\);/);
 	});
 });
 

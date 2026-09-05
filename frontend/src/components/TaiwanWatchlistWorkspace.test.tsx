@@ -70,7 +70,7 @@ describe('M6B — cold start / no unintended fetches', () => {
 
 describe('M6B — empty state', () => {
 	it('renders the explicit Traditional Chinese empty state when config is unset (no securities loaded)', () => {
-		const html = renderToStaticMarkup(<TaiwanWatchlistWorkspace config={null} refreshKey={0} />);
+		const html = renderToStaticMarkup(<TaiwanWatchlistWorkspace config={null} refreshKey={0} onOpenResearch={() => {}} />);
 		expect(html).toContain('目前還沒有自選股');
 		expect(html).toContain('可從台股總覽或個股研究加入');
 	});
@@ -78,7 +78,7 @@ describe('M6B — empty state', () => {
 
 describe('M6B — WatchlistRow renders saved identities and handles missing quotes safely', () => {
 	it('renders a saved TWSE security with its quote', () => {
-		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={quote()} busy={false} onRemove={() => {}} />);
+		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={quote()} busy={false} onOpen={() => {}} onRemove={() => {}} />);
 		expect(html).toContain('台積電');
 		expect(html).toContain('2330');
 		expect(html).toContain('TWSE');
@@ -87,27 +87,57 @@ describe('M6B — WatchlistRow renders saved identities and handles missing quot
 
 	it('renders a saved TPEX security correctly (exchange distinction preserved)', () => {
 		const tpexSecurity = security({ canonical: '6488.TPEX', code: '6488', name: '環球晶', exchange: 'TPEX' });
-		const html = renderToStaticMarkup(<WatchlistRow security={tpexSecurity} quote={quote({ symbol: '6488.TPEX', price: 981 })} busy={false} onRemove={() => {}} />);
+		const html = renderToStaticMarkup(<WatchlistRow security={tpexSecurity} quote={quote({ symbol: '6488.TPEX', price: 981 })} busy={false} onOpen={() => {}} onRemove={() => {}} />);
 		expect(html).toContain('環球晶');
 		expect(html).toContain('TPEX');
 		expect(html).toContain('981');
 	});
 
 	it('a missing quote does not hide the saved security — the identity still renders', () => {
-		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={undefined} busy={false} onRemove={() => {}} />);
+		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={undefined} busy={false} onOpen={() => {}} onRemove={() => {}} />);
 		expect(html).toContain('台積電');
 		expect(html).toContain('2330');
 	});
 
 	it('a missing quote shows the explicit unavailable label, never a fabricated 0 price', () => {
-		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={undefined} busy={false} onRemove={() => {}} />);
+		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={undefined} busy={false} onOpen={() => {}} onRemove={() => {}} />);
 		expect(html).toContain('報價暫時無法取得');
 		expect(html).not.toMatch(/taiwan-watchlist-quote"><strong>0/);
 	});
 
 	it('renders a disabled 移除自選 button while a removal is in flight (duplicate-click protection)', () => {
-		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={quote()} busy={true} onRemove={() => {}} />);
+		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={quote()} busy={true} onOpen={() => {}} onRemove={() => {}} />);
 		expect(html).toMatch(/<button[^>]*disabled[^>]*>/);
+	});
+});
+
+describe('M6C — WatchlistRow: security area is interactive, remove is a separate action', () => {
+	// WatchlistRow is a pure/presentational component (no hooks), so it can be called directly as
+	// a plain function outside of React's render lifecycle. This lets us inspect the real element
+	// tree it returns and assert the actual onClick wiring — not just source text.
+	it('the identity area is its own <button> wired to onOpen, distinct from the remove button (no nested-button markup, real click wiring verified)', () => {
+		const onOpen = () => {};
+		const onRemove = () => {};
+		const element = WatchlistRow({ security: security(), quote: quote(), busy: false, onOpen, onRemove });
+		const children = (element.props.children as unknown[]).filter(Boolean) as { type: string; props: { onClick?: () => void; disabled?: boolean } }[];
+		const identityButton = children[0];
+		const removeButton = children[children.length - 1];
+		expect(identityButton.type).toBe('button');
+		expect(identityButton.props.onClick).toBe(onOpen);
+		expect(removeButton.type).toBe('button');
+		expect(removeButton.props.onClick).toBe(onRemove);
+		// The two handlers are genuinely distinct functions — clicking remove can never also open.
+		expect(identityButton.props.onClick).not.toBe(removeButton.props.onClick);
+	});
+
+	it('quote being unavailable does not disable or remove the navigable identity button', () => {
+		const onOpen = () => {};
+		const element = WatchlistRow({ security: security(), quote: undefined, busy: false, onOpen, onRemove: () => {} });
+		const children = (element.props.children as unknown[]).filter(Boolean) as { type: string; props: { onClick?: () => void; disabled?: boolean } }[];
+		const identityButton = children[0];
+		expect(identityButton.type).toBe('button');
+		expect(identityButton.props.onClick).toBe(onOpen);
+		expect(identityButton.props.disabled).toBeFalsy();
 	});
 });
 

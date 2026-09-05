@@ -151,6 +151,13 @@ export function App() {
 	const [marketRefreshKey, setMarketRefreshKey] = useState(0);
 	const [aiPrefill, setAIPrefill] = useState('');
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	// M6C handoff: a Watchlist row requests the stock research workspace load this exact canonical
+	// symbol. `token` is a strictly increasing nonce (not just the canonical string) so clicking the
+	// same saved security twice in a row still produces a new value the workspace's effect reacts
+	// to — React would otherwise bail out on an unchanged string. Null by default; never fetched or
+	// touched by App itself, and never causes any cold-start request.
+	const [requestedTaiwanSymbol, setRequestedTaiwanSymbol] = useState<{ canonical: string; token: number } | null>(null);
+	const taiwanSymbolRequestNonce = useRef(0);
 	const themeRequestID = useRef(0);
 	const leadershipHistoriesRef = useRef<KLineLookup>({});
 	const historyFlightsRef = useRef<Map<string, Promise<void>>>(new Map());
@@ -627,6 +634,15 @@ export function App() {
 		window.history.replaceState(null, '', mode.startsWith('taiwan-') ? `#${mode}` : mode === 'limit-up' ? '#limit-up' : mode === 'mastery' ? '#mastery' : mode === 'reviews' ? '#reviews' : mode === 'stock-ai' ? '#stock-ai' : mode === 'portfolio-inspection' ? '#portfolio-inspection' : mode === 'ai' ? '#ai' : mode === 'market' ? '#market/pulse' : '#themes');
 	};
 
+	// M6C: a Watchlist row was clicked. Carries the exact persisted canonical identity (never
+	// code-only) into the existing stock research workspace and switches to it — no new fetch
+	// logic here, no fuzzy re-resolution; the workspace itself resolves and loads the symbol.
+	const openTaiwanStockResearch = (canonical: string) => {
+		taiwanSymbolRequestNonce.current += 1;
+		setRequestedTaiwanSymbol({ canonical, token: taiwanSymbolRequestNonce.current });
+		switchWorkspace('taiwan-stock');
+	};
+
 	const askMasteryAI = (traderName: string) => {
 		setAIPrefill(`请基于本地游资心法知识库，系统梳理${traderName}的核心交易理念、适用市场环境、选股与买卖规则、仓位风控，并指出资料中可能存在的事后归因、占位或不可验证之处。`);
 		switchWorkspace('ai');
@@ -738,7 +754,7 @@ export function App() {
 				</div>
 			</header>
 
-			{workspaceMode === 'taiwan-overview' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="overview" /> : workspaceMode === 'taiwan-breadth' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="breadth" /> : workspaceMode === 'taiwan-emotion' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="emotion" /> : workspaceMode === 'taiwan-industry' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="industry" /> : workspaceMode === 'taiwan-stock' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-research' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-watchlist' ? <TaiwanWatchlistWorkspace config={config} refreshKey={marketRefreshKey} /> : workspaceMode === 'themes' ? <>
+			{workspaceMode === 'taiwan-overview' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="overview" /> : workspaceMode === 'taiwan-breadth' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="breadth" /> : workspaceMode === 'taiwan-emotion' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="emotion" /> : workspaceMode === 'taiwan-industry' ? <TaiwanMarketWorkspace config={config} refreshKey={marketRefreshKey} view="industry" /> : workspaceMode === 'taiwan-stock' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} externalSymbolRequest={requestedTaiwanSymbol} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-research' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} externalSymbolRequest={requestedTaiwanSymbol} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-watchlist' ? <TaiwanWatchlistWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} /> : workspaceMode === 'themes' ? <>
 			<section className="market-strip" aria-label="市场概览">
 				<div><Activity size={16} aria-hidden="true" /><span>主线平均热度</span><strong>{marketPulse.average || '--'}</strong></div>
 				<div><Flame size={16} aria-hidden="true" /><span>活跃主线</span><strong>{marketPulse.active}</strong></div>
