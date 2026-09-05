@@ -30,17 +30,31 @@ export const taiwanScopes: { id: TaiwanScope; label: string }[] = [
 // M7B — Taiwan Screener. Wire shape of one row from the existing M7A backend contract
 // (GET /api/v1/tw/screener). Every numeric field is nullable and must stay that way end-to-end —
 // a missing quote/volume/amount/change_percent is never normalized to 0.
+// M7D adds institutional/margin fields — same nullable contract, reused directly from the backend's
+// existing units (shares; short_margin_ratio already expressed as a percentage number by the
+// backend, never re-scaled here).
 export type TaiwanScreenerSecurity = {
 	canonical: string; code: string; name: string; exchange: string; security_type: string; trade_date: string;
 	price: number | null; change: number | null; change_percent: number | null; volume: number | null; amount: number | null;
+	foreign_net: number | null; trust_net: number | null; dealer_net: number | null; institutional_net: number | null;
+	margin_balance: number | null; margin_change: number | null; short_balance: number | null; short_change: number | null; short_margin_ratio: number | null;
 };
 
 export type TaiwanScreenerResponse = {
 	scope: string; as_of: string | null; freshness: string; total: number; offset: number; limit: number;
 	securities: TaiwanScreenerSecurity[];
+	// M7D — additive, present only when the backend actually engaged that domain for this request
+	// (an active filter or sort key). Absent (undefined) means the domain was not requested at all —
+	// never confuse that with "unavailable". Sourced entirely from the backend's existing
+	// TaiwanFreshness model; never a published_at/available_at timestamp.
+	institutional_as_of?: string | null; institutional_status?: string; institutional_days_behind?: number | null;
+	margin_as_of?: string | null; margin_status?: string; margin_days_behind?: number | null;
 };
 
-export type TaiwanScreenerSort = 'price' | 'change_percent' | 'volume' | 'amount';
+export type TaiwanScreenerSort =
+	| 'price' | 'change_percent' | 'volume' | 'amount'
+	| 'foreign_net' | 'trust_net' | 'dealer_net' | 'institutional_net'
+	| 'margin_balance' | 'margin_change' | 'short_balance' | 'short_change' | 'short_margin_ratio';
 export type TaiwanScreenerOrder = 'asc' | 'desc';
 
 export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string }[] = [
@@ -48,7 +62,19 @@ export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string 
 	{ id: 'change_percent', label: '漲跌幅' },
 	{ id: 'volume', label: '成交量' },
 	{ id: 'amount', label: '成交金額' },
+	{ id: 'foreign_net', label: '外資買賣超' },
+	{ id: 'trust_net', label: '投信買賣超' },
+	{ id: 'dealer_net', label: '自營商買賣超' },
+	{ id: 'institutional_net', label: '三大法人合計' },
+	{ id: 'margin_balance', label: '融資餘額' },
+	{ id: 'margin_change', label: '融資增減' },
+	{ id: 'short_balance', label: '融券餘額' },
+	{ id: 'short_change', label: '融券增減' },
+	{ id: 'short_margin_ratio', label: '券資比' },
 ];
+
+const taiwanScreenerInstitutionalSortKeys = new Set<TaiwanScreenerSort>(['foreign_net', 'trust_net', 'dealer_net', 'institutional_net']);
+const taiwanScreenerMarginSortKeys = new Set<TaiwanScreenerSort>(['margin_balance', 'margin_change', 'short_balance', 'short_change', 'short_margin_ratio']);
 
 export const taiwanScreenerOrderOptions: { id: TaiwanScreenerOrder; label: string }[] = [
 	{ id: 'desc', label: '高到低' },
@@ -66,6 +92,17 @@ export type TaiwanScreenerFilters = {
 	minChangePercent: string; maxChangePercent: string;
 	minVolume: string; maxVolume: string;
 	minAmount: string; maxAmount: string;
+	// M7D institutional.
+	minForeignNet: string; maxForeignNet: string;
+	minTrustNet: string; maxTrustNet: string;
+	minDealerNet: string; maxDealerNet: string;
+	minInstitutionalNet: string; maxInstitutionalNet: string;
+	// M7D margin/short.
+	minMarginBalance: string; maxMarginBalance: string;
+	minMarginChange: string; maxMarginChange: string;
+	minShortBalance: string; maxShortBalance: string;
+	minShortChange: string; maxShortChange: string;
+	minShortMarginRatio: string; maxShortMarginRatio: string;
 	sort: TaiwanScreenerSort;
 	order: TaiwanScreenerOrder;
 	limit: number;
@@ -81,9 +118,33 @@ export function taiwanScreenerDefaultFilters(): TaiwanScreenerFilters {
 		minChangePercent: '', maxChangePercent: '',
 		minVolume: '', maxVolume: '',
 		minAmount: '', maxAmount: '',
+		minForeignNet: '', maxForeignNet: '',
+		minTrustNet: '', maxTrustNet: '',
+		minDealerNet: '', maxDealerNet: '',
+		minInstitutionalNet: '', maxInstitutionalNet: '',
+		minMarginBalance: '', maxMarginBalance: '',
+		minMarginChange: '', maxMarginChange: '',
+		minShortBalance: '', maxShortBalance: '',
+		minShortChange: '', maxShortChange: '',
+		minShortMarginRatio: '', maxShortMarginRatio: '',
 		sort: 'amount', order: 'desc',
 		limit: TAIWAN_SCREENER_PAGE_SIZE, offset: 0,
 	};
+}
+
+// M7D — true when `filters` (pass the APPLIED filters, never draft) actually engages the
+// institutional domain: an active min/max filter, or a sort key belonging to that domain. Used to
+// decide result-presentation only — it never triggers a request itself.
+export function taiwanScreenerHasInstitutionalCriteria(filters: TaiwanScreenerFilters): boolean {
+	if (taiwanScreenerInstitutionalSortKeys.has(filters.sort)) return true;
+	return [filters.minForeignNet, filters.maxForeignNet, filters.minTrustNet, filters.maxTrustNet, filters.minDealerNet, filters.maxDealerNet, filters.minInstitutionalNet, filters.maxInstitutionalNet]
+		.some((raw) => taiwanScreenerRangeValue(raw) != null);
+}
+
+export function taiwanScreenerHasMarginCriteria(filters: TaiwanScreenerFilters): boolean {
+	if (taiwanScreenerMarginSortKeys.has(filters.sort)) return true;
+	return [filters.minMarginBalance, filters.maxMarginBalance, filters.minMarginChange, filters.maxMarginChange, filters.minShortBalance, filters.maxShortBalance, filters.minShortChange, filters.maxShortChange, filters.minShortMarginRatio, filters.maxShortMarginRatio]
+		.some((raw) => taiwanScreenerRangeValue(raw) != null);
 }
 
 function taiwanScreenerRangeValue(raw: string): number | null {
@@ -115,6 +176,24 @@ export function taiwanScreenerPath(filters: TaiwanScreenerFilters): string {
 	setRange('max_volume', filters.maxVolume);
 	setRange('min_amount', filters.minAmount);
 	setRange('max_amount', filters.maxAmount);
+	setRange('min_foreign_net', filters.minForeignNet);
+	setRange('max_foreign_net', filters.maxForeignNet);
+	setRange('min_trust_net', filters.minTrustNet);
+	setRange('max_trust_net', filters.maxTrustNet);
+	setRange('min_dealer_net', filters.minDealerNet);
+	setRange('max_dealer_net', filters.maxDealerNet);
+	setRange('min_institutional_net', filters.minInstitutionalNet);
+	setRange('max_institutional_net', filters.maxInstitutionalNet);
+	setRange('min_margin_balance', filters.minMarginBalance);
+	setRange('max_margin_balance', filters.maxMarginBalance);
+	setRange('min_margin_change', filters.minMarginChange);
+	setRange('max_margin_change', filters.maxMarginChange);
+	setRange('min_short_balance', filters.minShortBalance);
+	setRange('max_short_balance', filters.maxShortBalance);
+	setRange('min_short_change', filters.minShortChange);
+	setRange('max_short_change', filters.maxShortChange);
+	setRange('min_short_margin_ratio', filters.minShortMarginRatio);
+	setRange('max_short_margin_ratio', filters.maxShortMarginRatio);
 	return `/api/v1/tw/screener?${params.toString()}`;
 }
 
@@ -126,6 +205,15 @@ export function validateTaiwanScreenerFilters(filters: TaiwanScreenerFilters): s
 		['minChangePercent', 'maxChangePercent', '最低漲跌幅不可高於最高漲跌幅'],
 		['minVolume', 'maxVolume', '最低成交量不可高於最高成交量'],
 		['minAmount', 'maxAmount', '最低成交金額不可高於最高成交金額'],
+		['minForeignNet', 'maxForeignNet', '最低外資買賣超不可高於最高外資買賣超'],
+		['minTrustNet', 'maxTrustNet', '最低投信買賣超不可高於最高投信買賣超'],
+		['minDealerNet', 'maxDealerNet', '最低自營商買賣超不可高於最高自營商買賣超'],
+		['minInstitutionalNet', 'maxInstitutionalNet', '最低三大法人合計不可高於最高三大法人合計'],
+		['minMarginBalance', 'maxMarginBalance', '最低融資餘額不可高於最高融資餘額'],
+		['minMarginChange', 'maxMarginChange', '最低融資增減不可高於最高融資增減'],
+		['minShortBalance', 'maxShortBalance', '最低融券餘額不可高於最高融券餘額'],
+		['minShortChange', 'maxShortChange', '最低融券增減不可高於最高融券增減'],
+		['minShortMarginRatio', 'maxShortMarginRatio', '最低券資比不可高於最高券資比'],
 	];
 	for (const [minKey, maxKey, message] of pairs) {
 		const min = taiwanScreenerRangeValue(filters[minKey as keyof TaiwanScreenerFilters] as string);
@@ -202,6 +290,20 @@ export function formatTaiwanRatio(value?: number | null) {
 
 export function formatTaiwanTWD(value?: number | null) {
 	return value == null ? '—' : `${(value / 100_000_000).toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 億元`;
+}
+
+// M7D — institutional/margin net/change values are raw shares (never converted to lots) with a
+// backend-authoritative sign: positive shows a leading +, negative already carries its own -, and
+// a genuine 0 shows as plain 0 (never +0). Missing stays "—", never fabricated as 0.
+export function formatTaiwanSignedShares(value?: number | null) {
+	if (value == null) return '—';
+	return `${value > 0 ? '+' : ''}${value.toLocaleString('zh-TW')}`;
+}
+
+// short_margin_ratio is already expressed by the backend as a percentage-scale number (e.g. 0.4
+// means 0.4%) — this only appends the % sign, it never re-scales the value.
+export function formatTaiwanRatioPercent(value?: number | null) {
+	return value == null ? '—' : `${value.toLocaleString('zh-TW', { maximumFractionDigits: 2 })}%`;
 }
 
 // Runs an async task as the latest "generation" of a scoped request (e.g. a market scope tab or

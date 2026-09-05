@@ -382,6 +382,7 @@ describe('M7B — Taiwan Screener query builder', () => {
 
 	it('includes every populated range filter using the exact M7A parameter names', () => {
 		const filters: TaiwanScreenerFilters = {
+			...taiwanScreenerDefaultFilters(),
 			scope: 'twse', minPrice: '10', maxPrice: '20', minChangePercent: '-5', maxChangePercent: '5',
 			minVolume: '1000', maxVolume: '2000', minAmount: '100000', maxAmount: '200000',
 			sort: 'volume', order: 'asc', limit: 50, offset: 100,

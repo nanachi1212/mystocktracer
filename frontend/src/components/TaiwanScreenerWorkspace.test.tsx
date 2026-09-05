@@ -2,8 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { taiwanScreenerDefaultFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity } from '../lib/taiwan-product';
-import { ScreenerFilterPanel, ScreenerPagination, ScreenerRow, ScreenerSummary, ScreenerTable, ScreenerWatchlistAction, type WatchlistMembershipState } from './TaiwanScreenerWorkspace';
+import {
+	taiwanScreenerDefaultFilters, taiwanScreenerHasInstitutionalCriteria, taiwanScreenerHasMarginCriteria, taiwanScreenerPath,
+	type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
+} from '../lib/taiwan-product';
+import {
+	ScreenerAdvancedCell, ScreenerDomainFreshness, ScreenerFilterPanel, ScreenerPagination, ScreenerRow, ScreenerSummary, ScreenerTable,
+	ScreenerWatchlistAction, type WatchlistMembershipState,
+} from './TaiwanScreenerWorkspace';
 
 const root = path.resolve(__dirname, '../../..');
 const workspaceSource = () => fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanScreenerWorkspace.tsx'), 'utf8');
@@ -13,6 +19,8 @@ const overviewSource = () => fs.readFileSync(path.join(root, 'frontend/src/compo
 const security = (overrides: Partial<TaiwanScreenerSecurity> = {}): TaiwanScreenerSecurity => ({
 	canonical: '2330.TWSE', code: '2330', name: '台積電', exchange: 'TWSE', security_type: 'stock', trade_date: '2026-09-04',
 	price: 2410, change: 20, change_percent: 0.84, volume: 14102018, amount: 33917316870,
+	foreign_net: null, trust_net: null, dealer_net: null, institutional_net: null,
+	margin_balance: null, margin_change: null, short_balance: null, short_change: null, short_margin_ratio: null,
 	...overrides,
 });
 
@@ -22,13 +30,16 @@ const response = (overrides: Partial<TaiwanScreenerResponse> = {}): TaiwanScreen
 });
 
 // M7C — default row-level Watchlist props: "ready, not saved, not busy, no error" unless overridden.
-const rowWatchlistProps = (overrides: Partial<{ membershipState: WatchlistMembershipState; saved: boolean; busy: boolean; mutationError?: string }> = {}) => ({
+// M7D — showInstitutional/showMargin default false (legacy row shape) unless a test opts in.
+const rowWatchlistProps = (overrides: Partial<{ membershipState: WatchlistMembershipState; saved: boolean; busy: boolean; mutationError?: string; showInstitutional: boolean; showMargin: boolean }> = {}) => ({
 	membershipState: 'ready' as WatchlistMembershipState, saved: false, busy: false, mutationError: undefined as string | undefined, onToggleWatchlist: () => {},
+	showInstitutional: false, showMargin: false,
 	...overrides,
 });
 
-const tableWatchlistProps = (overrides: Partial<{ watchlistState: WatchlistMembershipState; watchlistedCanonicals: Set<string>; busyCanonicals: Set<string>; mutationErrors: Record<string, string> }> = {}) => ({
+const tableWatchlistProps = (overrides: Partial<{ watchlistState: WatchlistMembershipState; watchlistedCanonicals: Set<string>; busyCanonicals: Set<string>; mutationErrors: Record<string, string>; showInstitutional: boolean; showMargin: boolean }> = {}) => ({
 	watchlistState: 'ready' as WatchlistMembershipState, watchlistedCanonicals: new Set<string>(), busyCanonicals: new Set<string>(), mutationErrors: {} as Record<string, string>, onToggleWatchlist: () => {},
+	showInstitutional: false, showMargin: false,
 	...overrides,
 });
 
@@ -477,5 +488,293 @@ describe('M7C -- global refresh reloads both current query and Watchlist members
 		const source = workspaceSource();
 		expect(source).toContain('}, [config, refreshKey, applied]);');
 		expect(source).toContain('}, [config, refreshKey]);');
+	});
+});
+
+// ==================================================
+// M7D -- Institutional + Margin filter UI
+// ==================================================
+
+const withAdvanced = (overrides: Partial<TaiwanScreenerFilters> = {}): TaiwanScreenerFilters => ({ ...taiwanScreenerDefaultFilters(), ...overrides });
+
+describe('M7D -- advanced groups exist, default collapsed, collapse/expand has no request semantics', () => {
+	it('1. renders both 法人籌碼 and 融資融券 group toggles', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		expect(html).toContain('法人籌碼');
+		expect(html).toContain('融資融券');
+	});
+
+	it('2. advanced min/max inputs are not present in the initial (collapsed) render', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		expect(html).not.toContain('最低外資買賣超');
+		expect(html).not.toContain('最低融資餘額');
+	});
+
+	it('3. the expand/collapse toggles are local useState, never call onChange/onApply/onClear', () => {
+		const source = workspaceSource();
+		const panel = source.slice(source.indexOf('export function ScreenerFilterPanel'), source.indexOf('export function ScreenerSummary'));
+		expect(panel).toContain('useState(false)');
+		const institutionalToggle = panel.slice(panel.indexOf('法人籌碼') - 400, panel.indexOf('法人籌碼'));
+		expect(institutionalToggle).toContain('setInstitutionalExpanded');
+		expect(institutionalToggle).not.toMatch(/onChange\(|onApply\(|onClear\(/);
+	});
+});
+
+describe('M7D -- draft typing sends no request (institutional/margin)', () => {
+	it('4-5. every advanced input writes via the same set() helper used by basic fields, never a request call', () => {
+		const source = workspaceSource();
+		const panel = source.slice(source.indexOf('export function ScreenerFilterPanel'), source.indexOf('export function ScreenerSummary'));
+		expect(panel).toContain("set('minForeignNet'");
+		expect(panel).toContain("set('minMarginBalance'");
+		expect(panel).not.toMatch(/requestJSON|taiwanScreenerPath\(/);
+	});
+});
+
+describe('M7D -- query construction', () => {
+	it('6. Apply serializes institutional params', () => {
+		const path = taiwanScreenerPath(withAdvanced({ minForeignNet: '100000', maxTrustNet: '-5000', minDealerNet: '0', minInstitutionalNet: '250000' }));
+		expect(path).toContain('min_foreign_net=100000');
+		expect(path).toContain('max_trust_net=-5000');
+		expect(path).toContain('min_dealer_net=0');
+		expect(path).toContain('min_institutional_net=250000');
+	});
+
+	it('7. Apply serializes margin params', () => {
+		const path = taiwanScreenerPath(withAdvanced({ minMarginBalance: '5000000', maxMarginChange: '1000', minShortBalance: '0', minShortMarginRatio: '8.2' }));
+		expect(path).toContain('min_margin_balance=5000000');
+		expect(path).toContain('max_margin_change=1000');
+		expect(path).toContain('min_short_balance=0');
+		expect(path).toContain('min_short_margin_ratio=8.2');
+	});
+
+	it('8. combined institutional + margin params serialize together in one query', () => {
+		const path = taiwanScreenerPath(withAdvanced({ minForeignNet: '100000', minMarginBalance: '5000000' }));
+		expect(path).toContain('min_foreign_net=100000');
+		expect(path).toContain('min_margin_balance=5000000');
+	});
+
+	it('9. blank advanced params are omitted entirely', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		for (const key of ['foreign_net', 'trust_net', 'dealer_net', 'institutional_net', 'margin_balance', 'margin_change', 'short_balance', 'short_change', 'short_margin_ratio']) {
+			expect(path).not.toContain(key);
+		}
+	});
+});
+
+describe('M7D -- advanced sort', () => {
+	it('10. sort=institutional_net query', () => {
+		expect(taiwanScreenerPath(withAdvanced({ sort: 'institutional_net' }))).toContain('sort=institutional_net');
+	});
+
+	it('11. sort=margin_balance query', () => {
+		expect(taiwanScreenerPath(withAdvanced({ sort: 'margin_balance' }))).toContain('sort=margin_balance');
+	});
+
+	it('12. legacy sort keys still work unchanged', () => {
+		expect(taiwanScreenerPath(withAdvanced({ sort: 'price' }))).toContain('sort=price');
+		expect(taiwanScreenerPath(withAdvanced({ sort: 'amount' }))).toContain('sort=amount');
+	});
+
+	it('sort dropdown includes all 9 new advanced options plus the 4 legacy ones', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		for (const label of ['股價', '漲跌幅', '成交量', '成交金額', '外資買賣超', '投信買賣超', '自營商買賣超', '三大法人合計', '融資餘額', '融資增減', '融券餘額', '融券增減', '券資比']) {
+			expect(html).toContain(label);
+		}
+	});
+});
+
+describe('M7D -- Clear / pagination / global refresh preserve advanced semantics', () => {
+	it('13. taiwanScreenerDefaultFilters() (used by Clear) resets every advanced field to blank', () => {
+		const defaults = taiwanScreenerDefaultFilters();
+		expect(defaults.minForeignNet).toBe('');
+		expect(defaults.maxShortMarginRatio).toBe('');
+	});
+
+	it('14. Apply resets offset to 0 even when advanced criteria are present', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const applyFilters = () => {'), source.indexOf('const clearFilters = () => {'));
+		expect(fn).toContain('setApplied({ ...draft, offset: 0 })');
+	});
+
+	it('15-16. pagination/refresh spread the full applied object (including advanced fields), never rebuild it field-by-field', () => {
+		const source = workspaceSource();
+		const previous = source.slice(source.indexOf('const goPrevious = () => {'), source.indexOf('const goNext = () => {'));
+		const next = source.slice(source.indexOf('const goNext = () => {'), source.indexOf('// Pessimistic add/remove'));
+		expect(previous).toContain('setApplied((current) => ({ ...current, offset:');
+		expect(next).toContain('setApplied((current) => ({ ...current, offset:');
+	});
+});
+
+describe('M7D -- missing/zero/sign rendering (institutional)', () => {
+	it('17. null institutional values render —', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: null, trust_net: null, dealer_net: null, institutional_net: null }), showInstitutional: true, showMargin: false })}</tr></tbody></table>);
+		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(4);
+	});
+
+	it('18. zero institutional value renders real 0, not missing', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 0, trust_net: 0, dealer_net: 0, institutional_net: 0 }), showInstitutional: true, showMargin: false })}</tr></tbody></table>);
+		expect(html).toContain('外資 0');
+		expect(html).not.toContain('外資 —');
+	});
+
+	it('19. positive/negative institutional values render explicit signs, never "+0"', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 534504, trust_net: -12000, dealer_net: 0 }), showInstitutional: true, showMargin: false })}</tr></tbody></table>);
+		expect(html).toContain('+534,504');
+		expect(html).toContain('-12,000');
+		expect(html).not.toContain('+0');
+	});
+});
+
+describe('M7D -- missing/zero/ratio rendering (margin)', () => {
+	it('20. null margin values render —', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: null, margin_change: null, short_balance: null, short_change: null, short_margin_ratio: null }), showInstitutional: false, showMargin: true })}</tr></tbody></table>);
+		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(5);
+	});
+
+	it('21. zero margin value renders real zero', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: 0, short_balance: 0 }), showInstitutional: false, showMargin: true })}</tr></tbody></table>);
+		expect(html).toContain('融資 0');
+		expect(html).toContain('融券 0');
+	});
+
+	it('22. short_margin_ratio renders as a percentage without re-scaling the raw backend value', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ short_margin_ratio: 8.2 }), showInstitutional: false, showMargin: true })}</tr></tbody></table>);
+		expect(html).toContain('8.2%');
+	});
+});
+
+describe('M7D -- adaptive result presentation driven by APPLIED filters, not draft', () => {
+	it('23. institutional criteria (applied) shows the institutional block and the 進階資料 header', () => {
+		const applied = withAdvanced({ minForeignNet: '0' });
+		const show = taiwanScreenerHasInstitutionalCriteria(applied);
+		expect(show).toBe(true);
+		const html = renderToStaticMarkup(<ScreenerTable securities={[security()]} onOpenResearch={() => {}} {...tableWatchlistProps({ showInstitutional: show, showMargin: false })} />);
+		expect(html).toContain('進階資料');
+		expect(html).toContain('外資');
+		expect(html).not.toContain('融資 ');
+	});
+
+	it('24. margin criteria (applied) shows the margin block and the 進階資料 header', () => {
+		const applied = withAdvanced({ minMarginBalance: '0' });
+		const show = taiwanScreenerHasMarginCriteria(applied);
+		expect(show).toBe(true);
+		const html = renderToStaticMarkup(<ScreenerTable securities={[security()]} onOpenResearch={() => {}} {...tableWatchlistProps({ showInstitutional: false, showMargin: show })} />);
+		expect(html).toContain('進階資料');
+		expect(html).toContain('融資');
+		expect(html).not.toContain('外資');
+	});
+
+	it('25. both criteria active shows both blocks', () => {
+		const applied = withAdvanced({ minForeignNet: '0', minMarginBalance: '0' });
+		const html = renderToStaticMarkup(<ScreenerTable securities={[security()]} onOpenResearch={() => {}} {...tableWatchlistProps({ showInstitutional: taiwanScreenerHasInstitutionalCriteria(applied), showMargin: taiwanScreenerHasMarginCriteria(applied) })} />);
+		expect(html).toContain('外資');
+		expect(html).toContain('融資');
+	});
+
+	it('26. neither criteria (no filter/sort active) shows no advanced column at all -- byte-identical legacy table', () => {
+		const applied = taiwanScreenerDefaultFilters();
+		expect(taiwanScreenerHasInstitutionalCriteria(applied)).toBe(false);
+		expect(taiwanScreenerHasMarginCriteria(applied)).toBe(false);
+		const html = renderToStaticMarkup(<ScreenerTable securities={[security()]} onOpenResearch={() => {}} {...tableWatchlistProps()} />);
+		expect(html).not.toContain('進階資料');
+	});
+
+	it('the workspace computes showInstitutional/showMargin from `applied`, never from `draft`', () => {
+		const source = workspaceSource();
+		expect(source).toContain('taiwanScreenerHasInstitutionalCriteria(applied)');
+		expect(source).toContain('taiwanScreenerHasMarginCriteria(applied)');
+		expect(source).not.toMatch(/taiwanScreenerHasInstitutionalCriteria\(draft\)|taiwanScreenerHasMarginCriteria\(draft\)/);
+	});
+});
+
+describe('M7D -- domain freshness / unavailable state', () => {
+	it('27. institutional freshness renders when status is present and not unavailable', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="法人資料" asOf="2026-09-04" status="current" unavailableMessage="法人資料暫時無法取得" />);
+		expect(html).toContain('法人資料：2026-09-04');
+		expect(html).toContain('最新');
+	});
+
+	it('28. margin freshness renders when status is present and not unavailable', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="融資融券資料" asOf="2026-09-04" status="stale" unavailableMessage="融資融券資料暫時無法取得" />);
+		expect(html).toContain('融資融券資料：2026-09-04');
+		expect(html).toContain('資料較舊');
+	});
+
+	it('29. unavailable institutional status shows the safe warning, not a fabricated as_of', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="法人資料" asOf={null} status="unavailable" unavailableMessage="法人資料暫時無法取得" />);
+		expect(html).toContain('法人資料暫時無法取得');
+		expect(html).not.toContain('2026');
+	});
+
+	it('30. unavailable margin status shows the safe warning', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="融資融券資料" asOf={null} status="unavailable" unavailableMessage="融資融券資料暫時無法取得" />);
+		expect(html).toContain('融資融券資料暫時無法取得');
+	});
+
+	it('renders nothing when status is absent (domain not requested at all -- never guessed)', () => {
+		const html = renderToStaticMarkup(<>{ScreenerDomainFreshness({ label: '法人資料', asOf: undefined, status: undefined, unavailableMessage: '法人資料暫時無法取得' })}</>);
+		expect(html).toBe('');
+	});
+
+	it('freshness/unavailable blocks are gated by showInstitutional/showMargin in the workspace body', () => {
+		const source = workspaceSource();
+		expect(source).toMatch(/data && showInstitutional && <ScreenerDomainFreshness/);
+		expect(source).toMatch(/data && showMargin && <ScreenerDomainFreshness/);
+	});
+});
+
+describe('M7D -- no request fan-out introduced', () => {
+	it('31-33. still issues exactly one requestJSON call (Screener) and never a second endpoint for institutional/margin', () => {
+		const source = workspaceSource();
+		const matches = source.match(/requestJSON</g) || [];
+		expect(matches.length).toBe(1);
+		expect(source).not.toMatch(/\/api\/v1\/tw\/institutional|\/api\/v1\/tw\/margin/);
+	});
+
+	it('39-40. no fundamentals/AI/Hermes/quotes fan-out introduced by advanced filters', () => {
+		const source = workspaceSource();
+		expect(source).not.toMatch(/\/api\/v1\/tw\/quotes|\/api\/v1\/tw\/fundamentals|taiwanIntelligencePath|taiwanResearchPath|hermes|Hermes/i);
+	});
+});
+
+describe('M7D -- research navigation and Watchlist action remain unaffected by advanced columns', () => {
+	it('34. exact 2330.TWSE navigation preserved even with the advanced column rendered', () => {
+		let opened = '';
+		const twse = security({ canonical: '2330.TWSE', foreign_net: 100 });
+		const element = ScreenerRow({ security: twse, onOpen: () => { opened = twse.canonical; }, ...rowWatchlistProps({ showInstitutional: true }) });
+		const identityCell = (element.props.children as unknown[])[0] as { props: { children: { props: { onClick: () => void } } } };
+		identityCell.props.children.props.onClick();
+		expect(opened).toBe('2330.TWSE');
+	});
+
+	it('35. exact 6488.TPEX navigation preserved with margin column rendered', () => {
+		let opened = '';
+		const tpex = security({ canonical: '6488.TPEX', code: '6488', name: '環球晶', exchange: 'TPEX', margin_balance: 200000 });
+		const element = ScreenerRow({ security: tpex, onOpen: () => { opened = tpex.canonical; }, ...rowWatchlistProps({ showMargin: true }) });
+		const identityCell = (element.props.children as unknown[])[0] as { props: { children: { props: { onClick: () => void } } } };
+		identityCell.props.children.props.onClick();
+		expect(opened).toBe('6488.TPEX');
+	});
+
+	it('36. the Watchlist toggle still never triggers onOpen, even with advanced columns present', () => {
+		let toggled = false;
+		const element = ScreenerWatchlistAction({ membershipState: 'ready', saved: false, busy: false, onToggle: () => { toggled = true; } });
+		const button = (element.props.children as unknown[])[0] as { type: string; props: { onClick: () => void } };
+		button.props.onClick();
+		expect(toggled).toBe(true);
+	});
+});
+
+describe('M7D -- race safety and cold-start unchanged', () => {
+	it('37. still uses the shared runScopedRequest race guard for the Screener fetch (advanced fields do not change this)', () => {
+		const source = workspaceSource();
+		expect(source).toContain('runScopedRequest(requestID');
+	});
+
+	it('38. cold overview cold-start still does not preload the Screener or Watchlist', () => {
+		const source = overviewSource();
+		const mountEffect = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('[config, refreshKey]'));
+		expect(mountEffect).not.toMatch(/screener/i);
+		expect(mountEffect).not.toMatch(/watchlist/i);
 	});
 });

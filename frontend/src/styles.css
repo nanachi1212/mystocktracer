@@ -6751,6 +6751,13 @@ a:focus-visible {
 .taiwan-screener-pagination button { min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; }
 .taiwan-screener-pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
 .taiwan-screener-watchlist-unavailable { color: #7b8797; font-size: 9px; }
+.taiwan-screener-advanced-group { border-top: 1px solid var(--line-soft); padding-top: 8px; }
+.taiwan-screener-advanced-toggle { display: flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 4px; border: none; background: none; color: var(--blue); font-size: 11px; font-weight: 600; cursor: pointer; }
+.taiwan-screener-advanced-grid { margin-top: 8px; }
+.taiwan-screener-domain-freshness { display: flex; align-items: center; gap: 8px; padding: 6px 2px; color: var(--muted); font-size: 10px; }
+.taiwan-screener-advanced-cell { white-space: normal; }
+.taiwan-screener-advanced-block { display: flex; flex-direction: column; gap: 1px; font-size: 9px; color: var(--muted); }
+.taiwan-screener-advanced-block + .taiwan-screener-advanced-block { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line-soft); }
 @media (max-width: 900px) { .taiwan-screener-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .market-index-selector button { display: grid; gap: 4px; min-width: 0; min-height: 72px; padding: 9px 10px; border: 1px solid #d9e1ea; border-radius: 9px; background: #ffffff; color: #66768b; text-align: left; cursor: pointer; }
 .market-index-selector button:hover { border-color: #a9c5e2; }

@@ -1,12 +1,12 @@
-import { LoaderCircle, Star } from 'lucide-react';
+import { ChevronDown, ChevronUp, LoaderCircle, Star } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { BackendConfig } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
 import {
-	addTaiwanWatchlistSecurity, fetchTaiwanWatchlist, formatTaiwanPercent, formatTaiwanTWD, removeTaiwanWatchlistSecurity, runScopedRequest,
-	taiwanErrorMessage, taiwanScopes, taiwanScreenerDefaultFilters, taiwanScreenerOrderOptions, taiwanScreenerPath, taiwanScreenerSortOptions,
-	taiwanSecurityTypeLabel, taiwanStatusLabel, validateTaiwanScreenerFilters,
-	type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
+	addTaiwanWatchlistSecurity, fetchTaiwanWatchlist, formatTaiwanPercent, formatTaiwanRatioPercent, formatTaiwanSignedShares, formatTaiwanTWD,
+	removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanScopes, taiwanScreenerDefaultFilters, taiwanScreenerHasInstitutionalCriteria,
+	taiwanScreenerHasMarginCriteria, taiwanScreenerOrderOptions, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanSecurityTypeLabel, taiwanStatusLabel,
+	validateTaiwanScreenerFilters, type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
 } from '../lib/taiwan-product';
 
 export type WatchlistMembershipState = 'idle' | 'loading' | 'ready' | 'error';
@@ -26,6 +26,12 @@ export type WatchlistMembershipState = 'idle' | 'loading' | 'ready' | 'error';
 // pessimistic update (local Set only changes after the server call succeeds), matching the same
 // pattern already used in TaiwanMarketView/TaiwanStockResearchWorkspace — no new Watchlist contract,
 // no per-row membership or quote requests.
+//
+// M7D — institutional/margin filters. Still exactly ONE `GET /api/v1/tw/screener` request per load
+// (the backend already decides internally whether to fetch institutional/margin — this component
+// never calls a separate endpoint for them, never knows about provider internals). Result
+// presentation (which advanced columns to show) is derived from `applied` (never `draft`), so typing
+// into an advanced field never changes what is currently displayed before Apply.
 export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: { config: BackendConfig | null; refreshKey: number; onOpenResearch: (canonical: string) => void }) {
 	const [draft, setDraft] = useState<TaiwanScreenerFilters>(taiwanScreenerDefaultFilters);
 	const [applied, setApplied] = useState<TaiwanScreenerFilters>(taiwanScreenerDefaultFilters);
@@ -121,10 +127,17 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 		}
 	};
 
+	// M7D — result presentation is derived from APPLIED filters only, never draft: typing into an
+	// advanced field must never change what is currently displayed before the user clicks Apply.
+	const showInstitutional = taiwanScreenerHasInstitutionalCriteria(applied);
+	const showMargin = taiwanScreenerHasMarginCriteria(applied);
+
 	return <div className="taiwan-product-workspace taiwan-screener-workspace">
 		<ScreenerFilterPanel draft={draft} onChange={setDraft} onApply={applyFilters} onClear={clearFilters} localError={localError} />
 		{error && <div className="market-partial-warning">{error}</div>}
 		{watchlistState === 'error' && <div className="market-partial-warning">自選股狀態暫時無法取得</div>}
+		{data && showInstitutional && <ScreenerDomainFreshness label="法人資料" asOf={data.institutional_as_of} status={data.institutional_status} unavailableMessage="法人資料暫時無法取得" />}
+		{data && showMargin && <ScreenerDomainFreshness label="融資融券資料" asOf={data.margin_as_of} status={data.margin_status} unavailableMessage="融資融券資料暫時無法取得" />}
 		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取台股選股資料</div>}
 		{data && <ScreenerSummary data={data} />}
 		{data && data.total === 0 && <div className="taiwan-empty-state"><strong>沒有符合目前條件的台灣證券</strong><p>可放寬篩選條件或按下「清除條件」查看全部結果。</p></div>}
@@ -133,6 +146,7 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 			watchlistState={watchlistState} watchlistedCanonicals={watchlistedCanonicals}
 			busyCanonicals={busyCanonicals} mutationErrors={mutationErrors}
 			onToggleWatchlist={(canonical) => void toggleWatchlist(canonical)}
+			showInstitutional={showInstitutional} showMargin={showMargin}
 		/>}
 		{data && <ScreenerPagination data={data} loading={loading} onPrevious={goPrevious} onNext={goNext} />}
 	</div>;
@@ -152,6 +166,16 @@ export function ScreenerPagination({ data, loading, onPrevious, onNext }: { data
 	</div>;
 }
 
+// M7D — pure/presentational domain freshness/unavailable indicator. `status` undefined means the
+// backend never returned that domain at all (not requested) — renders nothing, never a guess.
+// 'unavailable' renders a safe warning instead of freshness text. Never shows published_at/
+// available_at — only the existing trade-date as_of/status/days-behind the backend already exposes.
+export function ScreenerDomainFreshness({ label, asOf, status, unavailableMessage }: { label: string; asOf?: string | null; status?: string; unavailableMessage: string }) {
+	if (!status) return null;
+	if (status === 'unavailable') return <div className="market-partial-warning">{unavailableMessage}</div>;
+	return <div className="taiwan-screener-domain-freshness"><span>{label}：{asOf || '未提供'}</span><span className={`taiwan-status ${status}`}>{taiwanStatusLabel(status)}</span></div>;
+}
+
 export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localError }: {
 	draft: TaiwanScreenerFilters;
 	onChange: (next: TaiwanScreenerFilters) => void;
@@ -159,6 +183,11 @@ export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localEr
 	onClear: () => void;
 	localError: string;
 }) {
+	// M7D — collapse/expand is local UI state only: it never touches draft/applied, never sends a
+	// request, and is intentionally NOT reset by Clear (clearing filter values is a data concern;
+	// whether a section is currently open is a display concern).
+	const [institutionalExpanded, setInstitutionalExpanded] = useState(false);
+	const [marginExpanded, setMarginExpanded] = useState(false);
 	const set = <K extends keyof TaiwanScreenerFilters>(key: K, value: TaiwanScreenerFilters[K]) => onChange({ ...draft, [key]: value });
 	return <section className="taiwan-screener-filters">
 		<div className="taiwan-screener-filter-grid">
@@ -174,6 +203,41 @@ export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localEr
 			<label><span>排序欄位</span><select value={draft.sort} onChange={(event) => set('sort', event.target.value as TaiwanScreenerFilters['sort'])}>{taiwanScreenerSortOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
 			<label><span>排序方向</span><select value={draft.order} onChange={(event) => set('order', event.target.value as TaiwanScreenerFilters['order'])}>{taiwanScreenerOrderOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
 		</div>
+
+		<div className="taiwan-screener-advanced-group">
+			<button type="button" className="taiwan-screener-advanced-toggle" onClick={() => setInstitutionalExpanded((value) => !value)} aria-expanded={institutionalExpanded}>
+				{institutionalExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}法人籌碼
+			</button>
+			{institutionalExpanded && <div className="taiwan-screener-filter-grid taiwan-screener-advanced-grid">
+				<label><span>最低外資買賣超（股）</span><input type="number" inputMode="numeric" value={draft.minForeignNet} onChange={(event) => set('minForeignNet', event.target.value)} placeholder="不限" /></label>
+				<label><span>最高外資買賣超（股）</span><input type="number" inputMode="numeric" value={draft.maxForeignNet} onChange={(event) => set('maxForeignNet', event.target.value)} placeholder="不限" /></label>
+				<label><span>最低投信買賣超（股）</span><input type="number" inputMode="numeric" value={draft.minTrustNet} onChange={(event) => set('minTrustNet', event.target.value)} placeholder="不限" /></label>
+				<label><span>最高投信買賣超（股）</span><input type="number" inputMode="numeric" value={draft.maxTrustNet} onChange={(event) => set('maxTrustNet', event.target.value)} placeholder="不限" /></label>
+				<label><span>最低自營商買賣超（股）</span><input type="number" inputMode="numeric" value={draft.minDealerNet} onChange={(event) => set('minDealerNet', event.target.value)} placeholder="不限" /></label>
+				<label><span>最高自營商買賣超（股）</span><input type="number" inputMode="numeric" value={draft.maxDealerNet} onChange={(event) => set('maxDealerNet', event.target.value)} placeholder="不限" /></label>
+				<label><span>最低三大法人合計（股）</span><input type="number" inputMode="numeric" value={draft.minInstitutionalNet} onChange={(event) => set('minInstitutionalNet', event.target.value)} placeholder="不限" /></label>
+				<label><span>最高三大法人合計（股）</span><input type="number" inputMode="numeric" value={draft.maxInstitutionalNet} onChange={(event) => set('maxInstitutionalNet', event.target.value)} placeholder="不限" /></label>
+			</div>}
+		</div>
+
+		<div className="taiwan-screener-advanced-group">
+			<button type="button" className="taiwan-screener-advanced-toggle" onClick={() => setMarginExpanded((value) => !value)} aria-expanded={marginExpanded}>
+				{marginExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}融資融券
+			</button>
+			{marginExpanded && <div className="taiwan-screener-filter-grid taiwan-screener-advanced-grid">
+				<label><span>最低融資餘額（股）</span><input type="number" inputMode="numeric" value={draft.minMarginBalance} onChange={(event) => set('minMarginBalance', event.target.value)} placeholder="不限" /></label>
+				<label><span>最高融資餘額（股）</span><input type="number" inputMode="numeric" value={draft.maxMarginBalance} onChange={(event) => set('maxMarginBalance', event.target.value)} placeholder="不限" /></label>
+				<label><span>最低融資增減（股）</span><input type="number" inputMode="numeric" value={draft.minMarginChange} onChange={(event) => set('minMarginChange', event.target.value)} placeholder="不限" /></label>
+				<label><span>最高融資增減（股）</span><input type="number" inputMode="numeric" value={draft.maxMarginChange} onChange={(event) => set('maxMarginChange', event.target.value)} placeholder="不限" /></label>
+				<label><span>最低融券餘額（股）</span><input type="number" inputMode="numeric" value={draft.minShortBalance} onChange={(event) => set('minShortBalance', event.target.value)} placeholder="不限" /></label>
+				<label><span>最高融券餘額（股）</span><input type="number" inputMode="numeric" value={draft.maxShortBalance} onChange={(event) => set('maxShortBalance', event.target.value)} placeholder="不限" /></label>
+				<label><span>最低融券增減（股）</span><input type="number" inputMode="numeric" value={draft.minShortChange} onChange={(event) => set('minShortChange', event.target.value)} placeholder="不限" /></label>
+				<label><span>最高融券增減（股）</span><input type="number" inputMode="numeric" value={draft.maxShortChange} onChange={(event) => set('maxShortChange', event.target.value)} placeholder="不限" /></label>
+				<label><span>最低券資比（%）</span><input type="number" inputMode="decimal" value={draft.minShortMarginRatio} onChange={(event) => set('minShortMarginRatio', event.target.value)} placeholder="不限" /></label>
+				<label><span>最高券資比（%）</span><input type="number" inputMode="decimal" value={draft.maxShortMarginRatio} onChange={(event) => set('maxShortMarginRatio', event.target.value)} placeholder="不限" /></label>
+			</div>}
+		</div>
+
 		{localError && <p className="taiwan-screener-filter-error">{localError}</p>}
 		<div className="taiwan-screener-filter-actions">
 			<button type="button" className="taiwan-screener-apply" onClick={onApply}>套用條件</button>
@@ -186,7 +250,7 @@ export function ScreenerSummary({ data }: { data: TaiwanScreenerResponse }) {
 	return <section className="taiwan-status-card"><div><strong>{data.scope}</strong><span className={`taiwan-status ${data.freshness}`}>{taiwanStatusLabel(data.freshness)}</span><span>{data.total.toLocaleString('zh-TW')} 檔符合條件</span></div><small>資料日期 {data.as_of || '未提供'}</small></section>;
 }
 
-export function ScreenerTable({ securities, onOpenResearch, watchlistState, watchlistedCanonicals, busyCanonicals, mutationErrors, onToggleWatchlist }: {
+export function ScreenerTable({ securities, onOpenResearch, watchlistState, watchlistedCanonicals, busyCanonicals, mutationErrors, onToggleWatchlist, showInstitutional, showMargin }: {
 	securities: TaiwanScreenerSecurity[];
 	onOpenResearch: (canonical: string) => void;
 	watchlistState: WatchlistMembershipState;
@@ -194,14 +258,18 @@ export function ScreenerTable({ securities, onOpenResearch, watchlistState, watc
 	busyCanonicals: Set<string>;
 	mutationErrors: Record<string, string>;
 	onToggleWatchlist: (canonical: string) => void;
+	showInstitutional: boolean;
+	showMargin: boolean;
 }) {
+	const showAdvanced = showInstitutional || showMargin;
 	return <div className="taiwan-screener-table-wrap"><table className="taiwan-screener-table">
-		<thead><tr><th>證券</th><th>市場</th><th>價格</th><th>漲跌幅</th><th>成交量</th><th>成交金額</th><th>資料日期</th><th>自選</th></tr></thead>
+		<thead><tr><th>證券</th><th>市場</th><th>價格</th><th>漲跌幅</th><th>成交量</th><th>成交金額</th><th>資料日期</th><th>自選</th>{showAdvanced && <th>進階資料</th>}</tr></thead>
 		<tbody>{securities.map((item) => <ScreenerRow
 			key={item.canonical} security={item} onOpen={() => onOpenResearch(item.canonical)}
 			membershipState={watchlistState} saved={watchlistedCanonicals.has(item.canonical)}
 			busy={busyCanonicals.has(item.canonical)} mutationError={mutationErrors[item.canonical]}
 			onToggleWatchlist={() => onToggleWatchlist(item.canonical)}
+			showInstitutional={showInstitutional} showMargin={showMargin}
 		/>)}</tbody>
 	</table></div>;
 }
@@ -209,8 +277,11 @@ export function ScreenerTable({ securities, onOpenResearch, watchlistState, watc
 // Pure/presentational row. Clicking the identity area hands the exact backend `canonical` (never
 // code alone, never re-inferred) to the caller's existing stock-research handoff — this component
 // owns no navigation state of its own. The Watchlist action is a separate sibling <td>/button (never
-// nested inside the identity button), so clicking it can never also trigger onOpen.
-export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mutationError, onToggleWatchlist }: {
+// nested inside the identity button), so clicking it can never also trigger onOpen. The base 8
+// columns are always rendered identically to M7A/M7B/M7C — the optional 9th (advanced) cell is only
+// appended when at least one advanced domain is active, keeping the legacy table byte-identical
+// when neither institutional nor margin criteria apply.
+export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mutationError, onToggleWatchlist, showInstitutional, showMargin }: {
 	security: TaiwanScreenerSecurity;
 	onOpen: () => void;
 	membershipState: WatchlistMembershipState;
@@ -218,6 +289,8 @@ export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mu
 	busy: boolean;
 	mutationError?: string;
 	onToggleWatchlist: () => void;
+	showInstitutional: boolean;
+	showMargin: boolean;
 }) {
 	const tone = security.change_percent == null ? '' : security.change_percent > 0 ? 'up' : security.change_percent < 0 ? 'down' : 'flat';
 	return <tr>
@@ -229,7 +302,30 @@ export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mu
 		<td>{formatTaiwanTWD(security.amount)}</td>
 		<td>{security.trade_date || '—'}</td>
 		<td><ScreenerWatchlistAction membershipState={membershipState} saved={saved} busy={busy} mutationError={mutationError} onToggle={onToggleWatchlist} /></td>
+		{(showInstitutional || showMargin) && <ScreenerAdvancedCell security={security} showInstitutional={showInstitutional} showMargin={showMargin} />}
 	</tr>;
+}
+
+// M7D — pure/presentational compact advanced-data cell. Renders only the domain block(s) that are
+// currently active (per applied filters/sort), never all nine fields permanently. Missing values
+// render "—"; a genuine zero renders "0"; signed net/change values carry an explicit + only when
+// positive (never "+0").
+export function ScreenerAdvancedCell({ security, showInstitutional, showMargin }: { security: TaiwanScreenerSecurity; showInstitutional: boolean; showMargin: boolean }) {
+	return <td className="taiwan-screener-advanced-cell">
+		{showInstitutional && <div className="taiwan-screener-advanced-block">
+			<span>外資 {formatTaiwanSignedShares(security.foreign_net)}</span>
+			<span>投信 {formatTaiwanSignedShares(security.trust_net)}</span>
+			<span>自營商 {formatTaiwanSignedShares(security.dealer_net)}</span>
+			<span>三大法人 {formatTaiwanSignedShares(security.institutional_net)}</span>
+		</div>}
+		{showMargin && <div className="taiwan-screener-advanced-block">
+			<span>融資 {security.margin_balance == null ? '—' : security.margin_balance.toLocaleString('zh-TW')}</span>
+			<span>融資增減 {formatTaiwanSignedShares(security.margin_change)}</span>
+			<span>融券 {security.short_balance == null ? '—' : security.short_balance.toLocaleString('zh-TW')}</span>
+			<span>融券增減 {formatTaiwanSignedShares(security.short_change)}</span>
+			<span>券資比 {formatTaiwanRatioPercent(security.short_margin_ratio)}</span>
+		</div>}
+	</td>;
 }
 
 // Pure/presentational. `membershipState !== 'ready'` (idle/loading/error) never renders an add/remove
