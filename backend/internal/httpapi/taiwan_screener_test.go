@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,80 @@ import (
 
 func floatPtr(v float64) *float64 { return &v }
 func int64Ptr(v int64) *int64     { return &v }
+
+// fixedTaiwanScreenerInstitutional / fixedTaiwanScreenerMargin are separate test doubles for the
+// M7D-only interfaces — deliberately distinct from fixedTaiwanScreener so existing M7A-only tests
+// never need to construct or care about them. `calls` counts invocations to prove lazy domain
+// loading (a legacy/uninvolved-domain request must never call these).
+type fixedTaiwanScreenerInstitutional struct {
+	rows      []foundation.InstitutionalFlow
+	freshness foundation.TaiwanFreshness
+	err       error
+	calls     *int
+}
+
+func (f fixedTaiwanScreenerInstitutional) ScreenerInstitutional(context.Context, time.Time) ([]foundation.InstitutionalFlow, foundation.TaiwanFreshness, error) {
+	if f.calls != nil {
+		*f.calls++
+	}
+	return f.rows, f.freshness, f.err
+}
+
+type fixedTaiwanScreenerMargin struct {
+	rows      []foundation.MarginTrading
+	freshness foundation.TaiwanFreshness
+	err       error
+	calls     *int
+}
+
+func (f fixedTaiwanScreenerMargin) ScreenerMargin(context.Context, time.Time) ([]foundation.MarginTrading, foundation.TaiwanFreshness, error) {
+	if f.calls != nil {
+		*f.calls++
+	}
+	return f.rows, f.freshness, f.err
+}
+
+func screenerInstitutionalFixtureRows() []foundation.InstitutionalFlow {
+	return []foundation.InstitutionalFlow{
+		{Canonical: "2330.TWSE", Code: "2330", Name: "台積電", Exchange: "TWSE", TradeDate: "2026-09-04", Unit: "shares", ForeignNet: 200000, InvestmentTrustNet: -50000, DealerNet: 10000},
+		{Canonical: "6488.TPEX", Code: "6488", Name: "環球晶", Exchange: "TPEX", TradeDate: "2026-09-04", Unit: "shares", ForeignNet: -30000, InvestmentTrustNet: 0, DealerNet: 5000},
+		// 9999.TWSE deliberately has NO institutional row (absent from the bulk payload that day).
+	}
+}
+
+func screenerMarginFixtureRows() []foundation.MarginTrading {
+	return []foundation.MarginTrading{
+		{Canonical: "2330.TWSE", Code: "2330", Name: "台積電", Exchange: "TWSE", TradeDate: "2026-09-04", Unit: "shares", MarginBalance: int64Ptr(1000000), MarginChange: int64Ptr(20000), ShortBalance: int64Ptr(50000), ShortChange: int64Ptr(-1000), ShortMarginRatio: floatPtr(5.0)},
+		{Canonical: "6488.TPEX", Code: "6488", Name: "環球晶", Exchange: "TPEX", TradeDate: "2026-09-04", Unit: "shares", MarginBalance: int64Ptr(200000), MarginChange: nil, ShortBalance: nil, ShortChange: nil, ShortMarginRatio: nil},
+		// 9999.TWSE deliberately has NO margin row.
+	}
+}
+
+func screenerInstitutionalFixtureFreshness() foundation.TaiwanFreshness {
+	asOf := "2026-09-04"
+	behind := 0
+	return foundation.TaiwanFreshness{InstitutionalAsOf: &asOf, InstitutionalStatus: "current", InstitutionalDaysBehind: &behind, TargetLatestTradingDate: "2026-09-04", Timezone: "Asia/Taipei", Cutoff: "17:30"}
+}
+
+func screenerMarginFixtureFreshness() foundation.TaiwanFreshness {
+	asOf := "2026-09-04"
+	behind := 0
+	return foundation.TaiwanFreshness{MarginAsOf: &asOf, MarginStatus: "current", MarginDaysBehind: &behind, TargetLatestTradingDate: "2026-09-04", Timezone: "Asia/Taipei", Cutoff: "17:30"}
+}
+
+// newScreenerServerWithAdvancedDomains wires all three Screener providers (daily/institutional/
+// margin) so M7D combined-domain tests can exercise lazy loading and joins with independent call
+// counters per domain.
+func newScreenerServerWithAdvancedDomains(t *testing.T, rows []foundation.TaiwanDailySnapshot, instRows []foundation.InstitutionalFlow, marginRows []foundation.MarginTrading) (*Server, *int, *int, *int) {
+	t.Helper()
+	dailyCalls, instCalls, marginCalls := 0, 0, 0
+	server := NewServer(Config{
+		TaiwanScreener:              fixedTaiwanScreener{rows: rows, freshness: screenerFixtureFreshness(), calls: &dailyCalls},
+		TaiwanScreenerInstitutional: fixedTaiwanScreenerInstitutional{rows: instRows, freshness: screenerInstitutionalFixtureFreshness(), calls: &instCalls},
+		TaiwanScreenerMargin:        fixedTaiwanScreenerMargin{rows: marginRows, freshness: screenerMarginFixtureFreshness(), calls: &marginCalls},
+	})
+	return server, &dailyCalls, &instCalls, &marginCalls
+}
 
 // fixedTaiwanScreener is a test double for TaiwanScreenerProvider. `calls` (if non-nil) counts how
 // many times ScreenerSnapshot itself was invoked — used to prove the handler never calls the
@@ -59,23 +134,38 @@ func newScreenerServer(t *testing.T, rows []foundation.TaiwanDailySnapshot) (*Se
 
 type screenerTestResponse struct {
 	Data struct {
-		Scope      string  `json:"scope"`
-		AsOf       *string `json:"as_of"`
-		Freshness  string  `json:"freshness"`
-		Total      int     `json:"total"`
-		Offset     int     `json:"offset"`
-		Limit      int     `json:"limit"`
-		Securities []struct {
-			Canonical     string   `json:"canonical"`
-			Code          string   `json:"code"`
-			Name          string   `json:"name"`
-			Exchange      string   `json:"exchange"`
-			SecurityType  string   `json:"security_type"`
-			Price         *float64 `json:"price"`
-			Change        *float64 `json:"change"`
-			ChangePercent *float64 `json:"change_percent"`
-			Volume        *int64   `json:"volume"`
-			Amount        *float64 `json:"amount"`
+		Scope                   string  `json:"scope"`
+		AsOf                    *string `json:"as_of"`
+		Freshness               string  `json:"freshness"`
+		Total                   int     `json:"total"`
+		Offset                  int     `json:"offset"`
+		Limit                   int     `json:"limit"`
+		InstitutionalAsOf       *string `json:"institutional_as_of"`
+		InstitutionalStatus     string  `json:"institutional_status"`
+		InstitutionalDaysBehind *int    `json:"institutional_days_behind"`
+		MarginAsOf              *string `json:"margin_as_of"`
+		MarginStatus            string  `json:"margin_status"`
+		MarginDaysBehind        *int    `json:"margin_days_behind"`
+		Securities              []struct {
+			Canonical        string   `json:"canonical"`
+			Code             string   `json:"code"`
+			Name             string   `json:"name"`
+			Exchange         string   `json:"exchange"`
+			SecurityType     string   `json:"security_type"`
+			Price            *float64 `json:"price"`
+			Change           *float64 `json:"change"`
+			ChangePercent    *float64 `json:"change_percent"`
+			Volume           *int64   `json:"volume"`
+			Amount           *float64 `json:"amount"`
+			ForeignNet       *int64   `json:"foreign_net"`
+			TrustNet         *int64   `json:"trust_net"`
+			DealerNet        *int64   `json:"dealer_net"`
+			InstitutionalNet *int64   `json:"institutional_net"`
+			MarginBalance    *int64   `json:"margin_balance"`
+			MarginChange     *int64   `json:"margin_change"`
+			ShortBalance     *int64   `json:"short_balance"`
+			ShortChange      *int64   `json:"short_change"`
+			ShortMarginRatio *float64 `json:"short_margin_ratio"`
 		} `json:"securities"`
 	} `json:"data"`
 }
@@ -481,4 +571,356 @@ func TestTaiwanScreenerNoPerSecurityProviderCallsOrUnrelatedCalls(t *testing.T) 
 	// No Watchlist store, Hermes gateway, or fundamentals provider was configured on this server at
 	// all (Config{TaiwanScreener: ...} only) — a successful 200 response proves none of those paths
 	// were touched, since any such call would need those dependencies to be non-nil.
+}
+
+// ==================================================
+// M7D -- Institutional + Margin Screener filters
+// ==================================================
+
+// 1-2. legacy no-advanced-param request remains valid / unchanged semantics; lazy loading: neither
+// institutional nor margin is called for a plain M7A-style request.
+func TestTaiwanScreenerM7DLegacyRequestUnchangedAndLazy(t *testing.T) {
+	server, dailyCalls, instCalls, marginCalls := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	code, payload, _ := requestScreener(t, server, "")
+	if code != http.StatusOK || payload.Data.Total != 4 {
+		t.Fatalf("legacy request should behave exactly as M7A: code=%d total=%d", code, payload.Data.Total)
+	}
+	if *dailyCalls != 1 {
+		t.Fatalf("expected exactly 1 daily call, got %d", *dailyCalls)
+	}
+	if *instCalls != 0 {
+		t.Fatalf("legacy request must not call the institutional provider, got %d calls", *instCalls)
+	}
+	if *marginCalls != 0 {
+		t.Fatalf("legacy request must not call the margin provider, got %d calls", *marginCalls)
+	}
+	if payload.Data.InstitutionalAsOf != nil || payload.Data.InstitutionalStatus != "" || payload.Data.MarginAsOf != nil || payload.Data.MarginStatus != "" {
+		t.Fatalf("legacy request must not expose institutional/margin freshness fields at all, got %+v", payload.Data)
+	}
+}
+
+// 3-4. invalid institutional/margin number -> 400
+func TestTaiwanScreenerM7DInvalidNumber400(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	for _, query := range []string{"?min_foreign_net=abc", "?min_margin_balance=abc", "?min_short_margin_ratio=abc"} {
+		code, _, _ := requestScreener(t, server, query)
+		if code != http.StatusBadRequest {
+			t.Fatalf("query %q: expected 400, got %d", query, code)
+		}
+	}
+}
+
+// 5-6. institutional/margin min > max -> 400
+func TestTaiwanScreenerM7DMinGreaterThanMax400(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	for _, query := range []string{
+		"?min_foreign_net=100&max_foreign_net=50",
+		"?min_trust_net=100&max_trust_net=50",
+		"?min_dealer_net=100&max_dealer_net=50",
+		"?min_institutional_net=100&max_institutional_net=50",
+		"?min_margin_balance=100&max_margin_balance=50",
+		"?min_margin_change=100&max_margin_change=50",
+		"?min_short_balance=100&max_short_balance=50",
+		"?min_short_change=100&max_short_change=50",
+		"?min_short_margin_ratio=10&max_short_margin_ratio=5",
+	} {
+		code, _, _ := requestScreener(t, server, query)
+		if code != http.StatusBadRequest {
+			t.Fatalf("query %q: expected 400, got %d", query, code)
+		}
+	}
+}
+
+// 7-11. institutional filters (foreign/trust/dealer/institutional_net)
+func TestTaiwanScreenerM7DInstitutionalFilters(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	_, foreignMin, _ := requestScreener(t, server, "?min_foreign_net=0")
+	if len(canonicalsOf(foreignMin)) != 1 || canonicalsOf(foreignMin)[0] != "2330.TWSE" {
+		t.Fatalf("min_foreign_net=0 expected only 2330.TWSE (foreign_net=200000), got %v", canonicalsOf(foreignMin))
+	}
+	_, foreignMax, _ := requestScreener(t, server, "?max_foreign_net=0")
+	found := false
+	for _, c := range canonicalsOf(foreignMax) {
+		if c == "6488.TPEX" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("max_foreign_net=0 expected 6488.TPEX (foreign_net=-30000), got %v", canonicalsOf(foreignMax))
+	}
+	_, trust, _ := requestScreener(t, server, "?max_trust_net=-1")
+	if len(canonicalsOf(trust)) != 1 || canonicalsOf(trust)[0] != "2330.TWSE" {
+		t.Fatalf("max_trust_net=-1 expected only 2330.TWSE (trust_net=-50000), got %v", canonicalsOf(trust))
+	}
+	_, dealer, _ := requestScreener(t, server, "?min_dealer_net=8000")
+	if len(canonicalsOf(dealer)) != 1 || canonicalsOf(dealer)[0] != "2330.TWSE" {
+		t.Fatalf("min_dealer_net=8000 expected only 2330.TWSE (dealer_net=10000), got %v", canonicalsOf(dealer))
+	}
+	// institutional_net = foreign+trust+dealer: 2330.TWSE = 200000-50000+10000 = 160000; 6488.TPEX = -30000+0+5000 = -25000.
+	_, instNet, _ := requestScreener(t, server, "?min_institutional_net=100000")
+	if len(canonicalsOf(instNet)) != 1 || canonicalsOf(instNet)[0] != "2330.TWSE" {
+		t.Fatalf("min_institutional_net=100000 expected only 2330.TWSE, got %v", canonicalsOf(instNet))
+	}
+}
+
+// 12-16. margin filters (balance/change/short_balance/short_change/short_margin_ratio)
+func TestTaiwanScreenerM7DMarginFilters(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	_, balance, _ := requestScreener(t, server, "?min_margin_balance=500000")
+	if len(canonicalsOf(balance)) != 1 || canonicalsOf(balance)[0] != "2330.TWSE" {
+		t.Fatalf("min_margin_balance=500000 expected only 2330.TWSE, got %v", canonicalsOf(balance))
+	}
+	_, change, _ := requestScreener(t, server, "?min_margin_change=1")
+	if len(canonicalsOf(change)) != 1 || canonicalsOf(change)[0] != "2330.TWSE" {
+		t.Fatalf("min_margin_change=1 expected only 2330.TWSE (margin_change=20000; 6488.TPEX is nil), got %v", canonicalsOf(change))
+	}
+	_, shortBalance, _ := requestScreener(t, server, "?min_short_balance=1")
+	if len(canonicalsOf(shortBalance)) != 1 || canonicalsOf(shortBalance)[0] != "2330.TWSE" {
+		t.Fatalf("min_short_balance=1 expected only 2330.TWSE, got %v", canonicalsOf(shortBalance))
+	}
+	_, shortChange, _ := requestScreener(t, server, "?max_short_change=-1")
+	if len(canonicalsOf(shortChange)) != 1 || canonicalsOf(shortChange)[0] != "2330.TWSE" {
+		t.Fatalf("max_short_change=-1 expected only 2330.TWSE (short_change=-1000), got %v", canonicalsOf(shortChange))
+	}
+	_, ratio, _ := requestScreener(t, server, "?min_short_margin_ratio=1")
+	if len(canonicalsOf(ratio)) != 1 || canonicalsOf(ratio)[0] != "2330.TWSE" {
+		t.Fatalf("min_short_margin_ratio=1 expected only 2330.TWSE (ratio=5.0; 6488.TPEX is nil), got %v", canonicalsOf(ratio))
+	}
+}
+
+// 17-19. genuine zero passes min=0; missing excluded only when filter active; missing does not
+// exclude when filter absent.
+func TestTaiwanScreenerM7DZeroVsMissingSemantics(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	// 6488.TPEX has trust_net=0 (a genuine reported zero) -- max_trust_net=0 must include it.
+	_, zeroOk, _ := requestScreener(t, server, "?max_trust_net=0")
+	found := false
+	for _, c := range canonicalsOf(zeroOk) {
+		if c == "6488.TPEX" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("max_trust_net=0 should include 6488.TPEX (genuine reported zero), got %v", canonicalsOf(zeroOk))
+	}
+	// 9999.TWSE has no institutional row at all -- an active institutional filter must exclude it.
+	_, filtered, _ := requestScreener(t, server, "?min_foreign_net=-999999999")
+	for _, c := range canonicalsOf(filtered) {
+		if c == "9999.TWSE" {
+			t.Fatalf("9999.TWSE has no institutional row; an active min_foreign_net filter must exclude it (missing != zero), got %v", canonicalsOf(filtered))
+		}
+	}
+	// Without any institutional/margin filter, 9999.TWSE must still appear, with all such fields nil.
+	_, unfiltered, _ := requestScreener(t, server, "")
+	for _, item := range unfiltered.Data.Securities {
+		if item.Canonical == "9999.TWSE" {
+			if item.ForeignNet != nil || item.TrustNet != nil || item.DealerNet != nil || item.InstitutionalNet != nil || item.MarginBalance != nil {
+				t.Fatalf("9999.TWSE should have nil institutional/margin fields when domain not requested, got %+v", item)
+			}
+			return
+		}
+	}
+	t.Fatal("9999.TWSE should remain present without any institutional/margin filter")
+}
+
+// 20-22. institutional sorting asc/desc + deterministic missing placement
+func TestTaiwanScreenerM7DInstitutionalSorting(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	_, desc, _ := requestScreener(t, server, "?sort=institutional_net&order=desc")
+	if desc.Data.Securities[0].Canonical != "2330.TWSE" {
+		t.Fatalf("sort=institutional_net desc: expected 2330.TWSE (160000) first, got %v", canonicalsOf(desc))
+	}
+	// 9999.TWSE (no institutional row, nil) and 1101.TWSE (NoTrade, also nil) must sort last, consistently, in both directions.
+	lastTwo := canonicalsOf(desc)[len(desc.Data.Securities)-2:]
+	if !(contains(lastTwo, "9999.TWSE") && contains(lastTwo, "1101.TWSE")) {
+		t.Fatalf("sort=institutional_net desc: missing values must sort last, got %v", canonicalsOf(desc))
+	}
+	_, asc, _ := requestScreener(t, server, "?sort=institutional_net&order=asc")
+	if asc.Data.Securities[0].Canonical != "6488.TPEX" {
+		t.Fatalf("sort=institutional_net asc: expected 6488.TPEX (-25000) first, got %v", canonicalsOf(asc))
+	}
+	lastTwoAsc := canonicalsOf(asc)[len(asc.Data.Securities)-2:]
+	if !(contains(lastTwoAsc, "9999.TWSE") && contains(lastTwoAsc, "1101.TWSE")) {
+		t.Fatalf("sort=institutional_net asc: missing values must ALSO sort last, got %v", canonicalsOf(asc))
+	}
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+// 23-25. margin sorting asc/desc + deterministic missing placement
+func TestTaiwanScreenerM7DMarginSorting(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	_, desc, _ := requestScreener(t, server, "?sort=margin_balance&order=desc")
+	if desc.Data.Securities[0].Canonical != "2330.TWSE" {
+		t.Fatalf("sort=margin_balance desc: expected 2330.TWSE (1000000) first, got %v", canonicalsOf(desc))
+	}
+	lastTwo := canonicalsOf(desc)[len(desc.Data.Securities)-2:]
+	if !(contains(lastTwo, "9999.TWSE") && contains(lastTwo, "1101.TWSE")) {
+		t.Fatalf("sort=margin_balance desc: missing values must sort last, got %v", canonicalsOf(desc))
+	}
+	_, asc, _ := requestScreener(t, server, "?sort=margin_balance&order=asc")
+	if asc.Data.Securities[0].Canonical != "6488.TPEX" {
+		t.Fatalf("sort=margin_balance asc: expected 6488.TPEX (200000) first, got %v", canonicalsOf(asc))
+	}
+	lastTwoAsc := canonicalsOf(asc)[len(asc.Data.Securities)-2:]
+	if !(contains(lastTwoAsc, "9999.TWSE") && contains(lastTwoAsc, "1101.TWSE")) {
+		t.Fatalf("sort=margin_balance asc: missing values must ALSO sort last, got %v", canonicalsOf(asc))
+	}
+}
+
+// 26-28. exact canonical identity preserved through the join, no code-only collapse
+func TestTaiwanScreenerM7DExactCanonicalIdentityThroughJoin(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	_, payload, _ := requestScreener(t, server, "?min_foreign_net=-999999999&min_margin_balance=0")
+	seen := map[string]struct {
+		foreign *int64
+		margin  *int64
+	}{}
+	for _, item := range payload.Data.Securities {
+		seen[item.Canonical] = struct {
+			foreign *int64
+			margin  *int64
+		}{item.ForeignNet, item.MarginBalance}
+	}
+	twse, twseOk := seen["2330.TWSE"]
+	tpex, tpexOk := seen["6488.TPEX"]
+	if !twseOk || !tpexOk {
+		t.Fatalf("expected both 2330.TWSE and 6488.TPEX present, got %v", canonicalsOf(payload))
+	}
+	if twse.foreign == nil || *twse.foreign != 200000 || twse.margin == nil || *twse.margin != 1000000 {
+		t.Fatalf("2330.TWSE joined values incorrect: %+v", twse)
+	}
+	if tpex.foreign == nil || *tpex.foreign != -30000 || tpex.margin == nil || *tpex.margin != 200000 {
+		t.Fatalf("6488.TPEX joined values incorrect (must never be swapped/collapsed with 2330.TWSE): %+v", tpex)
+	}
+}
+
+// 29-30. institutional/margin unavailable does not erase daily rows
+func TestTaiwanScreenerM7DDomainUnavailableDoesNotEraseDailyRows(t *testing.T) {
+	dailyCalls, instCalls := 0, 0
+	server := NewServer(Config{
+		TaiwanScreener:              fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &dailyCalls},
+		TaiwanScreenerInstitutional: fixedTaiwanScreenerInstitutional{err: fmt.Errorf("institutional upstream unavailable"), calls: &instCalls},
+	})
+	code, payload, _ := requestScreener(t, server, "?sort=institutional_net")
+	if code != http.StatusOK {
+		t.Fatalf("institutional domain failure must not fail the base Screener request, got %d", code)
+	}
+	if payload.Data.Total != 4 {
+		t.Fatalf("daily rows must remain fully usable despite institutional failure, got total=%d", payload.Data.Total)
+	}
+	if payload.Data.InstitutionalStatus != "unavailable" {
+		t.Fatalf("institutional status should read unavailable, got %q", payload.Data.InstitutionalStatus)
+	}
+}
+
+func TestTaiwanScreenerM7DMarginUnavailableDoesNotEraseDailyRows(t *testing.T) {
+	dailyCalls, marginCalls := 0, 0
+	server := NewServer(Config{
+		TaiwanScreener:       fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &dailyCalls},
+		TaiwanScreenerMargin: fixedTaiwanScreenerMargin{err: fmt.Errorf("margin upstream unavailable"), calls: &marginCalls},
+	})
+	code, payload, _ := requestScreener(t, server, "?sort=margin_balance")
+	if code != http.StatusOK {
+		t.Fatalf("margin domain failure must not fail the base Screener request, got %d", code)
+	}
+	if payload.Data.Total != 4 {
+		t.Fatalf("daily rows must remain fully usable despite margin failure, got total=%d", payload.Data.Total)
+	}
+	if payload.Data.MarginStatus != "unavailable" {
+		t.Fatalf("margin status should read unavailable, got %q", payload.Data.MarginStatus)
+	}
+}
+
+// 31. active unavailable-domain filter yields zero matching rows, not fabricated values
+func TestTaiwanScreenerM7DUnavailableDomainFilterYieldsZeroMatches(t *testing.T) {
+	dailyCalls := 0
+	server := NewServer(Config{
+		TaiwanScreener:              fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &dailyCalls},
+		TaiwanScreenerInstitutional: fixedTaiwanScreenerInstitutional{err: fmt.Errorf("unavailable")},
+	})
+	code, payload, _ := requestScreener(t, server, "?min_foreign_net=0")
+	if code != http.StatusOK {
+		t.Fatalf("expected 200 (base Screener still valid), got %d", code)
+	}
+	if payload.Data.Total != 0 {
+		t.Fatalf("with institutional domain unavailable, an active institutional filter must match zero rows, got total=%d", payload.Data.Total)
+	}
+}
+
+// 32. freshness reveals unavailable/stale domain state
+func TestTaiwanScreenerM7DFreshnessRevealsDomainState(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	_, payload, _ := requestScreener(t, server, "?min_foreign_net=-999999999&min_margin_balance=0")
+	if payload.Data.InstitutionalAsOf == nil || *payload.Data.InstitutionalAsOf != "2026-09-04" || payload.Data.InstitutionalStatus != "current" {
+		t.Fatalf("expected institutional freshness exposed from provider, got %+v", payload.Data)
+	}
+	if payload.Data.MarginAsOf == nil || *payload.Data.MarginAsOf != "2026-09-04" || payload.Data.MarginStatus != "current" {
+		t.Fatalf("expected margin freshness exposed from provider, got %+v", payload.Data)
+	}
+}
+
+// 33-36. domain call independence: institutional-only never calls margin, margin-only never calls
+// institutional, vanilla calls neither, combined calls both exactly once.
+func TestTaiwanScreenerM7DDomainCallIndependence(t *testing.T) {
+	server, dailyCalls, instCalls, marginCalls := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+
+	*dailyCalls, *instCalls, *marginCalls = 0, 0, 0
+	requestScreener(t, server, "?min_foreign_net=0")
+	if *instCalls != 1 || *marginCalls != 0 {
+		t.Fatalf("institutional-only request: expected inst=1 margin=0, got inst=%d margin=%d", *instCalls, *marginCalls)
+	}
+
+	*dailyCalls, *instCalls, *marginCalls = 0, 0, 0
+	requestScreener(t, server, "?min_margin_balance=0")
+	if *instCalls != 0 || *marginCalls != 1 {
+		t.Fatalf("margin-only request: expected inst=0 margin=1, got inst=%d margin=%d", *instCalls, *marginCalls)
+	}
+
+	*dailyCalls, *instCalls, *marginCalls = 0, 0, 0
+	requestScreener(t, server, "")
+	if *instCalls != 0 || *marginCalls != 0 {
+		t.Fatalf("vanilla request: expected inst=0 margin=0, got inst=%d margin=%d", *instCalls, *marginCalls)
+	}
+
+	*dailyCalls, *instCalls, *marginCalls = 0, 0, 0
+	requestScreener(t, server, "?min_foreign_net=0&min_margin_balance=0")
+	if *instCalls != 1 || *marginCalls != 1 {
+		t.Fatalf("combined request: expected inst=1 margin=1, got inst=%d margin=%d", *instCalls, *marginCalls)
+	}
+	if *dailyCalls != 1 {
+		t.Fatalf("combined request: expected daily=1, got %d", *dailyCalls)
+	}
+}
+
+// 37-40. no Watchlist/fundamentals/research/AI side effects from advanced Screener filtering
+func TestTaiwanScreenerM7DNoUnrelatedSideEffects(t *testing.T) {
+	// This server is configured ONLY with the three Screener-domain providers -- no Watchlist store,
+	// no fundamentals provider, no intelligence/research provider, no Hermes gateway. A successful
+	// 200 response with a combined institutional+margin query proves none of those dependencies were
+	// touched, since any such call would need them to be non-nil.
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	code, _, _ := requestScreener(t, server, "?min_foreign_net=0&min_margin_balance=0&sort=institutional_net")
+	if code != http.StatusOK {
+		t.Fatalf("expected 200 with no unrelated dependencies configured, got %d", code)
+	}
+}
+
+// M7D.0 PIT regression: no published_at/available_at is ever introduced into the Screener response,
+// and 17:30 is never asserted as a publication guarantee anywhere in this contract.
+func TestTaiwanScreenerM7DNoFabricatedPublicationTimestamp(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithAdvancedDomains(t, screenerFixtureRows(), screenerInstitutionalFixtureRows(), screenerMarginFixtureRows())
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/screener?min_foreign_net=0&min_margin_balance=0", nil))
+	body := response.Body.String()
+	if strings.Contains(body, "published_at") || strings.Contains(body, "available_at") {
+		t.Fatalf("Screener response must never contain published_at/available_at, got body=%s", body)
+	}
 }

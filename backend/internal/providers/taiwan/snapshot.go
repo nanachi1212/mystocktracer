@@ -401,6 +401,16 @@ func (c *Client) dailyOn(query time.Time) []foundation.TaiwanDailySnapshot {
 	defer c.snapshotMu.RUnlock()
 	return append([]foundation.TaiwanDailySnapshot(nil), c.dailyDays[query.Format("2006-01-02")]...)
 }
+func (c *Client) instOn(query time.Time) []foundation.InstitutionalFlow {
+	c.snapshotMu.RLock()
+	defer c.snapshotMu.RUnlock()
+	return append([]foundation.InstitutionalFlow(nil), c.instDays[query.Format("2006-01-02")]...)
+}
+func (c *Client) marginOn(query time.Time) []foundation.MarginTrading {
+	c.snapshotMu.RLock()
+	defer c.snapshotMu.RUnlock()
+	return append([]foundation.MarginTrading(nil), c.marginDays[query.Format("2006-01-02")]...)
+}
 func latestNotAfter[T any](values map[string][]T, query time.Time) string {
 	limit := query.Format("2006-01-02")
 	best := ""

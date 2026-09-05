@@ -35,56 +35,58 @@ import (
 )
 
 type Server struct {
-	mux                   *http.ServeMux
-	token                 string
-	realtimeProvider      RealtimeProvider
-	kLinePrimary          KLineProvider
-	kLineFallback         KLineProvider
-	newsProvider          NewsProvider
-	sectorMap             SectorMapProvider
-	themeOverview         ThemeOverviewProvider
-	limitUpProvider       LimitUpProvider
-	marketPools           MarketPoolProvider
-	stockConcepts         StockConceptProvider
-	stockBusiness         StockBusinessProfileProvider
-	stockDirectory        StockDirectoryProvider
-	taiwanDirectory       TaiwanDirectoryProvider
-	taiwanMarket          TaiwanMarketProvider
-	taiwanChip            TaiwanChipProvider
-	taiwanSnapshot        TaiwanSnapshotProvider
-	taiwanBreadth         TaiwanBreadthProvider
-	taiwanScreener        TaiwanScreenerProvider
-	taiwanEmotion         TaiwanEmotionProvider
-	taiwanIndustryRadar   TaiwanIndustryRadarProvider
-	taiwanIntelligence    TaiwanStockIntelligenceProvider
-	taiwanFundamentals    TaiwanFundamentalsProvider
-	hotStockProvider      HotStockProvider
-	marketOverview        MarketOverviewProvider
-	inflection            InflectionEvaluator
-	themeSnapshots        *themeSnapshotCache
-	limitUpSnapshots      *limitUpLadderCache
-	stockDirectories      *stockDirectoryCache
-	taiwanDirectories     *taiwanDirectoryCache
-	hotStockRanks         *hotStockRankCache
-	marketSnapshots       *marketOverviewCache
-	marketEmotion         *marketEmotionEngine
-	marketEmotionIntraday *marketEmotionIntradayCache
-	reviewStore           *review.Store
-	portfolioStore        *portfolioinspection.Store
-	watchlistStore        *taiwanwatchlist.Store
-	portfolioInspection   *portfolioinspection.Service
-	portfolioExpectation  *portfolioinspection.ExpectationService
-	reviewImporter        ReviewImporter
-	wechatAPIURL          string
-	settingsStore         *appsettings.Store
-	reviewAutomation      *review.Automation
-	remoteDailySync       *review.RemoteDailySync
-	hermesGateway         hermes.Gateway
-	masteryLibrary        *methodology.Library
-	marketEmotionStore    *marketemotion.Store
-	themeRadarStore       *duanxianxia.Store
-	startupError          error
-	logger                *log.Logger
+	mux                         *http.ServeMux
+	token                       string
+	realtimeProvider            RealtimeProvider
+	kLinePrimary                KLineProvider
+	kLineFallback               KLineProvider
+	newsProvider                NewsProvider
+	sectorMap                   SectorMapProvider
+	themeOverview               ThemeOverviewProvider
+	limitUpProvider             LimitUpProvider
+	marketPools                 MarketPoolProvider
+	stockConcepts               StockConceptProvider
+	stockBusiness               StockBusinessProfileProvider
+	stockDirectory              StockDirectoryProvider
+	taiwanDirectory             TaiwanDirectoryProvider
+	taiwanMarket                TaiwanMarketProvider
+	taiwanChip                  TaiwanChipProvider
+	taiwanSnapshot              TaiwanSnapshotProvider
+	taiwanBreadth               TaiwanBreadthProvider
+	taiwanScreener              TaiwanScreenerProvider
+	taiwanScreenerInstitutional TaiwanScreenerInstitutionalProvider
+	taiwanScreenerMargin        TaiwanScreenerMarginProvider
+	taiwanEmotion               TaiwanEmotionProvider
+	taiwanIndustryRadar         TaiwanIndustryRadarProvider
+	taiwanIntelligence          TaiwanStockIntelligenceProvider
+	taiwanFundamentals          TaiwanFundamentalsProvider
+	hotStockProvider            HotStockProvider
+	marketOverview              MarketOverviewProvider
+	inflection                  InflectionEvaluator
+	themeSnapshots              *themeSnapshotCache
+	limitUpSnapshots            *limitUpLadderCache
+	stockDirectories            *stockDirectoryCache
+	taiwanDirectories           *taiwanDirectoryCache
+	hotStockRanks               *hotStockRankCache
+	marketSnapshots             *marketOverviewCache
+	marketEmotion               *marketEmotionEngine
+	marketEmotionIntraday       *marketEmotionIntradayCache
+	reviewStore                 *review.Store
+	portfolioStore              *portfolioinspection.Store
+	watchlistStore              *taiwanwatchlist.Store
+	portfolioInspection         *portfolioinspection.Service
+	portfolioExpectation        *portfolioinspection.ExpectationService
+	reviewImporter              ReviewImporter
+	wechatAPIURL                string
+	settingsStore               *appsettings.Store
+	reviewAutomation            *review.Automation
+	remoteDailySync             *review.RemoteDailySync
+	hermesGateway               hermes.Gateway
+	masteryLibrary              *methodology.Library
+	marketEmotionStore          *marketemotion.Store
+	themeRadarStore             *duanxianxia.Store
+	startupError                error
+	logger                      *log.Logger
 }
 
 func NewServer(config any) *Server {
@@ -141,7 +143,7 @@ func NewServer(config any) *Server {
 	if cfg.StockDirectory == nil {
 		cfg.StockDirectory = eastMoneyClient
 	}
-	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanScreener == nil || cfg.TaiwanEmotion == nil || cfg.TaiwanIndustryRadar == nil || cfg.TaiwanIntelligence == nil {
+	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanScreener == nil || cfg.TaiwanScreenerInstitutional == nil || cfg.TaiwanScreenerMargin == nil || cfg.TaiwanEmotion == nil || cfg.TaiwanIndustryRadar == nil || cfg.TaiwanIntelligence == nil {
 		taiwanClient := taiwan.NewClient(taiwan.Config{})
 		if cfg.TaiwanDirectory == nil {
 			cfg.TaiwanDirectory = taiwanClient
@@ -163,6 +165,12 @@ func NewServer(config any) *Server {
 		}
 		if cfg.TaiwanScreener == nil {
 			cfg.TaiwanScreener = taiwanClient
+		}
+		if cfg.TaiwanScreenerInstitutional == nil {
+			cfg.TaiwanScreenerInstitutional = taiwanClient
+		}
+		if cfg.TaiwanScreenerMargin == nil {
+			cfg.TaiwanScreenerMargin = taiwanClient
 		}
 		if cfg.TaiwanEmotion == nil {
 			cfg.TaiwanEmotion = taiwanClient
@@ -307,52 +315,54 @@ func NewServer(config any) *Server {
 		})
 	}
 	s := &Server{
-		mux:                   http.NewServeMux(),
-		token:                 cfg.Token,
-		realtimeProvider:      cfg.Realtime,
-		kLinePrimary:          cfg.KLinePrimary,
-		kLineFallback:         cfg.KLineFallback,
-		newsProvider:          cfg.News,
-		sectorMap:             cfg.SectorMap,
-		themeOverview:         cfg.ThemeOverview,
-		limitUpProvider:       cfg.LimitUp,
-		marketPools:           cfg.MarketPools,
-		stockConcepts:         cfg.StockConcept,
-		stockBusiness:         cfg.StockBusiness,
-		stockDirectory:        cfg.StockDirectory,
-		taiwanDirectory:       cfg.TaiwanDirectory,
-		taiwanMarket:          cfg.TaiwanMarket,
-		taiwanChip:            cfg.TaiwanChip,
-		taiwanSnapshot:        cfg.TaiwanSnapshot,
-		taiwanBreadth:         cfg.TaiwanBreadth,
-		taiwanScreener:        cfg.TaiwanScreener,
-		taiwanEmotion:         cfg.TaiwanEmotion,
-		taiwanIndustryRadar:   cfg.TaiwanIndustryRadar,
-		taiwanIntelligence:    cfg.TaiwanIntelligence,
-		taiwanFundamentals:    cfg.TaiwanFundamentals,
-		hotStockProvider:      cfg.HotStocks,
-		marketOverview:        cfg.MarketOverview,
-		inflection:            cfg.Inflection,
-		themeSnapshots:        newThemeSnapshotCache(30 * time.Second),
-		limitUpSnapshots:      newLimitUpLadderCache(30 * time.Second),
-		stockDirectories:      newStockDirectoryCache(6 * time.Hour),
-		taiwanDirectories:     newTaiwanDirectoryCache(12 * time.Hour),
-		hotStockRanks:         newHotStockRankCache(2 * time.Minute),
-		marketSnapshots:       newMarketOverviewCache(45 * time.Second),
-		marketEmotionIntraday: newMarketEmotionIntradayCache(marketEmotionIntradayTTL),
-		reviewStore:           cfg.ReviewStore,
-		portfolioStore:        cfg.PortfolioStore,
-		watchlistStore:        cfg.WatchlistStore,
-		reviewImporter:        cfg.ReviewImporter,
-		wechatAPIURL:          strings.TrimSpace(cfg.WeChatAPIURL),
-		settingsStore:         cfg.SettingsStore,
-		reviewAutomation:      cfg.ReviewAutomation,
-		remoteDailySync:       cfg.RemoteDailySync,
-		hermesGateway:         cfg.HermesGateway,
-		masteryLibrary:        cfg.MasteryLibrary,
-		marketEmotionStore:    cfg.MarketEmotionStore,
-		startupError:          errors.Join(startupErrors...),
-		logger:                cfg.Logger,
+		mux:                         http.NewServeMux(),
+		token:                       cfg.Token,
+		realtimeProvider:            cfg.Realtime,
+		kLinePrimary:                cfg.KLinePrimary,
+		kLineFallback:               cfg.KLineFallback,
+		newsProvider:                cfg.News,
+		sectorMap:                   cfg.SectorMap,
+		themeOverview:               cfg.ThemeOverview,
+		limitUpProvider:             cfg.LimitUp,
+		marketPools:                 cfg.MarketPools,
+		stockConcepts:               cfg.StockConcept,
+		stockBusiness:               cfg.StockBusiness,
+		stockDirectory:              cfg.StockDirectory,
+		taiwanDirectory:             cfg.TaiwanDirectory,
+		taiwanMarket:                cfg.TaiwanMarket,
+		taiwanChip:                  cfg.TaiwanChip,
+		taiwanSnapshot:              cfg.TaiwanSnapshot,
+		taiwanBreadth:               cfg.TaiwanBreadth,
+		taiwanScreener:              cfg.TaiwanScreener,
+		taiwanScreenerInstitutional: cfg.TaiwanScreenerInstitutional,
+		taiwanScreenerMargin:        cfg.TaiwanScreenerMargin,
+		taiwanEmotion:               cfg.TaiwanEmotion,
+		taiwanIndustryRadar:         cfg.TaiwanIndustryRadar,
+		taiwanIntelligence:          cfg.TaiwanIntelligence,
+		taiwanFundamentals:          cfg.TaiwanFundamentals,
+		hotStockProvider:            cfg.HotStocks,
+		marketOverview:              cfg.MarketOverview,
+		inflection:                  cfg.Inflection,
+		themeSnapshots:              newThemeSnapshotCache(30 * time.Second),
+		limitUpSnapshots:            newLimitUpLadderCache(30 * time.Second),
+		stockDirectories:            newStockDirectoryCache(6 * time.Hour),
+		taiwanDirectories:           newTaiwanDirectoryCache(12 * time.Hour),
+		hotStockRanks:               newHotStockRankCache(2 * time.Minute),
+		marketSnapshots:             newMarketOverviewCache(45 * time.Second),
+		marketEmotionIntraday:       newMarketEmotionIntradayCache(marketEmotionIntradayTTL),
+		reviewStore:                 cfg.ReviewStore,
+		portfolioStore:              cfg.PortfolioStore,
+		watchlistStore:              cfg.WatchlistStore,
+		reviewImporter:              cfg.ReviewImporter,
+		wechatAPIURL:                strings.TrimSpace(cfg.WeChatAPIURL),
+		settingsStore:               cfg.SettingsStore,
+		reviewAutomation:            cfg.ReviewAutomation,
+		remoteDailySync:             cfg.RemoteDailySync,
+		hermesGateway:               cfg.HermesGateway,
+		masteryLibrary:              cfg.MasteryLibrary,
+		marketEmotionStore:          cfg.MarketEmotionStore,
+		startupError:                errors.Join(startupErrors...),
+		logger:                      cfg.Logger,
 	}
 	if kaipanlaService != nil {
 		s.themeRadarStore = kaipanlaService.Store()

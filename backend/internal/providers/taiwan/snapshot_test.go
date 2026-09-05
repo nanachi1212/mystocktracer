@@ -240,3 +240,162 @@ func TestScreenerSnapshotUsesOneBulkDailyRequestPerExchangeRegardlessOfRowCount(
 		t.Fatalf("unexpected freshness: %+v", freshness)
 	}
 }
+
+// TestScreenerInstitutionalUsesOneBulkRequestPerExchangeRegardlessOfRowCount (M7D) proves
+// ScreenerInstitutional makes exactly one TWSE + one TPEx institutional request in total, even with
+// a directory/institutional fixture of several hundred securities per exchange — never one request
+// per security. Institutional data reuses the exact same bulk refresh path M7A already validated
+// for daily snapshots (refreshInstitutional/instDays), so the same bound applies here.
+func TestScreenerInstitutionalUsesOneBulkRequestPerExchangeRegardlessOfRowCount(t *testing.T) {
+	const rowsPerExchange = 300
+	var directoryCalls, instCalls atomic.Int32
+
+	var twseDirectory, tpexDirectory, twseInst, tpexInst strings.Builder
+	twseDirectory.WriteString("[")
+	tpexDirectory.WriteString("[")
+	twseInst.WriteString(`{"data":[`)
+	tpexInst.WriteString(`{"data":[`)
+	for i := 0; i < rowsPerExchange; i++ {
+		if i > 0 {
+			twseDirectory.WriteString(",")
+			tpexDirectory.WriteString(",")
+			twseInst.WriteString(",")
+			tpexInst.WriteString(",")
+		}
+		twseCode := fmt.Sprintf("3%03d", i)
+		tpexCode := fmt.Sprintf("4%03d", i)
+		fmt.Fprintf(&twseDirectory, `{"公司代號":"%s","公司簡稱":"twse-%d"}`, twseCode, i)
+		fmt.Fprintf(&tpexDirectory, `{"SecuritiesCompanyCode":"%s","CompanyAbbreviation":"tpex-%d"}`, tpexCode, i)
+		// TWSE T86 row: parseTWSEInstitutional needs len>=19 (row[2:19] all numeric).
+		fmt.Fprintf(&twseInst, `["%s","twse-%d","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]`, twseCode, i)
+		// TPEx insti row: parseTPExInstitutional needs len>=24 (row[2:24] all numeric).
+		fmt.Fprintf(&tpexInst, `["%s","tpex-%d","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]`, tpexCode, i)
+	}
+	twseDirectory.WriteString("]")
+	tpexDirectory.WriteString("]")
+	twseInst.WriteString("]}")
+	tpexInst.WriteString("]}")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			directoryCalls.Add(1)
+			_, _ = w.Write([]byte(twseDirectory.String()))
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[]`))
+		case "/mopsfin_t187ap03_O":
+			directoryCalls.Add(1)
+			_, _ = w.Write([]byte(tpexDirectory.String()))
+		case "/rwd/zh/fund/T86":
+			instCalls.Add(1)
+			_, _ = w.Write([]byte(twseInst.String()))
+		case "/www/zh-tw/insti/dailyTrade":
+			instCalls.Add(1)
+			_, _ = w.Write([]byte(tpexInst.String()))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, TWSEReportBaseURL: server.URL, TPExReportBaseURL: server.URL, HTTPClient: server.Client(), Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerInstitutional(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if instCalls.Load() != 2 {
+		t.Fatalf("expected exactly 2 institutional requests (one per exchange) regardless of %d rows per exchange, got %d", rowsPerExchange, instCalls.Load())
+	}
+	if len(rows) != rowsPerExchange*2 {
+		t.Fatalf("expected %d total institutional rows, got %d", rowsPerExchange*2, len(rows))
+	}
+	if freshness.InstitutionalStatus != "current" {
+		t.Fatalf("unexpected freshness: %+v", freshness)
+	}
+	// Confirm exact canonical identity is preserved through the bulk parse (never code-only).
+	byCanonical := map[string]bool{}
+	for _, row := range rows {
+		byCanonical[row.Canonical] = true
+	}
+	if !byCanonical["3000.TWSE"] || !byCanonical["4000.TPEX"] {
+		t.Fatalf("expected exact TWSE/TPEX canonical identities present, got sample missing 3000.TWSE/4000.TPEX")
+	}
+}
+
+// TestScreenerMarginUsesOneBulkRequestPerExchangeRegardlessOfRowCount (M7D) proves ScreenerMargin
+// makes exactly one TWSE + one TPEx margin request in total, even with several hundred securities
+// per exchange — never one request per security.
+func TestScreenerMarginUsesOneBulkRequestPerExchangeRegardlessOfRowCount(t *testing.T) {
+	const rowsPerExchange = 300
+	var marginCalls atomic.Int32
+
+	var twseDirectory, tpexDirectory, twseMargin, tpexMargin strings.Builder
+	twseDirectory.WriteString("[")
+	tpexDirectory.WriteString("[")
+	twseMargin.WriteString(`{"data":[`)
+	tpexMargin.WriteString(`{"data":[`)
+	for i := 0; i < rowsPerExchange; i++ {
+		if i > 0 {
+			twseDirectory.WriteString(",")
+			tpexDirectory.WriteString(",")
+			twseMargin.WriteString(",")
+			tpexMargin.WriteString(",")
+		}
+		twseCode := fmt.Sprintf("5%03d", i)
+		tpexCode := fmt.Sprintf("6%03d", i)
+		fmt.Fprintf(&twseDirectory, `{"公司代號":"%s","公司簡稱":"twse-%d"}`, twseCode, i)
+		fmt.Fprintf(&tpexDirectory, `{"SecuritiesCompanyCode":"%s","CompanyAbbreviation":"tpex-%d"}`, tpexCode, i)
+		// TWSE MI_MARGN row: parseMargin(..., 2,3,4,5,6,8,9,10,11,12,15) needs len>15 (>=16).
+		fmt.Fprintf(&twseMargin, `["%s","twse-%d","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]`, twseCode, i)
+		// TPEx margin/balance row: parseMargin(..., 3,4,5,2,6,12,11,13,10,14,19) needs len>19 (>=20).
+		fmt.Fprintf(&tpexMargin, `["%s","tpex-%d","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]`, tpexCode, i)
+	}
+	twseDirectory.WriteString("]")
+	tpexDirectory.WriteString("]")
+	twseMargin.WriteString("]}")
+	tpexMargin.WriteString("]}")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			_, _ = w.Write([]byte(twseDirectory.String()))
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[]`))
+		case "/mopsfin_t187ap03_O":
+			_, _ = w.Write([]byte(tpexDirectory.String()))
+		case "/rwd/zh/marginTrading/MI_MARGN":
+			marginCalls.Add(1)
+			_, _ = w.Write([]byte(twseMargin.String()))
+		case "/www/zh-tw/margin/balance":
+			marginCalls.Add(1)
+			_, _ = w.Write([]byte(tpexMargin.String()))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, TWSEReportBaseURL: server.URL, TPExReportBaseURL: server.URL, HTTPClient: server.Client(), Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerMargin(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marginCalls.Load() != 2 {
+		t.Fatalf("expected exactly 2 margin requests (one per exchange) regardless of %d rows per exchange, got %d", rowsPerExchange, marginCalls.Load())
+	}
+	if len(rows) != rowsPerExchange*2 {
+		t.Fatalf("expected %d total margin rows, got %d", rowsPerExchange*2, len(rows))
+	}
+	if freshness.MarginStatus != "current" {
+		t.Fatalf("unexpected freshness: %+v", freshness)
+	}
+	byCanonical := map[string]bool{}
+	for _, row := range rows {
+		byCanonical[row.Canonical] = true
+	}
+	if !byCanonical["5000.TWSE"] || !byCanonical["6000.TPEX"] {
+		t.Fatalf("expected exact TWSE/TPEX canonical identities present, got sample missing 5000.TWSE/6000.TPEX")
+	}
+}

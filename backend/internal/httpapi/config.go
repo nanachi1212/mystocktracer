@@ -101,6 +101,19 @@ type TaiwanScreenerProvider interface {
 	ScreenerSnapshot(ctx context.Context, now time.Time) ([]foundation.TaiwanDailySnapshot, foundation.TaiwanFreshness, error)
 }
 
+// TaiwanScreenerInstitutionalProvider / TaiwanScreenerMarginProvider are deliberately separate,
+// narrow interfaces (not folded into TaiwanScreenerProvider) so existing Screener test fakes that
+// only cover M7A (price/volume/amount) never need to implement institutional/margin methods they
+// don't use. M7D calls these ONLY when a Screener request actually needs that domain (see
+// taiwanScreenerNeedsInstitutional/taiwanScreenerNeedsMargin) — never unconditionally.
+type TaiwanScreenerInstitutionalProvider interface {
+	ScreenerInstitutional(ctx context.Context, now time.Time) ([]foundation.InstitutionalFlow, foundation.TaiwanFreshness, error)
+}
+
+type TaiwanScreenerMarginProvider interface {
+	ScreenerMargin(ctx context.Context, now time.Time) ([]foundation.MarginTrading, foundation.TaiwanFreshness, error)
+}
+
 type TaiwanEmotionProvider interface {
 	MarketEmotion(ctx context.Context, now time.Time) (marketemotion.TaiwanMarketEmotion, error)
 }
@@ -142,54 +155,56 @@ type ReviewImporter interface {
 }
 
 type Config struct {
-	Token                string
-	Realtime             RealtimeProvider
-	KLinePrimary         KLineProvider
-	KLineFallback        KLineProvider
-	News                 NewsProvider
-	SectorMap            SectorMapProvider
-	ThemeOverview        ThemeOverviewProvider
-	ThemeRadarFallback   ThemeRadarFallback
-	LimitUp              LimitUpProvider
-	MarketPools          MarketPoolProvider
-	StockConcept         StockConceptProvider
-	StockBusiness        StockBusinessProfileProvider
-	StockDirectory       StockDirectoryProvider
-	TaiwanDirectory      TaiwanDirectoryProvider
-	TaiwanMarket         TaiwanMarketProvider
-	TaiwanChip           TaiwanChipProvider
-	TaiwanSnapshot       TaiwanSnapshotProvider
-	TaiwanBreadth        TaiwanBreadthProvider
-	TaiwanScreener       TaiwanScreenerProvider
-	TaiwanEmotion        TaiwanEmotionProvider
-	TaiwanIndustryRadar  TaiwanIndustryRadarProvider
-	TaiwanIntelligence   TaiwanStockIntelligenceProvider
-	TaiwanFundamentals   TaiwanFundamentalsProvider
-	HotStocks            HotStockProvider
-	MarketOverview       MarketOverviewProvider
-	Inflection           InflectionEvaluator
-	ReviewDBPath         string
-	PortfolioDBPath      string
-	MarketEmotionDBPath  string
-	ThemeRadarDBPath     string
-	WatchlistDBPath      string
-	DuanxianxiaBaseURL   string
-	WeChatAPIURL         string
-	ReviewHTTP           *http.Client
-	ReviewStore          *review.Store
-	PortfolioStore       *portfolioinspection.Store
-	MarketEmotionStore   *marketemotion.Store
-	WatchlistStore       *taiwanwatchlist.Store
-	ReviewImporter       ReviewImporter
-	SettingsPath         string
-	SettingsStore        *appsettings.Store
-	ReviewAutomation     *review.Automation
-	RemoteDailyReviewURL string
-	RemoteDailySync      *review.RemoteDailySync
-	HermesGateway        hermes.Gateway
-	MasteryLibrary       *methodology.Library
-	Logger               *log.Logger
-	StrictPersistence    bool
+	Token                       string
+	Realtime                    RealtimeProvider
+	KLinePrimary                KLineProvider
+	KLineFallback               KLineProvider
+	News                        NewsProvider
+	SectorMap                   SectorMapProvider
+	ThemeOverview               ThemeOverviewProvider
+	ThemeRadarFallback          ThemeRadarFallback
+	LimitUp                     LimitUpProvider
+	MarketPools                 MarketPoolProvider
+	StockConcept                StockConceptProvider
+	StockBusiness               StockBusinessProfileProvider
+	StockDirectory              StockDirectoryProvider
+	TaiwanDirectory             TaiwanDirectoryProvider
+	TaiwanMarket                TaiwanMarketProvider
+	TaiwanChip                  TaiwanChipProvider
+	TaiwanSnapshot              TaiwanSnapshotProvider
+	TaiwanBreadth               TaiwanBreadthProvider
+	TaiwanScreener              TaiwanScreenerProvider
+	TaiwanScreenerInstitutional TaiwanScreenerInstitutionalProvider
+	TaiwanScreenerMargin        TaiwanScreenerMarginProvider
+	TaiwanEmotion               TaiwanEmotionProvider
+	TaiwanIndustryRadar         TaiwanIndustryRadarProvider
+	TaiwanIntelligence          TaiwanStockIntelligenceProvider
+	TaiwanFundamentals          TaiwanFundamentalsProvider
+	HotStocks                   HotStockProvider
+	MarketOverview              MarketOverviewProvider
+	Inflection                  InflectionEvaluator
+	ReviewDBPath                string
+	PortfolioDBPath             string
+	MarketEmotionDBPath         string
+	ThemeRadarDBPath            string
+	WatchlistDBPath             string
+	DuanxianxiaBaseURL          string
+	WeChatAPIURL                string
+	ReviewHTTP                  *http.Client
+	ReviewStore                 *review.Store
+	PortfolioStore              *portfolioinspection.Store
+	MarketEmotionStore          *marketemotion.Store
+	WatchlistStore              *taiwanwatchlist.Store
+	ReviewImporter              ReviewImporter
+	SettingsPath                string
+	SettingsStore               *appsettings.Store
+	ReviewAutomation            *review.Automation
+	RemoteDailyReviewURL        string
+	RemoteDailySync             *review.RemoteDailySync
+	HermesGateway               hermes.Gateway
+	MasteryLibrary              *methodology.Library
+	Logger                      *log.Logger
+	StrictPersistence           bool
 }
 
 func normalizeConfig(value any) Config {
