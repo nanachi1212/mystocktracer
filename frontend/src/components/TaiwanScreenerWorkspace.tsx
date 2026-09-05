@@ -4,7 +4,7 @@ import type { BackendConfig } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
 import {
 	addTaiwanWatchlistSecurity, fetchTaiwanWatchlist, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatioPercent, formatTaiwanRevenueTWD, formatTaiwanSignedShares, formatTaiwanTWD,
-	removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanScopes, taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasInstitutionalCriteria,
+	removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanFinancialsStatusLabel, taiwanScopes, taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasInstitutionalCriteria,
 	taiwanScreenerHasMarginCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria, taiwanScreenerOrderOptions, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanSecurityTypeLabel, taiwanStatusLabel,
 	validateTaiwanScreenerFilters, type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
 } from '../lib/taiwan-product';
@@ -134,6 +134,7 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 	const showRevenue = taiwanScreenerHasRevenueCriteria(applied);
 	const showValuation = taiwanScreenerHasValuationCriteria(applied);
 	const showDividends = taiwanScreenerHasDividendCriteria(applied);
+	const showFinancials = taiwanScreenerHasFinancialsCriteria(applied);
 
 	return <div className="taiwan-product-workspace taiwan-screener-workspace">
 		<ScreenerFilterPanel draft={draft} onChange={setDraft} onApply={applyFilters} onClear={clearFilters} localError={localError} />
@@ -144,6 +145,7 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 		{data && showRevenue && <ScreenerDomainFreshness label="營收資料" asOf={data.revenue_as_of} status={data.revenue_status} unavailableMessage="營收資料暫時無法取得" />}
 		{data && showValuation && <ScreenerDomainFreshness label="估值資料" asOf={data.valuation_as_of} status={data.valuation_status} unavailableMessage="估值資料暫時無法取得" />}
 		{data && showDividends && <ScreenerDomainFreshness label="股利資料" asOf={data.dividends_as_of} status={data.dividends_status} unavailableMessage="股利資料暫時無法取得" />}
+		{data && showFinancials && <ScreenerFinancialsFreshness period={data.financials_period} status={data.financials_status} />}
 		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取台股選股資料</div>}
 		{data && <ScreenerSummary data={data} />}
 		{data && data.total === 0 && <div className="taiwan-empty-state"><strong>沒有符合目前條件的台灣證券</strong><p>可放寬篩選條件或按下「清除條件」查看全部結果。</p></div>}
@@ -154,6 +156,7 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 			onToggleWatchlist={(canonical) => void toggleWatchlist(canonical)}
 			showInstitutional={showInstitutional} showMargin={showMargin}
 			showRevenue={showRevenue} showValuation={showValuation} showDividends={showDividends}
+			showFinancials={showFinancials}
 		/>}
 		{data && <ScreenerPagination data={data} loading={loading} onPrevious={goPrevious} onNext={goNext} />}
 	</div>;
@@ -181,6 +184,25 @@ export function ScreenerDomainFreshness({ label, asOf, status, unavailableMessag
 	if (!status) return null;
 	if (status === 'unavailable') return <div className="market-partial-warning">{unavailableMessage}</div>;
 	return <div className="taiwan-screener-domain-freshness"><span>{label}：{asOf || '未提供'}</span><span className={`taiwan-status ${status}`}>{taiwanStatusLabel(status)}</span></div>;
+}
+
+// M7E-B — dedicated financial-statement domain freshness/status renderer. Distinct from
+// ScreenerDomainFreshness above because financials_status has its own truthful 3-state vocabulary
+// (available/partial/unavailable, via taiwanFinancialsStatusLabel — never the daily-cadence "最新"
+// used elsewhere) and "partial" needs an additional non-blocking warning while STILL showing the
+// domain period line (unlike "unavailable", which — matching the existing unavailable convention —
+// replaces the line entirely with a warning). Successful rows render independently in the table
+// regardless of this component's output; it never disables or hides anything.
+export function ScreenerFinancialsFreshness({ period, status }: { period?: string | null; status?: string }) {
+	if (!status) return null;
+	if (status === 'unavailable') return <div className="market-partial-warning">財務報表資料目前無法取得。</div>;
+	return <>
+		<div className="taiwan-screener-domain-freshness">
+			<span>財務報表：{period || '未提供'}</span>
+			<span className={`taiwan-status ${status}`}>{taiwanFinancialsStatusLabel(status)}</span>
+		</div>
+		{status === 'partial' && <div className="market-partial-warning">部分財務報表資料暫時無法取得，已顯示目前可用資料。</div>}
+	</>;
 }
 
 export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localError }: {
@@ -276,6 +298,16 @@ export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localEr
 					<label><span>最低合計股利</span><input type="number" inputMode="decimal" value={draft.minTotalDividend} onChange={(event) => set('minTotalDividend', event.target.value)} placeholder="不限" /></label>
 					<label><span>最高合計股利</span><input type="number" inputMode="decimal" value={draft.maxTotalDividend} onChange={(event) => set('maxTotalDividend', event.target.value)} placeholder="不限" /></label>
 				</div>
+				<h4 className="taiwan-screener-advanced-subheading">財務報表</h4>
+				<div className="taiwan-screener-filter-grid taiwan-screener-advanced-grid">
+					<label><span>累計 EPS 最小</span><input type="number" inputMode="decimal" value={draft.minCumulativeEPS} onChange={(event) => set('minCumulativeEPS', event.target.value)} placeholder="不限" /></label>
+					<label><span>累計 EPS 最大</span><input type="number" inputMode="decimal" value={draft.maxCumulativeEPS} onChange={(event) => set('maxCumulativeEPS', event.target.value)} placeholder="不限" /></label>
+					<label><span>毛利率最小（%）</span><input type="number" inputMode="decimal" value={draft.minGrossMargin} onChange={(event) => set('minGrossMargin', event.target.value)} placeholder="不限" /></label>
+					<label><span>毛利率最大（%）</span><input type="number" inputMode="decimal" value={draft.maxGrossMargin} onChange={(event) => set('maxGrossMargin', event.target.value)} placeholder="不限" /></label>
+					<label><span>營業利益率最小（%）</span><input type="number" inputMode="decimal" value={draft.minOperatingMargin} onChange={(event) => set('minOperatingMargin', event.target.value)} placeholder="不限" /></label>
+					<label><span>營業利益率最大（%）</span><input type="number" inputMode="decimal" value={draft.maxOperatingMargin} onChange={(event) => set('maxOperatingMargin', event.target.value)} placeholder="不限" /></label>
+				</div>
+				<p className="taiwan-screener-advanced-note">部分金融相關產業不提供毛利率／營業利益率。</p>
 			</>}
 		</div>
 
@@ -291,7 +323,7 @@ export function ScreenerSummary({ data }: { data: TaiwanScreenerResponse }) {
 	return <section className="taiwan-status-card"><div><strong>{data.scope}</strong><span className={`taiwan-status ${data.freshness}`}>{taiwanStatusLabel(data.freshness)}</span><span>{data.total.toLocaleString('zh-TW')} 檔符合條件</span></div><small>資料日期 {data.as_of || '未提供'}</small></section>;
 }
 
-export function ScreenerTable({ securities, onOpenResearch, watchlistState, watchlistedCanonicals, busyCanonicals, mutationErrors, onToggleWatchlist, showInstitutional, showMargin, showRevenue, showValuation, showDividends }: {
+export function ScreenerTable({ securities, onOpenResearch, watchlistState, watchlistedCanonicals, busyCanonicals, mutationErrors, onToggleWatchlist, showInstitutional, showMargin, showRevenue, showValuation, showDividends, showFinancials }: {
 	securities: TaiwanScreenerSecurity[];
 	onOpenResearch: (canonical: string) => void;
 	watchlistState: WatchlistMembershipState;
@@ -304,8 +336,9 @@ export function ScreenerTable({ securities, onOpenResearch, watchlistState, watc
 	showRevenue: boolean;
 	showValuation: boolean;
 	showDividends: boolean;
+	showFinancials: boolean;
 }) {
-	const showAdvanced = showInstitutional || showMargin || showRevenue || showValuation || showDividends;
+	const showAdvanced = showInstitutional || showMargin || showRevenue || showValuation || showDividends || showFinancials;
 	return <div className="taiwan-screener-table-wrap"><table className="taiwan-screener-table">
 		<thead><tr><th>證券</th><th>市場</th><th>價格</th><th>漲跌幅</th><th>成交量</th><th>成交金額</th><th>資料日期</th><th>自選</th>{showAdvanced && <th>進階資料</th>}</tr></thead>
 		<tbody>{securities.map((item) => <ScreenerRow
@@ -315,6 +348,7 @@ export function ScreenerTable({ securities, onOpenResearch, watchlistState, watc
 			onToggleWatchlist={() => onToggleWatchlist(item.canonical)}
 			showInstitutional={showInstitutional} showMargin={showMargin}
 			showRevenue={showRevenue} showValuation={showValuation} showDividends={showDividends}
+			showFinancials={showFinancials}
 		/>)}</tbody>
 	</table></div>;
 }
@@ -326,7 +360,7 @@ export function ScreenerTable({ securities, onOpenResearch, watchlistState, watc
 // columns are always rendered identically to M7A/M7B/M7C — the optional 9th (advanced) cell is only
 // appended when at least one advanced domain is active, keeping the legacy table byte-identical
 // when neither institutional nor margin criteria apply.
-export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mutationError, onToggleWatchlist, showInstitutional, showMargin, showRevenue, showValuation, showDividends }: {
+export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mutationError, onToggleWatchlist, showInstitutional, showMargin, showRevenue, showValuation, showDividends, showFinancials }: {
 	security: TaiwanScreenerSecurity;
 	onOpen: () => void;
 	membershipState: WatchlistMembershipState;
@@ -339,6 +373,7 @@ export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mu
 	showRevenue: boolean;
 	showValuation: boolean;
 	showDividends: boolean;
+	showFinancials: boolean;
 }) {
 	const tone = security.change_percent == null ? '' : security.change_percent > 0 ? 'up' : security.change_percent < 0 ? 'down' : 'flat';
 	return <tr>
@@ -350,9 +385,10 @@ export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mu
 		<td>{formatTaiwanTWD(security.amount)}</td>
 		<td>{security.trade_date || '—'}</td>
 		<td><ScreenerWatchlistAction membershipState={membershipState} saved={saved} busy={busy} mutationError={mutationError} onToggle={onToggleWatchlist} /></td>
-		{(showInstitutional || showMargin || showRevenue || showValuation || showDividends) && <ScreenerAdvancedCell
+		{(showInstitutional || showMargin || showRevenue || showValuation || showDividends || showFinancials) && <ScreenerAdvancedCell
 			security={security} showInstitutional={showInstitutional} showMargin={showMargin}
 			showRevenue={showRevenue} showValuation={showValuation} showDividends={showDividends}
+			showFinancials={showFinancials}
 		/>}
 	</tr>;
 }
@@ -361,9 +397,9 @@ export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mu
 // currently active (per applied filters/sort), never all nine fields permanently. Missing values
 // render "—"; a genuine zero renders "0"; signed net/change values carry an explicit + only when
 // positive (never "+0").
-export function ScreenerAdvancedCell({ security, showInstitutional, showMargin, showRevenue, showValuation, showDividends }: {
+export function ScreenerAdvancedCell({ security, showInstitutional, showMargin, showRevenue, showValuation, showDividends, showFinancials }: {
 	security: TaiwanScreenerSecurity; showInstitutional: boolean; showMargin: boolean;
-	showRevenue: boolean; showValuation: boolean; showDividends: boolean;
+	showRevenue: boolean; showValuation: boolean; showDividends: boolean; showFinancials: boolean;
 }) {
 	return <td className="taiwan-screener-advanced-cell">
 		{showInstitutional && <div className="taiwan-screener-advanced-block">
@@ -392,6 +428,12 @@ export function ScreenerAdvancedCell({ security, showInstitutional, showMargin, 
 			<span>現金 {formatTaiwanPlainNumber(security.cash_dividend)}</span>
 			<span>股票 {formatTaiwanPlainNumber(security.stock_dividend)}</span>
 			<span>合計 {formatTaiwanPlainNumber(security.total_dividend)}</span>
+		</div>}
+		{showFinancials && <div className="taiwan-screener-advanced-block">
+			<span>期間 {security.financial_period || '—'}</span>
+			<span>累計 EPS {formatTaiwanPlainNumber(security.cumulative_eps)}</span>
+			<span>毛利率 {formatTaiwanPercent(security.gross_margin)}</span>
+			<span>營業利益率 {formatTaiwanPercent(security.operating_margin)}</span>
 		</div>}
 	</td>;
 }

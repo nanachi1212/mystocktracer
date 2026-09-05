@@ -6756,6 +6756,7 @@ a:focus-visible {
 .taiwan-screener-advanced-grid { margin-top: 8px; }
 .taiwan-screener-advanced-subheading { margin: 10px 0 4px; color: var(--muted); font-size: 10px; font-weight: 600; }
 .taiwan-screener-advanced-subheading:first-of-type { margin-top: 4px; }
+.taiwan-screener-advanced-note { margin: 6px 0 0; color: var(--muted); font-size: 9px; }
 .taiwan-screener-domain-freshness { display: flex; align-items: center; gap: 8px; padding: 6px 2px; color: var(--muted); font-size: 10px; }
 .taiwan-screener-advanced-cell { white-space: normal; }
 .taiwan-screener-advanced-block { display: flex; flex-direction: column; gap: 1px; font-size: 9px; color: var(--muted); }

@@ -3,8 +3,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
-	taiwanComponentList, taiwanDefaultWorkspace, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath,
-	taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
+	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath,
+	taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
 	taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters,
 } from './taiwan-product';
 
@@ -435,8 +435,8 @@ describe('M7B — Taiwan Screener local range validation', () => {
 });
 
 describe('M7E-A — Taiwan Screener fundamentals query builder', () => {
-	it('16. sort dropdown offers exactly 21 options (M7A 4 + M7D 9 + M7E-A 8)', () => {
-		expect(taiwanScreenerSortOptions.length).toBe(21);
+	it('16. sort dropdown offers exactly 24 options (M7A 4 + M7D 9 + M7E-A 8 + M7E-B 3)', () => {
+		expect(taiwanScreenerSortOptions.length).toBe(24);
 	});
 
 	it('preserves every M7A/M7D sort id and adds the 8 new M7E-A sort ids', () => {
@@ -572,5 +572,116 @@ describe('M7E-A — number formatting', () => {
 		expect(formatTaiwanPlainNumber(null)).toBe('—');
 		expect(formatTaiwanPlainNumber(0)).toBe('0');
 		expect(formatTaiwanPlainNumber(5)).toBe((5).toLocaleString('zh-TW', { maximumFractionDigits: 2 }));
+	});
+});
+
+describe('M7E-B — financial statement query builder', () => {
+	it('default filters include the 6 new financial-statement fields, all blank', () => {
+		const defaults = taiwanScreenerDefaultFilters();
+		for (const key of ['minCumulativeEPS', 'maxCumulativeEPS', 'minGrossMargin', 'maxGrossMargin', 'minOperatingMargin', 'maxOperatingMargin'] as const) {
+			expect(defaults[key]).toBe('');
+		}
+	});
+
+	it('A. blank financial fields are omitted from the query', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		expect(path).not.toMatch(/min_cumulative_eps|max_cumulative_eps|min_gross_margin|max_gross_margin|min_operating_margin|max_operating_margin/);
+	});
+
+	it('B. each exact key is emitted correctly', () => {
+		const withValue = (overrides: Partial<TaiwanScreenerFilters>) => taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), ...overrides });
+		expect(withValue({ minCumulativeEPS: '10' })).toContain('min_cumulative_eps=10');
+		expect(withValue({ maxCumulativeEPS: '20' })).toContain('max_cumulative_eps=20');
+		expect(withValue({ minGrossMargin: '30' })).toContain('min_gross_margin=30');
+		expect(withValue({ maxGrossMargin: '40' })).toContain('max_gross_margin=40');
+		expect(withValue({ minOperatingMargin: '50' })).toContain('min_operating_margin=50');
+		expect(withValue({ maxOperatingMargin: '60' })).toContain('max_operating_margin=60');
+	});
+
+	it('C. all six combined correctly in one query', () => {
+		const path = taiwanScreenerPath({
+			...taiwanScreenerDefaultFilters(),
+			minCumulativeEPS: '1', maxCumulativeEPS: '2', minGrossMargin: '3', maxGrossMargin: '4', minOperatingMargin: '5', maxOperatingMargin: '6',
+		});
+		expect(path).toContain('min_cumulative_eps=1');
+		expect(path).toContain('max_cumulative_eps=2');
+		expect(path).toContain('min_gross_margin=3');
+		expect(path).toContain('max_gross_margin=4');
+		expect(path).toContain('min_operating_margin=5');
+		expect(path).toContain('max_operating_margin=6');
+	});
+
+	it('D. negative values are preserved', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minCumulativeEPS: '-12.3', minGrossMargin: '-4', minOperatingMargin: '-5.5' });
+		expect(path).toContain('min_cumulative_eps=-12.3');
+		expect(path).toContain('min_gross_margin=-4');
+		expect(path).toContain('min_operating_margin=-5.5');
+	});
+
+	it('E. malformed draft can never produce NaN/Infinity in the query output', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minCumulativeEPS: 'abc', maxGrossMargin: 'Infinity', minOperatingMargin: '-Infinity' });
+		expect(path).not.toMatch(/min_cumulative_eps=|max_gross_margin=|min_operating_margin=/);
+		expect(path).not.toMatch(/NaN|Infinity/);
+	});
+
+	it('F. existing M7D/M7E-A query params remain unchanged when financial fields are set', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minForeignNet: '100', minPE: '10', minCumulativeEPS: '1' });
+		expect(path).toContain('min_foreign_net=100');
+		expect(path).toContain('min_pe=10');
+		expect(path).toContain('min_cumulative_eps=1');
+	});
+
+	it('rejects inverted financial-statement ranges', () => {
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minCumulativeEPS: '10', maxCumulativeEPS: '5' })).toBe('最低累計 EPS 不可高於最高累計 EPS');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minGrossMargin: '10', maxGrossMargin: '5' })).toBe('最低毛利率不可高於最高毛利率');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minOperatingMargin: '10', maxOperatingMargin: '5' })).toBe('最低營業利益率不可高於最高營業利益率');
+	});
+});
+
+describe('M7E-B — sort options', () => {
+	it('exposes cumulative_eps/gross_margin/operating_margin without removing or duplicating existing options', () => {
+		const ids = taiwanScreenerSortOptions.map((item) => item.id);
+		expect(ids).toContain('cumulative_eps');
+		expect(ids).toContain('gross_margin');
+		expect(ids).toContain('operating_margin');
+		expect(new Set(ids).size).toBe(ids.length); // no duplicate values
+		for (const id of ['price', 'change_percent', 'volume', 'amount', 'monthly_revenue', 'pe', 'cash_dividend']) {
+			expect(ids).toContain(id);
+		}
+	});
+
+	it('sort=cumulative_eps/gross_margin/operating_margin query construction', () => {
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'cumulative_eps' })).toContain('sort=cumulative_eps');
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'gross_margin' })).toContain('sort=gross_margin');
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'operating_margin' })).toContain('sort=operating_margin');
+	});
+});
+
+describe('M7E-B — applied-domain detection (financial statement)', () => {
+	it('taiwanScreenerHasFinancialsCriteria is false by default, true with an active filter, true with a financial sort key', () => {
+		expect(taiwanScreenerHasFinancialsCriteria(taiwanScreenerDefaultFilters())).toBe(false);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), minCumulativeEPS: '0' })).toBe(true);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), maxGrossMargin: '0' })).toBe(true);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), minOperatingMargin: '0' })).toBe(true);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'cumulative_eps' })).toBe(true);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'gross_margin' })).toBe(true);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'operating_margin' })).toBe(true);
+	});
+
+	it('Clear (taiwanScreenerDefaultFilters()) resets financial criteria to false', () => {
+		expect(taiwanScreenerHasFinancialsCriteria(taiwanScreenerDefaultFilters())).toBe(false);
+	});
+});
+
+describe('M7E-B — financials status label', () => {
+	it('maps available/partial/unavailable to the required Chinese labels, never a daily-cadence 最新', () => {
+		expect(taiwanFinancialsStatusLabel('available')).toBe('可使用');
+		expect(taiwanFinancialsStatusLabel('partial')).toBe('部分可使用');
+		expect(taiwanFinancialsStatusLabel('unavailable')).toBe('無法取得');
+		expect(taiwanFinancialsStatusLabel('available')).not.toBe('最新');
+	});
+
+	it('returns empty for an absent status (domain not requested)', () => {
+		expect(taiwanFinancialsStatusLabel(undefined)).toBe('');
 	});
 });

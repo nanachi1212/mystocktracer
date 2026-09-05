@@ -46,6 +46,17 @@ export type TaiwanScreenerSecurity = {
 	monthly_revenue: number | null; revenue_yoy: number | null;
 	pe: number | null; pb: number | null; dividend_yield: number | null;
 	cash_dividend: number | null; stock_dividend: number | null; total_dividend: number | null;
+	// M7E-B — financial statement (income-statement only; live-current, official-bulk-sourced).
+	// financial_period is THIS security's own actual reporting period (e.g. "2026-Q2") — it is set
+	// whenever a valid statement row was parsed for it, independent of whether the metric fields below
+	// are populated. cumulative_eps/gross_margin/operating_margin are populated ONLY when
+	// financial_period matches the domain's common target period (see TaiwanScreenerResponse.
+	// financials_period) — a security still on an older quarter keeps its own true financial_period but
+	// has these three fields nulled by the backend, and the frontend must never substitute the domain
+	// period into an older row's display. gross_margin/operating_margin are additionally backend-scoped
+	// to the "ci" (general industry) category only; every other category is nil, never fabricated.
+	financial_period: string | null;
+	cumulative_eps: number | null; gross_margin: number | null; operating_margin: number | null;
 };
 
 export type TaiwanScreenerResponse = {
@@ -65,13 +76,21 @@ export type TaiwanScreenerResponse = {
 	revenue_as_of?: string | null; revenue_status?: string; revenue_days_behind?: number | null;
 	valuation_as_of?: string | null; valuation_status?: string; valuation_days_behind?: number | null;
 	dividends_as_of?: string | null; dividends_status?: string; dividends_days_behind?: number | null;
+	// M7E-B — additive, present only when the financials domain was actually requested.
+	// financials_period is the market-wide common TARGET period ("2026-Q2") used to gate which rows'
+	// metric fields are populated — a domain-level summary, never the exact period for every individual
+	// row (use each row's own financial_period for that). financials_status supports available/
+	// partial/unavailable — never a daily-cadence "最新"/days-behind claim, and never published_at/
+	// available_at.
+	financials_period?: string | null; financials_status?: string;
 };
 
 export type TaiwanScreenerSort =
 	| 'price' | 'change_percent' | 'volume' | 'amount'
 	| 'foreign_net' | 'trust_net' | 'dealer_net' | 'institutional_net'
 	| 'margin_balance' | 'margin_change' | 'short_balance' | 'short_change' | 'short_margin_ratio'
-	| 'monthly_revenue' | 'revenue_yoy' | 'pe' | 'pb' | 'dividend_yield' | 'cash_dividend' | 'stock_dividend' | 'total_dividend';
+	| 'monthly_revenue' | 'revenue_yoy' | 'pe' | 'pb' | 'dividend_yield' | 'cash_dividend' | 'stock_dividend' | 'total_dividend'
+	| 'cumulative_eps' | 'gross_margin' | 'operating_margin';
 export type TaiwanScreenerOrder = 'asc' | 'desc';
 
 export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string }[] = [
@@ -96,6 +115,9 @@ export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string 
 	{ id: 'cash_dividend', label: '現金股利' },
 	{ id: 'stock_dividend', label: '股票股利' },
 	{ id: 'total_dividend', label: '合計股利' },
+	{ id: 'cumulative_eps', label: '累計 EPS' },
+	{ id: 'gross_margin', label: '毛利率' },
+	{ id: 'operating_margin', label: '營業利益率' },
 ];
 
 const taiwanScreenerInstitutionalSortKeys = new Set<TaiwanScreenerSort>(['foreign_net', 'trust_net', 'dealer_net', 'institutional_net']);
@@ -103,6 +125,7 @@ const taiwanScreenerMarginSortKeys = new Set<TaiwanScreenerSort>(['margin_balanc
 const taiwanScreenerRevenueSortKeys = new Set<TaiwanScreenerSort>(['monthly_revenue', 'revenue_yoy']);
 const taiwanScreenerValuationSortKeys = new Set<TaiwanScreenerSort>(['pe', 'pb', 'dividend_yield']);
 const taiwanScreenerDividendSortKeys = new Set<TaiwanScreenerSort>(['cash_dividend', 'stock_dividend', 'total_dividend']);
+const taiwanScreenerFinancialsSortKeys = new Set<TaiwanScreenerSort>(['cumulative_eps', 'gross_margin', 'operating_margin']);
 
 export const taiwanScreenerOrderOptions: { id: TaiwanScreenerOrder; label: string }[] = [
 	{ id: 'desc', label: '高到低' },
@@ -140,6 +163,10 @@ export type TaiwanScreenerFilters = {
 	minCashDividend: string; maxCashDividend: string;
 	minStockDividend: string; maxStockDividend: string;
 	minTotalDividend: string; maxTotalDividend: string;
+	// M7E-B financial statement: cumulative EPS + ci-only margins.
+	minCumulativeEPS: string; maxCumulativeEPS: string;
+	minGrossMargin: string; maxGrossMargin: string;
+	minOperatingMargin: string; maxOperatingMargin: string;
 	sort: TaiwanScreenerSort;
 	order: TaiwanScreenerOrder;
 	limit: number;
@@ -172,6 +199,9 @@ export function taiwanScreenerDefaultFilters(): TaiwanScreenerFilters {
 		minCashDividend: '', maxCashDividend: '',
 		minStockDividend: '', maxStockDividend: '',
 		minTotalDividend: '', maxTotalDividend: '',
+		minCumulativeEPS: '', maxCumulativeEPS: '',
+		minGrossMargin: '', maxGrossMargin: '',
+		minOperatingMargin: '', maxOperatingMargin: '',
 		sort: 'amount', order: 'desc',
 		limit: TAIWAN_SCREENER_PAGE_SIZE, offset: 0,
 	};
@@ -209,6 +239,15 @@ export function taiwanScreenerHasValuationCriteria(filters: TaiwanScreenerFilter
 export function taiwanScreenerHasDividendCriteria(filters: TaiwanScreenerFilters): boolean {
 	if (taiwanScreenerDividendSortKeys.has(filters.sort)) return true;
 	return [filters.minCashDividend, filters.maxCashDividend, filters.minStockDividend, filters.maxStockDividend, filters.minTotalDividend, filters.maxTotalDividend]
+		.some((raw) => taiwanScreenerRangeValue(raw) != null);
+}
+
+// M7E-B — same pattern as the other domain-criteria helpers above: true if an active min/max
+// financial-statement filter is set OR the sort key belongs to the financials domain. Must be called
+// with `applied`, never `draft`.
+export function taiwanScreenerHasFinancialsCriteria(filters: TaiwanScreenerFilters): boolean {
+	if (taiwanScreenerFinancialsSortKeys.has(filters.sort)) return true;
+	return [filters.minCumulativeEPS, filters.maxCumulativeEPS, filters.minGrossMargin, filters.maxGrossMargin, filters.minOperatingMargin, filters.maxOperatingMargin]
 		.some((raw) => taiwanScreenerRangeValue(raw) != null);
 }
 
@@ -275,6 +314,12 @@ export function taiwanScreenerPath(filters: TaiwanScreenerFilters): string {
 	setRange('max_stock_dividend', filters.maxStockDividend);
 	setRange('min_total_dividend', filters.minTotalDividend);
 	setRange('max_total_dividend', filters.maxTotalDividend);
+	setRange('min_cumulative_eps', filters.minCumulativeEPS);
+	setRange('max_cumulative_eps', filters.maxCumulativeEPS);
+	setRange('min_gross_margin', filters.minGrossMargin);
+	setRange('max_gross_margin', filters.maxGrossMargin);
+	setRange('min_operating_margin', filters.minOperatingMargin);
+	setRange('max_operating_margin', filters.maxOperatingMargin);
 	return `/api/v1/tw/screener?${params.toString()}`;
 }
 
@@ -303,6 +348,9 @@ export function validateTaiwanScreenerFilters(filters: TaiwanScreenerFilters): s
 		['minCashDividend', 'maxCashDividend', '最低現金股利不可高於最高現金股利'],
 		['minStockDividend', 'maxStockDividend', '最低股票股利不可高於最高股票股利'],
 		['minTotalDividend', 'maxTotalDividend', '最低合計股利不可高於最高合計股利'],
+		['minCumulativeEPS', 'maxCumulativeEPS', '最低累計 EPS 不可高於最高累計 EPS'],
+		['minGrossMargin', 'maxGrossMargin', '最低毛利率不可高於最高毛利率'],
+		['minOperatingMargin', 'maxOperatingMargin', '最低營業利益率不可高於最高營業利益率'],
 	];
 	for (const [minKey, maxKey, message] of pairs) {
 		const min = taiwanScreenerRangeValue(filters[minKey as keyof TaiwanScreenerFilters] as string);
@@ -362,6 +410,16 @@ const labels: Record<string, string> = {
 
 export function taiwanStatusLabel(value?: string) {
 	return value ? labels[value] || value.replaceAll('_', ' ') : '未提供';
+}
+
+// M7E-B — dedicated status label for the financial-statement domain. Deliberately does NOT reuse
+// taiwanStatusLabel() above: quarterly filings have no daily-cadence "最新" concept, and the shared
+// map's 'partial' entry ('部分資料') is worded for the daily/trading-cadence domains — financials
+// needs its own truthful 3-state vocabulary (available/partial/unavailable) that never implies
+// "latest" or a trading-day freshness claim.
+const financialsStatusLabels: Record<string, string> = { available: '可使用', partial: '部分可使用', unavailable: '無法取得' };
+export function taiwanFinancialsStatusLabel(status?: string) {
+	return status ? financialsStatusLabels[status] || status : '';
 }
 
 export function taiwanSecurityTypeLabel(value?: string) {
