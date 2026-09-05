@@ -56,6 +56,9 @@ type Server struct {
 	taiwanScreener              TaiwanScreenerProvider
 	taiwanScreenerInstitutional TaiwanScreenerInstitutionalProvider
 	taiwanScreenerMargin        TaiwanScreenerMarginProvider
+	taiwanScreenerRevenue       TaiwanScreenerRevenueProvider
+	taiwanScreenerValuation     TaiwanScreenerValuationProvider
+	taiwanScreenerDividends     TaiwanScreenerDividendsProvider
 	taiwanEmotion               TaiwanEmotionProvider
 	taiwanIndustryRadar         TaiwanIndustryRadarProvider
 	taiwanIntelligence          TaiwanStockIntelligenceProvider
@@ -143,7 +146,7 @@ func NewServer(config any) *Server {
 	if cfg.StockDirectory == nil {
 		cfg.StockDirectory = eastMoneyClient
 	}
-	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanScreener == nil || cfg.TaiwanScreenerInstitutional == nil || cfg.TaiwanScreenerMargin == nil || cfg.TaiwanEmotion == nil || cfg.TaiwanIndustryRadar == nil || cfg.TaiwanIntelligence == nil {
+	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanScreener == nil || cfg.TaiwanScreenerInstitutional == nil || cfg.TaiwanScreenerMargin == nil || cfg.TaiwanScreenerRevenue == nil || cfg.TaiwanScreenerValuation == nil || cfg.TaiwanScreenerDividends == nil || cfg.TaiwanEmotion == nil || cfg.TaiwanIndustryRadar == nil || cfg.TaiwanIntelligence == nil {
 		taiwanClient := taiwan.NewClient(taiwan.Config{})
 		if cfg.TaiwanDirectory == nil {
 			cfg.TaiwanDirectory = taiwanClient
@@ -171,6 +174,15 @@ func NewServer(config any) *Server {
 		}
 		if cfg.TaiwanScreenerMargin == nil {
 			cfg.TaiwanScreenerMargin = taiwanClient
+		}
+		if cfg.TaiwanScreenerRevenue == nil {
+			cfg.TaiwanScreenerRevenue = taiwanClient
+		}
+		if cfg.TaiwanScreenerValuation == nil {
+			cfg.TaiwanScreenerValuation = taiwanClient
+		}
+		if cfg.TaiwanScreenerDividends == nil {
+			cfg.TaiwanScreenerDividends = taiwanClient
 		}
 		if cfg.TaiwanEmotion == nil {
 			cfg.TaiwanEmotion = taiwanClient
@@ -336,6 +348,9 @@ func NewServer(config any) *Server {
 		taiwanScreener:              cfg.TaiwanScreener,
 		taiwanScreenerInstitutional: cfg.TaiwanScreenerInstitutional,
 		taiwanScreenerMargin:        cfg.TaiwanScreenerMargin,
+		taiwanScreenerRevenue:       cfg.TaiwanScreenerRevenue,
+		taiwanScreenerValuation:     cfg.TaiwanScreenerValuation,
+		taiwanScreenerDividends:     cfg.TaiwanScreenerDividends,
 		taiwanEmotion:               cfg.TaiwanEmotion,
 		taiwanIndustryRadar:         cfg.TaiwanIndustryRadar,
 		taiwanIntelligence:          cfg.TaiwanIntelligence,

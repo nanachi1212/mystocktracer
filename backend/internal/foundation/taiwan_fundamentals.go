@@ -138,6 +138,27 @@ type DividendRecord struct {
 	Status           string     `json:"status"`
 }
 
+// TaiwanFundamentalsDomainFreshness describes an irregular-cadence fundamentals domain (monthly
+// revenue, annual dividends) using only the loaded dataset's own period identifier as AsOf — e.g.
+// "2026-08" for a revenue period, or "2025" for a dividend year. This is never a calendar
+// publication claim and never a trading-day days-behind count: translating a monthly period or a
+// dividend year into daily cadence would be misleading, so Status is simply "available" (at least
+// one row was successfully parsed) or "unavailable".
+type TaiwanFundamentalsDomainFreshness struct {
+	AsOf   *string `json:"as_of"`
+	Status string  `json:"status"`
+}
+
+// TaiwanValuationFreshness describes the valuation domain (PE/PB/dividend yield), which — unlike
+// revenue/dividends — is published on the same daily trading cadence as the market snapshot, so it
+// truthfully supports a days-behind count against the latest completed trading day. AsOf is the
+// dataset's own DataDate (a trade/as-of date), never a publication timestamp.
+type TaiwanValuationFreshness struct {
+	AsOf       *string `json:"as_of"`
+	Status     string  `json:"status"`
+	DaysBehind *int    `json:"days_behind,omitempty"`
+}
+
 type TaiwanFundamentals struct {
 	Security     SecurityIdentity                 `json:"security"`
 	Revenue      []MonthlyRevenue                 `json:"monthly_revenue"`

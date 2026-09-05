@@ -40,6 +40,19 @@ type taiwanScreenerRow struct {
 	ShortBalance     *int64   `json:"short_balance"`
 	ShortChange      *int64   `json:"short_change"`
 	ShortMarginRatio *float64 `json:"short_margin_ratio"`
+	// M7E-A — revenue/valuation/dividends (all live-current, official-bulk-sourced; nil when that
+	// domain was not requested at all, or when the security has no row in that domain's bulk payload).
+	// monthly_revenue is in TWD (already converted from the source's thousand-TWD raw values by the
+	// existing thousandTWD() parser — never rescaled here). revenue_yoy is the OFFICIAL YoY% carried
+	// directly by the same bulk row, never FinMind, never locally computed.
+	MonthlyRevenue *int64   `json:"monthly_revenue"`
+	RevenueYoY     *float64 `json:"revenue_yoy"`
+	PE             *float64 `json:"pe"`
+	PB             *float64 `json:"pb"`
+	DividendYield  *float64 `json:"dividend_yield"`
+	CashDividend   *float64 `json:"cash_dividend"`
+	StockDividend  *float64 `json:"stock_dividend"`
+	TotalDividend  *float64 `json:"total_dividend"`
 }
 
 type taiwanScreenerResponse struct {
@@ -61,6 +74,21 @@ type taiwanScreenerResponse struct {
 	MarginAsOf              *string `json:"margin_as_of,omitempty"`
 	MarginStatus            string  `json:"margin_status,omitempty"`
 	MarginDaysBehind        *int    `json:"margin_days_behind,omitempty"`
+	// M7E-A — additive, present only when the corresponding domain was actually requested. Each
+	// domain's AsOf/Status carries only that domain's own truthful cadence (see
+	// foundation.TaiwanFundamentalsDomainFreshness / TaiwanValuationFreshness): revenue/dividends
+	// never expose DaysBehind (a monthly period or dividend year has no truthful trading-day
+	// days-behind equivalent), so those fields are always omitted (nil, omitempty). Never a
+	// published_at/available_at claim — M7E.0 established none of these official payloads carry one.
+	RevenueAsOf         *string `json:"revenue_as_of,omitempty"`
+	RevenueStatus       string  `json:"revenue_status,omitempty"`
+	RevenueDaysBehind   *int    `json:"revenue_days_behind,omitempty"`
+	ValuationAsOf       *string `json:"valuation_as_of,omitempty"`
+	ValuationStatus     string  `json:"valuation_status,omitempty"`
+	ValuationDaysBehind *int    `json:"valuation_days_behind,omitempty"`
+	DividendsAsOf       *string `json:"dividends_as_of,omitempty"`
+	DividendsStatus     string  `json:"dividends_status,omitempty"`
+	DividendsDaysBehind *int    `json:"dividends_days_behind,omitempty"`
 }
 
 type taiwanScreenerQuery struct {
@@ -80,14 +108,25 @@ type taiwanScreenerQuery struct {
 	minShortBalance, maxShortBalance         *float64
 	minShortChange, maxShortChange           *float64
 	minShortMarginRatio, maxShortMarginRatio *float64
-	sort                                     string
-	order                                    string // "asc" | "desc"
+	// M7E-A revenue/valuation/dividend filters.
+	minMonthlyRevenue, maxMonthlyRevenue *float64
+	minRevenueYoY, maxRevenueYoY         *float64
+	minPE, maxPE                        *float64
+	minPB, maxPB                        *float64
+	minDividendYield, maxDividendYield   *float64
+	minCashDividend, maxCashDividend     *float64
+	minStockDividend, maxStockDividend   *float64
+	minTotalDividend, maxTotalDividend   *float64
+	sort                                 string
+	order                                string // "asc" | "desc"
 }
 
 var taiwanScreenerSortKeys = map[string]bool{
 	"price": true, "change_percent": true, "volume": true, "amount": true,
 	"foreign_net": true, "trust_net": true, "dealer_net": true, "institutional_net": true,
 	"margin_balance": true, "margin_change": true, "short_balance": true, "short_change": true, "short_margin_ratio": true,
+	"monthly_revenue": true, "revenue_yoy": true, "pe": true, "pb": true, "dividend_yield": true,
+	"cash_dividend": true, "stock_dividend": true, "total_dividend": true,
 }
 
 // taiwanScreenerNeedsInstitutional/taiwanScreenerNeedsMargin decide whether this specific request
@@ -115,6 +154,38 @@ func taiwanScreenerNeedsMargin(q taiwanScreenerQuery) bool {
 		q.minShortBalance != nil || q.maxShortBalance != nil ||
 		q.minShortChange != nil || q.maxShortChange != nil ||
 		q.minShortMarginRatio != nil || q.maxShortMarginRatio != nil
+}
+
+// taiwanScreenerNeedsRevenue/taiwanScreenerNeedsValuation/taiwanScreenerNeedsDividends are the M7E-A
+// analogues of the two functions above — the sole gate for fetching each fundamentals domain. A
+// vanilla request (and one that only engages M7A/M7D fields) must never trigger any of these.
+func taiwanScreenerNeedsRevenue(q taiwanScreenerQuery) bool {
+	switch q.sort {
+	case "monthly_revenue", "revenue_yoy":
+		return true
+	}
+	return q.minMonthlyRevenue != nil || q.maxMonthlyRevenue != nil ||
+		q.minRevenueYoY != nil || q.maxRevenueYoY != nil
+}
+
+func taiwanScreenerNeedsValuation(q taiwanScreenerQuery) bool {
+	switch q.sort {
+	case "pe", "pb", "dividend_yield":
+		return true
+	}
+	return q.minPE != nil || q.maxPE != nil ||
+		q.minPB != nil || q.maxPB != nil ||
+		q.minDividendYield != nil || q.maxDividendYield != nil
+}
+
+func taiwanScreenerNeedsDividends(q taiwanScreenerQuery) bool {
+	switch q.sort {
+	case "cash_dividend", "stock_dividend", "total_dividend":
+		return true
+	}
+	return q.minCashDividend != nil || q.maxCashDividend != nil ||
+		q.minStockDividend != nil || q.maxStockDividend != nil ||
+		q.minTotalDividend != nil || q.maxTotalDividend != nil
 }
 
 func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
@@ -170,7 +241,52 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	filtered := filterAndSortTaiwanScreener(rows, institutional, margin, query)
+	// M7E-A lazy domain loading: revenue/valuation/dividends are fetched ONLY when this request
+	// actually engages them, following the exact same pattern as institutional/margin above. A domain
+	// fetch failure (or an unconfigured provider) never fails the whole request.
+	var revenue map[string]foundation.MonthlyRevenue
+	var revenueFreshness foundation.TaiwanFundamentalsDomainFreshness
+	revenueRequested := taiwanScreenerNeedsRevenue(query)
+	if revenueRequested && s.taiwanScreenerRevenue != nil {
+		revRows, revFreshness, revErr := s.taiwanScreenerRevenue.ScreenerRevenue(ctx, time.Now())
+		revenueFreshness = revFreshness
+		if revErr == nil {
+			revenue = make(map[string]foundation.MonthlyRevenue, len(revRows))
+			for _, row := range revRows {
+				revenue[row.Canonical] = row
+			}
+		}
+	}
+
+	var valuation map[string]foundation.ValuationSnapshot
+	var valuationFreshness foundation.TaiwanValuationFreshness
+	valuationRequested := taiwanScreenerNeedsValuation(query)
+	if valuationRequested && s.taiwanScreenerValuation != nil {
+		valRows, valFreshness, valErr := s.taiwanScreenerValuation.ScreenerValuation(ctx, time.Now())
+		valuationFreshness = valFreshness
+		if valErr == nil {
+			valuation = make(map[string]foundation.ValuationSnapshot, len(valRows))
+			for _, row := range valRows {
+				valuation[row.Canonical] = row
+			}
+		}
+	}
+
+	var dividends map[string]foundation.DividendRecord
+	var dividendsFreshness foundation.TaiwanFundamentalsDomainFreshness
+	dividendsRequested := taiwanScreenerNeedsDividends(query)
+	if dividendsRequested && s.taiwanScreenerDividends != nil {
+		divRows, divFreshness, divErr := s.taiwanScreenerDividends.ScreenerDividends(ctx, time.Now())
+		dividendsFreshness = divFreshness
+		if divErr == nil {
+			dividends = make(map[string]foundation.DividendRecord, len(divRows))
+			for _, row := range divRows {
+				dividends[row.Canonical] = row
+			}
+		}
+	}
+
+	filtered := filterAndSortTaiwanScreener(rows, institutional, margin, revenue, valuation, dividends, query)
 	total := len(filtered)
 	page := paginateTaiwanScreener(filtered, offset, limit)
 
@@ -198,6 +314,28 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 			response.MarginStatus = "unavailable"
 		}
 	}
+	if revenueRequested {
+		response.RevenueAsOf = revenueFreshness.AsOf
+		response.RevenueStatus = revenueFreshness.Status
+		if response.RevenueStatus == "" {
+			response.RevenueStatus = "unavailable"
+		}
+	}
+	if valuationRequested {
+		response.ValuationAsOf = valuationFreshness.AsOf
+		response.ValuationStatus = valuationFreshness.Status
+		response.ValuationDaysBehind = valuationFreshness.DaysBehind
+		if response.ValuationStatus == "" {
+			response.ValuationStatus = "unavailable"
+		}
+	}
+	if dividendsRequested {
+		response.DividendsAsOf = dividendsFreshness.AsOf
+		response.DividendsStatus = dividendsFreshness.Status
+		if response.DividendsStatus == "" {
+			response.DividendsStatus = "unavailable"
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": response})
 }
 
@@ -216,7 +354,7 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		query.sort = "amount"
 	}
 	if !taiwanScreenerSortKeys[query.sort] {
-		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio"
+		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend"
 	}
 
 	query.order = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order")))
@@ -316,6 +454,33 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		}
 	}
 
+	// M7E-A revenue/valuation/dividend range params — same pattern as the M7D ranges above.
+	fundamentalsRanges := []struct {
+		minKey, maxKey string
+		min, max       **float64
+		label          string
+	}{
+		{"min_monthly_revenue", "max_monthly_revenue", &query.minMonthlyRevenue, &query.maxMonthlyRevenue, "min_monthly_revenue must not be greater than max_monthly_revenue"},
+		{"min_revenue_yoy", "max_revenue_yoy", &query.minRevenueYoY, &query.maxRevenueYoY, "min_revenue_yoy must not be greater than max_revenue_yoy"},
+		{"min_pe", "max_pe", &query.minPE, &query.maxPE, "min_pe must not be greater than max_pe"},
+		{"min_pb", "max_pb", &query.minPB, &query.maxPB, "min_pb must not be greater than max_pb"},
+		{"min_dividend_yield", "max_dividend_yield", &query.minDividendYield, &query.maxDividendYield, "min_dividend_yield must not be greater than max_dividend_yield"},
+		{"min_cash_dividend", "max_cash_dividend", &query.minCashDividend, &query.maxCashDividend, "min_cash_dividend must not be greater than max_cash_dividend"},
+		{"min_stock_dividend", "max_stock_dividend", &query.minStockDividend, &query.maxStockDividend, "min_stock_dividend must not be greater than max_stock_dividend"},
+		{"min_total_dividend", "max_total_dividend", &query.minTotalDividend, &query.maxTotalDividend, "min_total_dividend must not be greater than max_total_dividend"},
+	}
+	for _, item := range fundamentalsRanges {
+		if *item.min, err = parseOptionalScreenerFloat(r, item.minKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if *item.max, err = parseOptionalScreenerFloat(r, item.maxKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if rangeInvalid(*item.min, *item.max) {
+			return query, 0, 0, item.label
+		}
+	}
+
 	limit, err := marketLimitQuery(r, 50, 200)
 	if err != nil {
 		return query, 0, 0, err.Error()
@@ -356,13 +521,13 @@ func rangeInvalid(min, max *float64) bool {
 // requested (min/max present) AND the row's value for that field is unavailable (nil) — a filter
 // that was never requested never excludes a row for that field, and an unavailable value is never
 // treated as 0.
-func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, query taiwanScreenerQuery) []taiwanScreenerRow {
+func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, query taiwanScreenerQuery) []taiwanScreenerRow {
 	filtered := make([]taiwanScreenerRow, 0, len(rows))
 	for _, raw := range rows {
 		if query.scope != "" && query.scope != "combined" && !strings.EqualFold(raw.Exchange, query.scope) {
 			continue
 		}
-		row := toTaiwanScreenerRow(raw, institutional, margin)
+		row := toTaiwanScreenerRow(raw, institutional, margin, revenue, valuation, dividends)
 		if !passesRange(row.Price, query.minPrice, query.maxPrice) {
 			continue
 		}
@@ -402,6 +567,30 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 		if !passesRange(row.ShortMarginRatio, query.minShortMarginRatio, query.maxShortMarginRatio) {
 			continue
 		}
+		if !passesIntRange(row.MonthlyRevenue, query.minMonthlyRevenue, query.maxMonthlyRevenue) {
+			continue
+		}
+		if !passesRange(row.RevenueYoY, query.minRevenueYoY, query.maxRevenueYoY) {
+			continue
+		}
+		if !passesRange(row.PE, query.minPE, query.maxPE) {
+			continue
+		}
+		if !passesRange(row.PB, query.minPB, query.maxPB) {
+			continue
+		}
+		if !passesRange(row.DividendYield, query.minDividendYield, query.maxDividendYield) {
+			continue
+		}
+		if !passesRange(row.CashDividend, query.minCashDividend, query.maxCashDividend) {
+			continue
+		}
+		if !passesRange(row.StockDividend, query.minStockDividend, query.maxStockDividend) {
+			continue
+		}
+		if !passesRange(row.TotalDividend, query.minTotalDividend, query.maxTotalDividend) {
+			continue
+		}
 		filtered = append(filtered, row)
 	}
 
@@ -431,7 +620,7 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 	return filtered
 }
 
-func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading) taiwanScreenerRow {
+func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord) taiwanScreenerRow {
 	out := taiwanScreenerRow{
 		Canonical: row.Canonical, Code: row.Code, Name: row.Name, Exchange: row.Exchange, SecurityType: string(row.Type),
 		TradeDate: row.TradeDate, Price: row.Close, Change: row.Change,
@@ -451,6 +640,18 @@ func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[s
 		// reused directly — never recomputed here.
 		out.MarginBalance, out.MarginChange = trading.MarginBalance, trading.MarginChange
 		out.ShortBalance, out.ShortChange, out.ShortMarginRatio = trading.ShortBalance, trading.ShortChange, trading.ShortMarginRatio
+	}
+	// M7E-A — same nil-map/absent-canonical safety as institutional/margin above: a nil map (domain
+	// never fetched) and a present-but-missing canonical both correctly leave these fields nil.
+	if rev, ok := revenue[row.Canonical]; ok {
+		monthlyRevenue := rev.Revenue
+		out.MonthlyRevenue, out.RevenueYoY = &monthlyRevenue, rev.OfficialYoY
+	}
+	if val, ok := valuation[row.Canonical]; ok {
+		out.PE, out.PB, out.DividendYield = val.PE, val.PB, val.DividendYield
+	}
+	if div, ok := dividends[row.Canonical]; ok {
+		out.CashDividend, out.StockDividend, out.TotalDividend = div.CashDividend, div.StockDividend, div.TotalDividend
 	}
 	return out
 }
@@ -502,6 +703,22 @@ func taiwanScreenerSortValue(row taiwanScreenerRow, field string) *float64 {
 		return int64ToFloatPointer(row.ShortChange)
 	case "short_margin_ratio":
 		return row.ShortMarginRatio
+	case "monthly_revenue":
+		return int64ToFloatPointer(row.MonthlyRevenue)
+	case "revenue_yoy":
+		return row.RevenueYoY
+	case "pe":
+		return row.PE
+	case "pb":
+		return row.PB
+	case "dividend_yield":
+		return row.DividendYield
+	case "cash_dividend":
+		return row.CashDividend
+	case "stock_dividend":
+		return row.StockDividend
+	case "total_dividend":
+		return row.TotalDividend
 	}
 	return nil
 }

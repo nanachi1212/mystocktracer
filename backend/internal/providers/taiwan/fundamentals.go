@@ -334,6 +334,13 @@ func (c *Client) valuation(ctx context.Context, s foundation.SecurityIdentity) (
 	if row == nil {
 		return foundation.ValuationSnapshot{}, fmt.Errorf("official valuation row unavailable")
 	}
+	return parseOfficialValuation(s, u, row)
+}
+
+// parseOfficialValuation parses one official BWIBBU_ALL/tpex_mainboard_peratio_analysis row into a
+// ValuationSnapshot. Extracted out of valuation() so the M7E-A Screener bulk reader can parse every
+// row of the same already-fetched bulk payload without duplicating this parsing logic.
+func parseOfficialValuation(s foundation.SecurityIdentity, sourceURL string, row map[string]string) (foundation.ValuationSnapshot, error) {
 	date, err := rocDate(firstMap(row, "Date", "日期"))
 	if err != nil {
 		return foundation.ValuationSnapshot{}, err
@@ -350,7 +357,7 @@ func (c *Client) valuation(ctx context.Context, s foundation.SecurityIdentity) (
 	if err != nil {
 		return foundation.ValuationSnapshot{}, fmt.Errorf("yield: %w", err)
 	}
-	return foundation.ValuationSnapshot{Canonical: s.Canonical, Exchange: s.Exchange, DataDate: date, PE: pe, PB: pb, DividendYield: yield, Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":valuation", SourceURL: u, RetrievedAt: time.Now(), Status: "official"}, nil
+	return foundation.ValuationSnapshot{Canonical: s.Canonical, Exchange: s.Exchange, DataDate: date, PE: pe, PB: pb, DividendYield: yield, Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":valuation", SourceURL: sourceURL, RetrievedAt: time.Now(), Status: "official"}, nil
 }
 
 func (c *Client) dividends(ctx context.Context, s foundation.SecurityIdentity) ([]foundation.DividendRecord, error) {
@@ -368,39 +375,13 @@ func (c *Client) dividends(ctx context.Context, s foundation.SecurityIdentity) (
 		if companyCode(row) != s.Code {
 			continue
 		}
-		year, err := rocYear(row["股利年度"])
+		item, err := parseOfficialDividend(s, u, row)
 		if err != nil {
-			return nil, fmt.Errorf("dividend year: %w", err)
+			return nil, err
 		}
-		cash, err := sumNumbers(row, "股東配發-盈餘分配之現金股利(元/股)", "股東配發-法定盈餘公積發放之現金(元/股)", "股東配發-資本公積發放之現金(元/股)", "股東配發內容-盈餘分配之現金股利(元/股)", "股東配發內容-法定盈餘公積、資本公積發放之現金(元/股)")
-		if err != nil {
-			return nil, fmt.Errorf("cash dividend: %w", err)
-		}
-		stock, err := sumNumbers(row, "股東配發-盈餘轉增資配股(元/股)", "股東配發-法定盈餘公積轉增資配股(元/股)", "股東配發-資本公積轉增資配股(元/股)", "股東配發內容-盈餘轉增資配股(元/股)", "股東配發內容-法定盈餘公積、資本公積轉增資配股(元/股)")
-		if err != nil {
-			return nil, fmt.Errorf("stock dividend: %w", err)
-		}
-		var total *float64
-		if cash != nil || stock != nil {
-			v := value(cash) + value(stock)
-			total = &v
-		}
-		decision := firstMap(row, "董事會（擬議）股利分派日", "董事會決議通過股利分派日")
-		if decision != "" {
-			decision, err = rocDate(decision)
-			if err != nil {
-				return nil, fmt.Errorf("dividend decision date: %w", err)
-			}
-		}
-		rawStatus := firstMap(row, "決議（擬議）進度")
-		items = append(items, foundation.DividendRecord{Canonical: s.Canonical, Year: year, Period: row["股利所屬年(季)度"], CashDividend: cash, StockDividend: stock, TotalDividend: total, DecisionDate: decision, RawStatus: rawStatus, NormalizedStatus: normalizeDividendStatus(rawStatus), Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":dividend", SourceURL: u, RetrievedAt: time.Now(), Status: "official"})
+		items = append(items, item)
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Year == items[j].Year {
-			return items[i].DecisionDate > items[j].DecisionDate
-		}
-		return items[i].Year > items[j].Year
-	})
+	sortDividendRecordsDesc(items)
 	if len(items) > 8 {
 		items = items[:8]
 	}
@@ -408,6 +389,232 @@ func (c *Client) dividends(ctx context.Context, s foundation.SecurityIdentity) (
 		return nil, fmt.Errorf("official dividend rows unavailable")
 	}
 	return items, nil
+}
+
+// parseOfficialDividend parses one official dividend-disclosure row into a DividendRecord.
+// Extracted out of dividends() so the M7E-A Screener bulk reader can parse every company's rows
+// from the same already-fetched bulk payload without duplicating this parsing logic.
+func parseOfficialDividend(s foundation.SecurityIdentity, sourceURL string, row map[string]string) (foundation.DividendRecord, error) {
+	year, err := rocYear(row["股利年度"])
+	if err != nil {
+		return foundation.DividendRecord{}, fmt.Errorf("dividend year: %w", err)
+	}
+	cash, err := sumNumbers(row, "股東配發-盈餘分配之現金股利(元/股)", "股東配發-法定盈餘公積發放之現金(元/股)", "股東配發-資本公積發放之現金(元/股)", "股東配發內容-盈餘分配之現金股利(元/股)", "股東配發內容-法定盈餘公積、資本公積發放之現金(元/股)")
+	if err != nil {
+		return foundation.DividendRecord{}, fmt.Errorf("cash dividend: %w", err)
+	}
+	stock, err := sumNumbers(row, "股東配發-盈餘轉增資配股(元/股)", "股東配發-法定盈餘公積轉增資配股(元/股)", "股東配發-資本公積轉增資配股(元/股)", "股東配發內容-盈餘轉增資配股(元/股)", "股東配發內容-法定盈餘公積、資本公積轉增資配股(元/股)")
+	if err != nil {
+		return foundation.DividendRecord{}, fmt.Errorf("stock dividend: %w", err)
+	}
+	var total *float64
+	if cash != nil || stock != nil {
+		v := value(cash) + value(stock)
+		total = &v
+	}
+	decision := firstMap(row, "董事會（擬議）股利分派日", "董事會決議通過股利分派日")
+	if decision != "" {
+		var decisionErr error
+		decision, decisionErr = rocDate(decision)
+		if decisionErr != nil {
+			return foundation.DividendRecord{}, fmt.Errorf("dividend decision date: %w", decisionErr)
+		}
+	}
+	rawStatus := firstMap(row, "決議（擬議）進度")
+	return foundation.DividendRecord{Canonical: s.Canonical, Year: year, Period: row["股利所屬年(季)度"], CashDividend: cash, StockDividend: stock, TotalDividend: total, DecisionDate: decision, RawStatus: rawStatus, NormalizedStatus: normalizeDividendStatus(rawStatus), Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":dividend", SourceURL: sourceURL, RetrievedAt: time.Now(), Status: "official"}, nil
+}
+
+// sortDividendRecordsDesc applies the repository's existing deterministic dividend ordering (latest
+// year first, tie-broken by the later decision date) — extracted out of dividends() unchanged so the
+// M7E-A Screener bulk reader picks the exact same "latest record" per company, never inventing a new
+// publication-order rule.
+func sortDividendRecordsDesc(items []foundation.DividendRecord) {
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Year == items[j].Year {
+			return items[i].DecisionDate > items[j].DecisionDate
+		}
+		return items[i].Year > items[j].Year
+	})
+}
+
+// ==================================================
+// M7E-A — Screener bulk fundamentals readers (revenue / valuation / dividends)
+// ==================================================
+//
+// Fundamentals() above is single-security only and reads exactly one row out of an already
+// market-wide bulk payload via findCompany(). The three readers below reuse the exact same official
+// endpoint URLs, the exact same fundamentalsRows bulk-fetch/TTL cache, and the exact same row parsers
+// (parseOfficialRevenue/parseOfficialValuation/parseOfficialDividend) — they simply iterate every row
+// of the bulk payload instead of stopping at one company, joining each row's canonical identity from
+// Directory()+identityAllowlist() (never trusting a bare company code alone, and never inferring
+// exchange from the code — matching the exact join pattern used by refreshDaily/refreshInstitutional/
+// refreshMargin in snapshot.go). Each reader makes exactly 2 upstream requests total (one TWSE + one
+// TPEx), regardless of how many securities the market has, and never calls FinMind.
+//
+// PIT note: none of the three readers assign or expose PublishedAt/AvailableAt (M7E.0 established no
+// such timestamp exists in any of these official payloads). Freshness is expressed only as the
+// loaded dataset's own period/date identifier (see revenueDomainFreshness/valuationDomainFreshness/
+// dividendsDomainFreshness below) — never a fabricated publication claim.
+
+// ScreenerRevenue returns, for every TWSE/TPEx stock security, the latest official monthly revenue
+// row (including the official YoY% already carried by that same bulk row) — never FinMind, never
+// per-security. ETF company revenue is not applicable, mirroring Fundamentals()'s existing
+// "unsupported" capability for ETFs.
+func (c *Client) ScreenerRevenue(ctx context.Context, now time.Time) ([]foundation.MonthlyRevenue, foundation.TaiwanFundamentalsDomainFreshness, error) {
+	identities, err := c.Directory(ctx)
+	if err != nil {
+		return nil, foundation.TaiwanFundamentalsDomainFreshness{}, err
+	}
+	allow := identityAllowlist(identities)
+	rows := make([]foundation.MonthlyRevenue, 0, len(identities))
+	for _, exchange := range []string{"TWSE", "TPEX"} {
+		path, base := "/opendata/t187ap05_L", c.twseBaseURL
+		if exchange == "TPEX" {
+			path, base = "/mopsfin_t187ap05_O", c.tpexBaseURL
+		}
+		u := base + path
+		raw, fetchErr := c.fundamentalsRows(ctx, u, 24*time.Hour)
+		if fetchErr != nil {
+			continue
+		}
+		for _, row := range raw {
+			identity, ok := allow[exchange][companyCode(row)]
+			if !ok || identity.Type == foundation.SecurityTypeETF {
+				continue
+			}
+			item, parseErr := parseOfficialRevenue(identity, u, row)
+			if parseErr != nil {
+				continue
+			}
+			rows = append(rows, item)
+		}
+	}
+	return rows, revenueDomainFreshness(rows), nil
+}
+
+// ScreenerValuation returns, for every TWSE/TPEx security present in the official valuation bulk
+// payloads, the source-provided PE/PB/dividend-yield snapshot — never recomputed, never per-security.
+func (c *Client) ScreenerValuation(ctx context.Context, now time.Time) ([]foundation.ValuationSnapshot, foundation.TaiwanValuationFreshness, error) {
+	identities, err := c.Directory(ctx)
+	if err != nil {
+		return nil, foundation.TaiwanValuationFreshness{}, err
+	}
+	allow := identityAllowlist(identities)
+	rows := make([]foundation.ValuationSnapshot, 0, len(identities))
+	for _, exchange := range []string{"TWSE", "TPEX"} {
+		path, base := "/exchangeReport/BWIBBU_ALL", c.twseBaseURL
+		if exchange == "TPEX" {
+			path, base = "/tpex_mainboard_peratio_analysis", c.tpexBaseURL
+		}
+		u := base + path
+		raw, fetchErr := c.fundamentalsRows(ctx, u, 24*time.Hour)
+		if fetchErr != nil {
+			continue
+		}
+		for _, row := range raw {
+			identity, ok := allow[exchange][companyCode(row)]
+			if !ok {
+				continue
+			}
+			item, parseErr := parseOfficialValuation(identity, u, row)
+			if parseErr != nil {
+				continue
+			}
+			rows = append(rows, item)
+		}
+	}
+	return rows, c.valuationDomainFreshness(now, rows), nil
+}
+
+// ScreenerDividends returns, for every TWSE/TPEx security with at least one official dividend
+// disclosure row, only the single latest record per company (using the exact same deterministic
+// ordering as dividends()) — never per-security, never a new publication-order rule.
+func (c *Client) ScreenerDividends(ctx context.Context, now time.Time) ([]foundation.DividendRecord, foundation.TaiwanFundamentalsDomainFreshness, error) {
+	identities, err := c.Directory(ctx)
+	if err != nil {
+		return nil, foundation.TaiwanFundamentalsDomainFreshness{}, err
+	}
+	allow := identityAllowlist(identities)
+	byCanonical := map[string][]foundation.DividendRecord{}
+	for _, exchange := range []string{"TWSE", "TPEX"} {
+		path, base := "/opendata/t187ap45_L", c.twseBaseURL
+		if exchange == "TPEX" {
+			path, base = "/mopsfin_t187ap39_O", c.tpexBaseURL
+		}
+		u := base + path
+		raw, fetchErr := c.fundamentalsRows(ctx, u, 7*24*time.Hour)
+		if fetchErr != nil {
+			continue
+		}
+		for _, row := range raw {
+			identity, ok := allow[exchange][companyCode(row)]
+			if !ok {
+				continue
+			}
+			item, parseErr := parseOfficialDividend(identity, u, row)
+			if parseErr != nil {
+				continue
+			}
+			byCanonical[identity.Canonical] = append(byCanonical[identity.Canonical], item)
+		}
+	}
+	rows := make([]foundation.DividendRecord, 0, len(byCanonical))
+	for _, items := range byCanonical {
+		sortDividendRecordsDesc(items)
+		rows = append(rows, items[0])
+	}
+	return rows, dividendsDomainFreshness(rows), nil
+}
+
+// revenueDomainFreshness reports the latest loaded revenue PERIOD across all rows (e.g. "2026-08"),
+// never a fabricated calendar publication date. Status is "available"/"unavailable" only — a monthly
+// filing cadence has no truthful trading-day days-behind equivalent, so none is computed.
+func revenueDomainFreshness(rows []foundation.MonthlyRevenue) foundation.TaiwanFundamentalsDomainFreshness {
+	latest := ""
+	for _, row := range rows {
+		if row.Period > latest {
+			latest = row.Period
+		}
+	}
+	if latest == "" {
+		return foundation.TaiwanFundamentalsDomainFreshness{Status: "unavailable"}
+	}
+	return foundation.TaiwanFundamentalsDomainFreshness{AsOf: &latest, Status: "available"}
+}
+
+// dividendsDomainFreshness reports the latest loaded dividend YEAR across all rows as a plain
+// identifier (e.g. "2025") — never a DecisionDate reinterpreted as a publication timestamp, and never
+// a "stale" claim based on elapsed days, since dividend disclosures are inherently irregular/annual.
+func dividendsDomainFreshness(rows []foundation.DividendRecord) foundation.TaiwanFundamentalsDomainFreshness {
+	latestYear := 0
+	for _, row := range rows {
+		if row.Year > latestYear {
+			latestYear = row.Year
+		}
+	}
+	if latestYear == 0 {
+		return foundation.TaiwanFundamentalsDomainFreshness{Status: "unavailable"}
+	}
+	asOf := strconv.Itoa(latestYear)
+	return foundation.TaiwanFundamentalsDomainFreshness{AsOf: &asOf, Status: "available"}
+}
+
+// valuationDomainFreshness reports the latest loaded valuation DataDate across all rows, compared
+// against the same trading-calendar days-behind math already used for the daily/institutional/margin
+// domains (snapshot.go's freshnessStatus/daysBehind) — valuation is published on the same daily
+// cadence as the market snapshot, so this comparison is truthful, unlike revenue/dividends above.
+func (c *Client) valuationDomainFreshness(now time.Time, rows []foundation.ValuationSnapshot) foundation.TaiwanValuationFreshness {
+	latest := ""
+	for _, row := range rows {
+		if row.DataDate > latest {
+			latest = row.DataDate
+		}
+	}
+	if latest == "" {
+		return foundation.TaiwanValuationFreshness{Status: "unavailable"}
+	}
+	target := c.calendar.LatestCompleted(now, marketCutoffHour, marketCutoffMinute)
+	return foundation.TaiwanValuationFreshness{AsOf: &latest, Status: freshnessStatus(latest, target), DaysBehind: daysBehind(latest, target, c.calendar)}
 }
 
 func normalizeDividendStatus(raw string) string {
