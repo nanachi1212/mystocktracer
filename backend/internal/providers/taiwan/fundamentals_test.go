@@ -1407,6 +1407,214 @@ func TestScreenerFinancialsNetMarginCIOnlyIncludingFHHazard(t *testing.T) {
 	}
 }
 
+// ==================================================
+// M7G — balance-sheet ratios (debt_ratio / debt_to_equity / current_ratio, ci-only, Model B independent
+// balance target period)
+// ==================================================
+
+func balanceRowFixture(category string, extra map[string]string) map[string]string {
+	row := map[string]string{"出表日期": "1150905", "年度": "115", "季別": "2", "公司代號": "5001"}
+	for k, v := range extra {
+		row[k] = v
+	}
+	_ = category
+	return row
+}
+
+func testIdentity() foundation.SecurityIdentity {
+	return foundation.SecurityIdentity{Canonical: "5001.TWSE", Code: "5001", Exchange: "TWSE"}
+}
+
+// TestParseBalanceSheetRowCiComputesAllThreeRatios proves ci-category rows compute debt_ratio/
+// debt_to_equity/current_ratio directly from the official 資產總計/負債總計/權益總計/流動資產/流動負債
+// fields.
+func TestParseBalanceSheetRowCiComputesAllThreeRatios(t *testing.T) {
+	row := balanceRowFixture("ci", map[string]string{
+		"資產總計": "1000", "負債總計": "300", "權益總計": "700", "流動資產": "500", "流動負債": "200", "每股參考淨值": "28.5",
+	})
+	item, err := parseBalanceSheetRow(testIdentity(), "ci", "http://example/ci", row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDebtRatio, wantDebtToEquity, wantCurrentRatio := 30.0, 300.0/700.0*100, 250.0
+	if item.DebtRatio == nil || *item.DebtRatio != wantDebtRatio {
+		t.Fatalf("debt_ratio: want %v, got %v", wantDebtRatio, item.DebtRatio)
+	}
+	if item.DebtToEquity == nil || *item.DebtToEquity != wantDebtToEquity {
+		t.Fatalf("debt_to_equity: want %v, got %v", wantDebtToEquity, item.DebtToEquity)
+	}
+	if item.CurrentRatio == nil || *item.CurrentRatio != wantCurrentRatio {
+		t.Fatalf("current_ratio: want %v, got %v", wantCurrentRatio, item.CurrentRatio)
+	}
+	if item.BookValuePerShare == nil || *item.BookValuePerShare != 28.5 {
+		t.Fatalf("book_value_per_share regression: got %v", item.BookValuePerShare)
+	}
+}
+
+// TestParseBalanceSheetRowAlternateKeyVariant proves the 資產總額/負債總額/權益總額 fallback keys
+// (used by basi/fh/mim) parse correctly for the raw amounts, even though basi has no current-
+// asset/liability fields at all and is non-ci (so ratios stay nil per category policy below).
+func TestParseBalanceSheetRowAlternateKeyVariant(t *testing.T) {
+	row := balanceRowFixture("basi", map[string]string{
+		"資產總額": "1000", "負債總額": "300", "權益總額": "700", "每股參考淨值": "19.52",
+	})
+	item, err := parseBalanceSheetRow(testIdentity(), "basi", "http://example/basi", row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.TotalAssets == nil || *item.TotalAssets != 1000000 || item.TotalLiabilities == nil || *item.TotalLiabilities != 300000 || item.Equity == nil || *item.Equity != 700000 {
+		t.Fatalf("expected 資產總額/負債總額/權益總額 fallback keys parsed (thousand-TWD scaled), got %+v", item)
+	}
+	if item.CurrentAssets != nil || item.CurrentLiabilities != nil {
+		t.Fatalf("basi has no 流動資產/流動負債 fields at all: expected nil, got %+v", item)
+	}
+}
+
+// TestParseBalanceSheetRowNonCiNeverComputesRatiosEvenWhenFieldsPresent proves the ci-only policy is
+// enforced regardless of whether the underlying payload happens to carry compatible-looking fields —
+// here "bd" technically has both key variants of every field, but must still never expose ratios.
+func TestParseBalanceSheetRowNonCiNeverComputesRatiosEvenWhenFieldsPresent(t *testing.T) {
+	row := balanceRowFixture("bd", map[string]string{
+		"資產總計": "1000", "負債總計": "300", "權益總計": "700", "流動資產": "500", "流動負債": "200",
+	})
+	item, err := parseBalanceSheetRow(testIdentity(), "bd", "http://example/bd", row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.DebtRatio != nil || item.DebtToEquity != nil || item.CurrentRatio != nil {
+		t.Fatalf("bd (non-ci) must never expose any of the three ratios even when all source fields are present, got %+v", item)
+	}
+	if item.TotalAssets == nil || item.CurrentLiabilities == nil {
+		t.Fatalf("raw amounts must still parse for non-ci categories (only the derived ratios are policy-gated), got %+v", item)
+	}
+}
+
+// TestParseBalanceSheetRowZeroAndNegativeDenominatorSafety proves zero/negative denominators null the
+// corresponding ratio, never NaN/Infinity/a fabricated zero.
+func TestParseBalanceSheetRowZeroAndNegativeDenominatorSafety(t *testing.T) {
+	cases := []struct {
+		name  string
+		extra map[string]string
+		check func(t *testing.T, item foundation.FinancialStatementPeriod)
+	}{
+		{"zero total assets", map[string]string{"資產總計": "0", "負債總計": "300", "權益總計": "700", "流動資產": "500", "流動負債": "200"}, func(t *testing.T, item foundation.FinancialStatementPeriod) {
+			if item.DebtRatio != nil {
+				t.Fatalf("zero total assets: expected debt_ratio nil, got %v", *item.DebtRatio)
+			}
+		}},
+		{"zero equity", map[string]string{"資產總計": "1000", "負債總計": "300", "權益總計": "0", "流動資產": "500", "流動負債": "200"}, func(t *testing.T, item foundation.FinancialStatementPeriod) {
+			if item.DebtToEquity != nil {
+				t.Fatalf("zero equity: expected debt_to_equity nil, got %v", *item.DebtToEquity)
+			}
+		}},
+		{"negative equity", map[string]string{"資產總計": "1000", "負債總計": "1300", "權益總計": "-300", "流動資產": "500", "流動負債": "200"}, func(t *testing.T, item foundation.FinancialStatementPeriod) {
+			if item.DebtToEquity != nil {
+				t.Fatalf("negative equity: expected debt_to_equity nil (never a fabricated/negative leverage ratio), got %v", *item.DebtToEquity)
+			}
+		}},
+		{"zero current liabilities", map[string]string{"資產總計": "1000", "負債總計": "300", "權益總計": "700", "流動資產": "500", "流動負債": "0"}, func(t *testing.T, item foundation.FinancialStatementPeriod) {
+			if item.CurrentRatio != nil {
+				t.Fatalf("zero current liabilities: expected current_ratio nil, got %v", *item.CurrentRatio)
+			}
+		}},
+	}
+	for _, c := range cases {
+		row := balanceRowFixture("ci", c.extra)
+		item, err := parseBalanceSheetRow(testIdentity(), "ci", "http://example/ci", row)
+		if err != nil {
+			t.Fatalf("%s: unexpected error %v", c.name, err)
+		}
+		c.check(t, item)
+	}
+}
+
+// TestParseBalanceSheetRowMalformedFieldIsolation proves a malformed M7G ratio input only nulls the
+// ratio(s) that depend on it — it never drops the whole row, and never fails the row with an error
+// (unlike book_value_per_share's unchanged row-drop-on-malformed behavior below).
+func TestParseBalanceSheetRowMalformedFieldIsolation(t *testing.T) {
+	row := balanceRowFixture("ci", map[string]string{
+		"資產總計": "not-a-number", "負債總計": "300", "權益總計": "700", "流動資產": "500", "流動負債": "200", "每股參考淨值": "28.5",
+	})
+	item, err := parseBalanceSheetRow(testIdentity(), "ci", "http://example/ci", row)
+	if err != nil {
+		t.Fatalf("malformed 資產總計 must not fail the row, got error: %v", err)
+	}
+	if item.TotalAssets != nil {
+		t.Fatalf("expected total_assets nil for a malformed value, got %v", *item.TotalAssets)
+	}
+	if item.DebtRatio != nil {
+		t.Fatalf("expected debt_ratio nil (depends on the malformed total_assets), got %v", *item.DebtRatio)
+	}
+	// The other two ratios (whose own inputs are valid) and BVPS must remain preserved.
+	if item.DebtToEquity == nil {
+		t.Fatalf("debt_to_equity must remain available (its own inputs are valid), got nil")
+	}
+	if item.CurrentRatio == nil {
+		t.Fatalf("current_ratio must remain available (its own inputs are valid), got nil")
+	}
+	if item.BookValuePerShare == nil || *item.BookValuePerShare != 28.5 {
+		t.Fatalf("book_value_per_share must be preserved despite the malformed M7G field, got %v", item.BookValuePerShare)
+	}
+}
+
+// TestParseBalanceSheetRowMalformedBVPSStillDropsRowUnchanged proves BVPS's pre-existing row-drop-on-
+// malformed behavior is left completely unchanged (backward compatibility, M7G.0 §38) even though the
+// new M7G fields around it now use field-level isolation.
+func TestParseBalanceSheetRowMalformedBVPSStillDropsRowUnchanged(t *testing.T) {
+	row := balanceRowFixture("ci", map[string]string{
+		"資產總計": "1000", "負債總計": "300", "權益總計": "700", "每股參考淨值": "not-a-number",
+	})
+	_, err := parseBalanceSheetRow(testIdentity(), "ci", "http://example/ci", row)
+	if err == nil {
+		t.Fatal("malformed 每股參考淨值 must still fail the whole row, unchanged from pre-M7G behavior")
+	}
+}
+
+// TestScreenerBalanceModelBIndependentTargetPeriodNullsOffTargetRows proves the three M7G ratios are
+// gated by ScreenerBalance's own independent balance-target-period (the max FiscalYear/FiscalQuarter
+// among balance rows themselves) — an older row's ratios are nulled, but its FiscalYear/FiscalQuarter
+// and BookValuePerShare are left completely untouched (so httpapi can still report its true
+// balance_period, and BVPS's own separate Model A gate is unaffected).
+func TestScreenerBalanceModelBIndependentTargetPeriodNullsOffTargetRows(t *testing.T) {
+	var calls atomic.Int32
+	twseDirectory := `[{"公司代號":"5001","公司簡稱":"A"},{"公司代號":"5002","公司簡稱":"B"}]`
+	ci := `[` +
+		`{"出表日期":"1150905","年度":"115","季別":"2","公司代號":"5001","資產總計":"1000","負債總計":"300","權益總計":"700","流動資產":"500","流動負債":"200","每股參考淨值":"28.5"},` +
+		`{"出表日期":"1150605","年度":"115","季別":"1","公司代號":"5002","資產總計":"2000","負債總計":"600","權益總計":"1400","流動資產":"900","流動負債":"300","每股參考淨值":"45.2"}` +
+		`]`
+	bodies := defaultBalanceBodies()
+	bodies[balanceCategoryPath("TWSE", "ci")] = ci
+	server := newBalanceServer(t, twseDirectory, `[]`, bodies, &calls)
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerBalance(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if freshness.AsOf == nil || *freshness.AsOf != "2026-Q2" {
+		t.Fatalf("expected independent balance target period 2026-Q2 (max of Q2/Q1), got %+v", freshness)
+	}
+	byCode := map[string]foundation.FinancialStatementPeriod{}
+	for _, row := range rows {
+		byCode[row.Code] = row
+	}
+	onTarget := byCode["5001"]
+	if onTarget.DebtRatio == nil || onTarget.DebtToEquity == nil || onTarget.CurrentRatio == nil {
+		t.Fatalf("5001 (on target 2026-Q2): expected all three ratios exposed, got %+v", onTarget)
+	}
+	offTarget := byCode["5002"]
+	if offTarget.DebtRatio != nil || offTarget.DebtToEquity != nil || offTarget.CurrentRatio != nil {
+		t.Fatalf("5002 (2026-Q1, off the independent balance target): expected all three ratios nil, got %+v", offTarget)
+	}
+	if offTarget.FiscalYear != 2026 || offTarget.FiscalQuarter != 1 {
+		t.Fatalf("5002's own FiscalYear/FiscalQuarter must remain untouched (so its true balance_period can still be reported), got %+v", offTarget)
+	}
+	if offTarget.BookValuePerShare == nil || *offTarget.BookValuePerShare != 45.2 {
+		t.Fatalf("5002's book_value_per_share must remain untouched by the M7G target-period nulling (BVPS uses its own separate Model A gate), got %v", offTarget.BookValuePerShare)
+	}
+}
+
 func TestFundamentalsCacheDoesNotHoldLockDuringFetch(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})

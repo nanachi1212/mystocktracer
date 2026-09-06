@@ -775,11 +775,16 @@ func (c *Client) ScreenerFinancials(ctx context.Context, now time.Time) ([]found
 	return rows, financialsDomainFreshness(target, attempted, succeeded), nil
 }
 
-// parseBalanceSheetRow parses one official balance-sheet row (any of the six categories) into just
-// what the M7E-C Screener needs: canonical identity, the row's own (FiscalYear, FiscalQuarter), and the
-// official book-value-per-share figure. It deliberately does not parse TotalAssets/TotalLiabilities/
-// Equity/EquityParent here (out of scope for M7E-C) even though FinancialStatementPeriod has room for
-// them — statement()'s existing single-security path remains the only reader of those fields.
+// parseBalanceSheetRow parses one official balance-sheet row (any of the six categories) into canonical
+// identity, the row's own (FiscalYear, FiscalQuarter), the official book-value-per-share figure, and
+// (M7G) the raw total-assets/total-liabilities/equity/current-assets/current-liabilities amounts plus
+// the three ci-only derived ratios (DebtRatio/DebtToEquity/CurrentRatio).
+//
+// M7G field-level isolation: BVPS keeps its pre-existing row-drop-on-malformed behavior unchanged
+// (backward compatibility — see M7G.0 §38). The five new M7G inputs use optionalThousandTWDIsolated
+// instead: a malformed value there only nulls the ratio(s) that depend on it, it never drops the whole
+// row (learned from the M7F parseOfficialRevenue precedent for OfficialMoM/CumulativeYoY — a whole-row
+// drop would also silently regress the row's still-valid BVPS).
 func parseBalanceSheetRow(s foundation.SecurityIdentity, category, sourceURL string, balance map[string]string) (foundation.FinancialStatementPeriod, error) {
 	year, quarter, err := parseFiscalPeriod(balance)
 	if err != nil {
@@ -789,22 +794,49 @@ func parseBalanceSheetRow(s foundation.SecurityIdentity, category, sourceURL str
 	if err != nil {
 		return foundation.FinancialStatementPeriod{}, fmt.Errorf("book value per share: %w", err)
 	}
-	return foundation.FinancialStatementPeriod{Canonical: s.Canonical, Code: s.Code, Exchange: s.Exchange, FiscalYear: year, FiscalQuarter: quarter, AccountingCategory: category, BookValuePerShare: bvps, Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":balance_sheet", SourceURL: sourceURL, RetrievedAt: time.Now(), Status: "official"}, nil
+	item := foundation.FinancialStatementPeriod{Canonical: s.Canonical, Code: s.Code, Exchange: s.Exchange, FiscalYear: year, FiscalQuarter: quarter, AccountingCategory: category, BookValuePerShare: bvps, Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":balance_sheet", SourceURL: sourceURL, RetrievedAt: time.Now(), Status: "official"}
+
+	// Category naming split confirmed live (M7G.0 §7-9): ci/bd/mim use 資產總計/負債總計/權益總計 and
+	// have 流動資產/流動負債; basi/fh use 資產總額/負債總額/權益總額 with no current-asset/liability
+	// fields at all; ins uses 資產總計/負債總計/權益總計 also without current fields.
+	item.TotalAssets = optionalThousandTWDIsolated(firstMap(balance, "資產總計", "資產總額"))
+	item.TotalLiabilities = optionalThousandTWDIsolated(firstMap(balance, "負債總計", "負債總額"))
+	item.Equity = optionalThousandTWDIsolated(firstMap(balance, "權益總計", "權益總額"))
+	item.CurrentAssets = optionalThousandTWDIsolated(firstMap(balance, "流動資產"))
+	item.CurrentLiabilities = optionalThousandTWDIsolated(firstMap(balance, "流動負債"))
+
+	// ci-only policy (M7G.0 §13): even when the source fields technically exist for another category
+	// (e.g. bd/mim also carry 流動資產/流動負債), the three ratios are only derived for "ci" — the
+	// cross-industry accounting semantics otherwise are not comparable (banks/insurers/financial
+	// holdings/securities firms carry structurally distorted leverage/liquidity figures). ratio()
+	// already nulls on a missing numerator/denominator or a non-positive denominator (covers debt_ratio's
+	// zero-assets case, debt_to_equity's zero/negative-equity case, and current_ratio's zero-current-
+	// liabilities case — never NaN/Infinity, never a fabricated zero).
+	if category == "ci" {
+		item.DebtRatio = ratio(item.TotalLiabilities, item.TotalAssets)
+		item.DebtToEquity = ratio(item.TotalLiabilities, item.Equity)
+		item.CurrentRatio = ratio(item.CurrentAssets, item.CurrentLiabilities)
+	}
+
+	return item, nil
 }
 
 // ==================================================
 // M7E-C — Screener bulk balance-sheet reader (book value per share)
+// M7G — same reader additively extended with debt_ratio/debt_to_equity/current_ratio
 // ==================================================
 //
 // ScreenerBalance reads the official balance-sheet bulk endpoints (6 categories × 2 exchanges = 12
 // requests total, bounded regardless of security count) — completely independent of
 // ScreenerFinancials' income-statement endpoints: different URLs (t187ap07_L_*/mopsfin_t187ap07_O_*
 // vs t187ap06_L_*/mopsfin_t187ap06_O_*), so fundamentalsRows caches them under separate keys. It is
-// lazy-loaded by the httpapi layer only when a book_value_per_share filter/sort is actually requested
-// (see taiwanScreenerNeedsBalance) — a net_margin-only request must never trigger this reader, and a
-// book_value_per_share request always also triggers ScreenerFinancials (income), since the httpapi
-// layer needs the income row's own period to decide whether a security's BVPS is safe to expose (see
-// M7E-C.0's period-alignment requirement) — never calls FinMind, never loops per security.
+// lazy-loaded by the httpapi layer whenever a book_value_per_share OR M7G ratio filter/sort is actually
+// requested (see taiwanScreenerNeedsBalance) — a net_margin-only request must never trigger this reader.
+// Unlike book_value_per_share (which always also triggers ScreenerFinancials/income, since the httpapi
+// layer needs the income row's own period to decide whether a security's BVPS is safe to expose — see
+// M7E-C.0's period-alignment requirement), the three M7G ratios are pure balance-sheet metrics gated by
+// this reader's own independent balance-target-period (Model B, see below) and never require income —
+// never calls FinMind, never loops per security.
 //
 // PIT note: same as ScreenerFinancials, no PublishedAt/AvailableAt is assigned or exposed.
 func (c *Client) ScreenerBalance(ctx context.Context, now time.Time) ([]foundation.FinancialStatementPeriod, foundation.TaiwanFundamentalsDomainFreshness, error) {
@@ -850,7 +882,19 @@ func (c *Client) ScreenerBalance(ctx context.Context, now time.Time) ([]foundati
 		}
 	}
 
+	// M7G Model B — independent balance target period (M7G.0 §17-19): the three new ci-only ratios are
+	// exposed only for rows on this balance-only target period, computed from the balance rows
+	// themselves and completely decoupled from ScreenerFinancials' income-statement target period.
+	// BookValuePerShare is deliberately left untouched here — its own (Model A, income-period-aligned)
+	// exposure gate remains entirely in the httpapi layer, unchanged (M7G.0 §38). A row's FiscalYear/
+	// FiscalQuarter are never cleared, so httpapi can still report this row's true balance_period even
+	// when its ratios are nulled here for being off-target.
 	target := targetFinancialPeriod(rows)
+	for i := range rows {
+		if rows[i].FiscalYear != target.year || rows[i].FiscalQuarter != target.quarter {
+			rows[i].DebtRatio, rows[i].DebtToEquity, rows[i].CurrentRatio = nil, nil, nil
+		}
+	}
 	return rows, financialsDomainFreshness(target, attempted, succeeded), nil
 }
 
@@ -992,6 +1036,17 @@ func optionalThousandTWD(raw string) (*int64, error) {
 		return nil, err
 	}
 	return &v, nil
+}
+
+// optionalThousandTWDIsolated parses a raw thousand-TWD amount exactly like optionalThousandTWD, but
+// treats a malformed (non-blank, unparseable) value the same as a blank one — nil, never an error — so
+// a single malformed M7G ratio input (see parseBalanceSheetRow) never drops the whole balance row.
+func optionalThousandTWDIsolated(raw string) *int64 {
+	v, err := optionalThousandTWD(raw)
+	if err != nil {
+		return nil
+	}
+	return v
 }
 func percentPointer(delta, denominator int64) *float64 {
 	if denominator <= 0 {

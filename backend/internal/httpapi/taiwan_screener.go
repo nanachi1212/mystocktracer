@@ -83,6 +83,16 @@ type taiwanScreenerRow struct {
 	// payload happens to contain.
 	NetMargin         *float64 `json:"net_margin"`
 	BookValuePerShare *float64 `json:"book_value_per_share"`
+	// M7G — debt_ratio/debt_to_equity/current_ratio (balance-sheet, ci-only, gated by ScreenerBalance's
+	// own independent balance-target-period — Model B, decoupled from income/financial_period entirely;
+	// see ScreenerBalance). balance_period is this row's own actual balance-sheet period, populated only
+	// when at least one of the three ratios above is exposed for it — distinct from financial_period
+	// (income-statement period, unchanged) and independent of book_value_per_share's own Model A
+	// period-alignment rule below (also unchanged).
+	DebtRatio     *float64 `json:"debt_ratio"`
+	DebtToEquity  *float64 `json:"debt_to_equity"`
+	CurrentRatio  *float64 `json:"current_ratio"`
+	BalancePeriod *string  `json:"balance_period"`
 }
 
 type taiwanScreenerResponse struct {
@@ -128,6 +138,13 @@ type taiwanScreenerResponse struct {
 	// cadence) and never a published_at/available_at claim.
 	FinancialsPeriod *string `json:"financials_period,omitempty"`
 	FinancialsStatus string  `json:"financials_status,omitempty"`
+	// M7G — additive, present only when the balance-sheet domain was actually fetched (via BVPS or any
+	// M7G ratio filter/sort). BalancePeriod is ScreenerBalance's own independent balance-target-period
+	// (Model B) — never derived from or combined with FinancialsPeriod/FinancialsStatus above, which
+	// keep their exact pre-M7G semantics (income-statement-only, populated only when income/BVPS was
+	// requested).
+	BalancePeriod *string `json:"balance_period,omitempty"`
+	BalanceStatus string  `json:"balance_status,omitempty"`
 }
 
 type taiwanScreenerQuery struct {
@@ -166,8 +183,12 @@ type taiwanScreenerQuery struct {
 	// M7E-C financial statement filters (ci-only net margin + all-category book value per share).
 	minNetMargin, maxNetMargin                 *float64
 	minBookValuePerShare, maxBookValuePerShare *float64
-	sort                                       string
-	order                                      string // "asc" | "desc"
+	// M7G balance-sheet ratio filters (ci-only, Model B independent balance target period).
+	minDebtRatio, maxDebtRatio         *float64
+	minDebtToEquity, maxDebtToEquity   *float64
+	minCurrentRatio, maxCurrentRatio   *float64
+	sort                               string
+	order                              string // "asc" | "desc"
 }
 
 var taiwanScreenerSortKeys = map[string]bool{
@@ -179,6 +200,7 @@ var taiwanScreenerSortKeys = map[string]bool{
 	"cumulative_eps": true, "gross_margin": true, "operating_margin": true,
 	"net_margin": true, "book_value_per_share": true,
 	"revenue_mom": true, "cumulative_revenue_yoy": true,
+	"debt_ratio": true, "debt_to_equity": true, "current_ratio": true,
 }
 
 // taiwanScreenerNeedsInstitutional/taiwanScreenerNeedsMargin decide whether this specific request
@@ -257,32 +279,53 @@ func taiwanScreenerNeedsFinancials(q taiwanScreenerQuery) bool {
 		q.minNetMargin != nil || q.maxNetMargin != nil
 }
 
-// taiwanScreenerNeedsBalance is the M7E-C analogue — the sole gate for fetching the balance-sheet
-// domain (12 bounded requests, independent of and additional to the 12 income-statement requests
-// above). A vanilla request, and one that only engages net_margin (or any earlier domain), must never
-// trigger it — only an active book_value_per_share filter or sort key does.
-func taiwanScreenerNeedsBalance(q taiwanScreenerQuery) bool {
+// taiwanScreenerNeedsBVPS is the exact pre-M7G taiwanScreenerNeedsBalance check, kept as its own named
+// gate: book_value_per_share alone (unlike the M7G ratios below) still requires ScreenerFinancials too,
+// since the httpapi layer needs the income row's own period to decide whether BVPS is period-aligned
+// (M7E-C.0) — see the handler's income-fetch condition.
+func taiwanScreenerNeedsBVPS(q taiwanScreenerQuery) bool {
 	if q.sort == "book_value_per_share" {
 		return true
 	}
 	return q.minBookValuePerShare != nil || q.maxBookValuePerShare != nil
 }
 
+// taiwanScreenerNeedsBalanceRatios is the M7G gate for debt_ratio/debt_to_equity/current_ratio — pure
+// balance-sheet metrics (Model B: independent balance target period, see ScreenerBalance) that must
+// NOT trigger the income-statement fetch the way book_value_per_share does.
+func taiwanScreenerNeedsBalanceRatios(q taiwanScreenerQuery) bool {
+	switch q.sort {
+	case "debt_ratio", "debt_to_equity", "current_ratio":
+		return true
+	}
+	return q.minDebtRatio != nil || q.maxDebtRatio != nil ||
+		q.minDebtToEquity != nil || q.maxDebtToEquity != nil ||
+		q.minCurrentRatio != nil || q.maxCurrentRatio != nil
+}
+
+// taiwanScreenerNeedsBalance is the sole gate for fetching the balance-sheet domain at all (12 bounded
+// requests, independent of and additional to the 12 income-statement requests). A vanilla request, and
+// one that only engages net_margin (or any earlier domain), must never trigger it — only an active
+// book_value_per_share OR M7G ratio filter/sort does.
+func taiwanScreenerNeedsBalance(q taiwanScreenerQuery) bool {
+	return taiwanScreenerNeedsBVPS(q) || taiwanScreenerNeedsBalanceRatios(q)
+}
+
 // combineFinancialsStatus reports one truthful financials_status across the income-statement domain
-// and (when actually requested) the M7E-C balance-sheet domain. When balance was never requested, this
-// is byte-for-byte the existing M7E-B income-only semantics. When balance was requested: "unavailable"
-// is reported whenever income itself is unavailable — book_value_per_share can never be verified
-// against an unknown income period, so no usable financial data exists at all in that case (M7E-C.0);
-// "available" requires both subdomains to have fully succeeded; every other combination (income healthy
-// but balance degraded/unavailable, or income itself merely partial) reports "partial" — some usable
-// financial data remains, so the whole domain is never marked unavailable just because the optional
-// balance subdomain under-delivered.
-func combineFinancialsStatus(income foundation.TaiwanFundamentalsDomainFreshness, balanceRequested bool, balance foundation.TaiwanFundamentalsDomainFreshness) string {
+// and (when book_value_per_share was actually requested) the M7E-C balance-sheet domain. When BVPS was
+// never requested, this is byte-for-byte the existing M7E-B income-only semantics — in particular, an
+// M7G-ratio-only request (which never fetches income) must not alter financials_status at all, so this
+// function is only ever called with bvpsRequested, never the broader "was balance fetched" flag. When
+// BVPS was requested: "unavailable" is reported whenever income itself is unavailable — BVPS can never
+// be verified against an unknown income period, so no usable financial data exists at all in that case
+// (M7E-C.0); "available" requires both subdomains to have fully succeeded; every other combination
+// (income healthy but balance degraded/unavailable, or income itself merely partial) reports "partial".
+func combineFinancialsStatus(income foundation.TaiwanFundamentalsDomainFreshness, bvpsRequested bool, balance foundation.TaiwanFundamentalsDomainFreshness) string {
 	incomeStatus := income.Status
 	if incomeStatus == "" {
 		incomeStatus = "unavailable"
 	}
-	if !balanceRequested {
+	if !bvpsRequested {
 		return incomeStatus
 	}
 	if incomeStatus == "unavailable" {
@@ -400,12 +443,15 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 	// actually engages it, following the exact same pattern as revenue/valuation/dividends above.
 	// M7E-C's book_value_per_share additionally requires income data (it needs each row's own income
 	// period to decide whether that security's BVPS is period-aligned — see the balance join below),
-	// so a BVPS-only request also triggers this fetch even though it engages no income-only field.
+	// so a BVPS-only request also triggers this fetch even though it engages no income-only field. M7G's
+	// balance-sheet ratios are pure balance-sheet metrics (Model B) and deliberately do NOT appear in
+	// this condition — an M7G-ratio-only request must never trigger the income-statement fetch.
 	var financials map[string]foundation.FinancialStatementPeriod
 	var financialsFreshness foundation.TaiwanFundamentalsDomainFreshness
 	financialsRequested := taiwanScreenerNeedsFinancials(query)
+	bvpsRequested := taiwanScreenerNeedsBVPS(query)
 	balanceRequested := taiwanScreenerNeedsBalance(query)
-	if (financialsRequested || balanceRequested) && s.taiwanScreenerFinancials != nil {
+	if (financialsRequested || bvpsRequested) && s.taiwanScreenerFinancials != nil {
 		finRows, finFreshness, finErr := s.taiwanScreenerFinancials.ScreenerFinancials(ctx, time.Now())
 		financialsFreshness = finFreshness
 		if finErr == nil {
@@ -416,8 +462,9 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// M7E-C lazy domain loading: the balance-sheet domain (book_value_per_share) is fetched ONLY when
-	// this request actually engages it — a net_margin-only request must never trigger this.
+	// M7E-C/M7G lazy domain loading: the balance-sheet domain (book_value_per_share and/or the M7G
+	// ratios) is fetched ONLY when this request actually engages one of them — a net_margin-only
+	// request must never trigger this.
 	var balance map[string]foundation.FinancialStatementPeriod
 	var balanceFreshness foundation.TaiwanFundamentalsDomainFreshness
 	if balanceRequested && s.taiwanScreenerBalance != nil {
@@ -481,9 +528,16 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 			response.DividendsStatus = "unavailable"
 		}
 	}
-	if financialsRequested || balanceRequested {
+	if financialsRequested || bvpsRequested {
 		response.FinancialsPeriod = financialsFreshness.AsOf
-		response.FinancialsStatus = combineFinancialsStatus(financialsFreshness, balanceRequested, balanceFreshness)
+		response.FinancialsStatus = combineFinancialsStatus(financialsFreshness, bvpsRequested, balanceFreshness)
+	}
+	if balanceRequested {
+		response.BalancePeriod = balanceFreshness.AsOf
+		response.BalanceStatus = balanceFreshness.Status
+		if response.BalanceStatus == "" {
+			response.BalanceStatus = "unavailable"
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": response})
 }
@@ -503,7 +557,7 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		query.sort = "amount"
 	}
 	if !taiwanScreenerSortKeys[query.sort] {
-		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend, cumulative_eps, gross_margin, operating_margin, net_margin, book_value_per_share, revenue_mom, cumulative_revenue_yoy"
+		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend, cumulative_eps, gross_margin, operating_margin, net_margin, book_value_per_share, revenue_mom, cumulative_revenue_yoy, debt_ratio, debt_to_equity, current_ratio"
 	}
 
 	query.order = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order")))
@@ -675,6 +729,28 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		}
 	}
 
+	// M7G balance-sheet ratio range params (debt_ratio/debt_to_equity/current_ratio) — same pattern.
+	m7gRanges := []struct {
+		minKey, maxKey string
+		min, max       **float64
+		label          string
+	}{
+		{"min_debt_ratio", "max_debt_ratio", &query.minDebtRatio, &query.maxDebtRatio, "min_debt_ratio must not be greater than max_debt_ratio"},
+		{"min_debt_to_equity", "max_debt_to_equity", &query.minDebtToEquity, &query.maxDebtToEquity, "min_debt_to_equity must not be greater than max_debt_to_equity"},
+		{"min_current_ratio", "max_current_ratio", &query.minCurrentRatio, &query.maxCurrentRatio, "min_current_ratio must not be greater than max_current_ratio"},
+	}
+	for _, item := range m7gRanges {
+		if *item.min, err = parseOptionalScreenerFloat(r, item.minKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if *item.max, err = parseOptionalScreenerFloat(r, item.maxKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if rangeInvalid(*item.min, *item.max) {
+			return query, 0, 0, item.label
+		}
+	}
+
 	limit, err := marketLimitQuery(r, 50, 200)
 	if err != nil {
 		return query, 0, 0, err.Error()
@@ -806,6 +882,15 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 		if !passesRange(row.BookValuePerShare, query.minBookValuePerShare, query.maxBookValuePerShare) {
 			continue
 		}
+		if !passesRange(row.DebtRatio, query.minDebtRatio, query.maxDebtRatio) {
+			continue
+		}
+		if !passesRange(row.DebtToEquity, query.minDebtToEquity, query.maxDebtToEquity) {
+			continue
+		}
+		if !passesRange(row.CurrentRatio, query.minCurrentRatio, query.maxCurrentRatio) {
+			continue
+		}
 		filtered = append(filtered, row)
 	}
 
@@ -892,6 +977,19 @@ func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[s
 			}
 		}
 	}
+	// M7G — debt_ratio/debt_to_equity/current_ratio are independent of the income-statement join above
+	// (Model B): ScreenerBalance has already nulled them for any row off its own balance-only target
+	// period, and already applied the ci-only category policy, so this handler copies them verbatim —
+	// exactly like it already does for financials' metric fields. balance_period is this row's own
+	// actual balance-sheet period (from the same balance row, independent of financial_period), set
+	// only when at least one of the three ratios is actually exposed for it.
+	if bal, ok := balance[row.Canonical]; ok {
+		out.DebtRatio, out.DebtToEquity, out.CurrentRatio = bal.DebtRatio, bal.DebtToEquity, bal.CurrentRatio
+		if bal.DebtRatio != nil || bal.DebtToEquity != nil || bal.CurrentRatio != nil {
+			balancePeriod := fmt.Sprintf("%d-Q%d", bal.FiscalYear, bal.FiscalQuarter)
+			out.BalancePeriod = &balancePeriod
+		}
+	}
 	return out
 }
 
@@ -972,6 +1070,12 @@ func taiwanScreenerSortValue(row taiwanScreenerRow, field string) *float64 {
 		return row.NetMargin
 	case "book_value_per_share":
 		return row.BookValuePerShare
+	case "debt_ratio":
+		return row.DebtRatio
+	case "debt_to_equity":
+		return row.DebtToEquity
+	case "current_ratio":
+		return row.CurrentRatio
 	}
 	return nil
 }

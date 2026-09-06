@@ -244,11 +244,22 @@ func (f fixedTaiwanScreenerBalance) ScreenerBalance(context.Context, time.Time) 
 // though its income row is on target. Case C: 1101.TWSE, balance period 2026-Q1 equals its own income
 // period 2026-Q1, but that income period is NOT the domain target 2026-Q2 -- BVPS null. 9999.TWSE has
 // no income row at all, so it never reaches the balance join -- BVPS null.
+// M7G: 2330.TWSE's balance period (2026-Q2) equals the balance domain's own independent target (see
+// screenerBalanceFixtureFreshness) -- all three ratios exposed. 6488.TPEX/1101.TWSE are both on an
+// OLDER balance period (2026-Q1 != target 2026-Q2) -- Model B nulls their ratios (simulating what
+// ScreenerBalance itself already does), even though 6488.TPEX's own INCOME period is 2026-Q2 (proving
+// the balance-target gate is independent of income entirely, not the BVPS/Model A income-aligned rule).
+// 9999.TWSE has NO financials/income row at all (absent from screenerFinancialsFixtureRows) but DOES
+// have a balance row on-target -- proving Model B's key behavior (M7G.0 §17-19/27): the three ratios
+// are exposed purely from this row's own balance period, completely independent of income, while BVPS
+// stays null for it (the existing Model A BVPS join is nested inside the financials lookup, which never
+// succeeds for 9999.TWSE).
 func screenerBalanceFixtureRows() []foundation.FinancialStatementPeriod {
 	return []foundation.FinancialStatementPeriod{
-		{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 2, BookValuePerShare: floatPtr(28.5)},
-		{Canonical: "6488.TPEX", Code: "6488", Exchange: "TPEX", FiscalYear: 2026, FiscalQuarter: 1, BookValuePerShare: floatPtr(45.2)},
-		{Canonical: "1101.TWSE", Code: "1101", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 1, BookValuePerShare: floatPtr(12.3)},
+		{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", BookValuePerShare: floatPtr(28.5), DebtRatio: floatPtr(30.94), DebtToEquity: floatPtr(44.81), CurrentRatio: floatPtr(245.76)},
+		{Canonical: "6488.TPEX", Code: "6488", Exchange: "TPEX", FiscalYear: 2026, FiscalQuarter: 1, AccountingCategory: "ci", BookValuePerShare: floatPtr(45.2)},
+		{Canonical: "1101.TWSE", Code: "1101", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 1, AccountingCategory: "ci", BookValuePerShare: floatPtr(12.3)},
+		{Canonical: "9999.TWSE", Code: "9999", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", DebtRatio: floatPtr(55.88), DebtToEquity: floatPtr(126.65), CurrentRatio: floatPtr(128.14)},
 	}
 }
 
@@ -355,6 +366,8 @@ type screenerTestResponse struct {
 		DividendsDaysBehind     *int    `json:"dividends_days_behind"`
 		FinancialsPeriod        *string `json:"financials_period"`
 		FinancialsStatus        string  `json:"financials_status"`
+		BalancePeriod           *string `json:"balance_period"`
+		BalanceStatus           string  `json:"balance_status"`
 		Securities              []struct {
 			Canonical        string   `json:"canonical"`
 			Code             string   `json:"code"`
@@ -391,6 +404,10 @@ type screenerTestResponse struct {
 			OperatingMargin   *float64 `json:"operating_margin"`
 			NetMargin         *float64 `json:"net_margin"`
 			BookValuePerShare *float64 `json:"book_value_per_share"`
+			DebtRatio         *float64 `json:"debt_ratio"`
+			DebtToEquity      *float64 `json:"debt_to_equity"`
+			CurrentRatio      *float64 `json:"current_ratio"`
+			BalancePeriod     *string  `json:"balance_period"`
 		} `json:"securities"`
 	} `json:"data"`
 }
@@ -2301,14 +2318,17 @@ func TestTaiwanScreenerM7CNoUnrelatedSideEffects(t *testing.T) {
 	}
 }
 
-// no fabricated public period contract: book_value_period/balance_period/balance_sheet_period must
-// never appear in the response, and published_at/available_at remain absent (M7E-C.0 PIT policy).
+// no fabricated public period contract: book_value_period/balance_sheet_period must never appear in
+// the response, and published_at/available_at remain absent (M7E-C.0 PIT policy). balance_period was
+// deliberately added by M7G (M7G.0 §20/42) as a real, non-fabricated period identifier — the same
+// public-contract-naming policy this test enforces, not an exception to it — so it is no longer in
+// this forbidden list; see the M7G-specific balance_period tests instead.
 func TestTaiwanScreenerM7CNoFabricatedPeriodFieldsOrTimestamps(t *testing.T) {
 	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/screener?min_book_value_per_share=0", nil))
 	body := response.Body.String()
-	for _, forbidden := range []string{"published_at", "available_at", "book_value_period", "balance_period", "balance_sheet_period"} {
+	for _, forbidden := range []string{"published_at", "available_at", "book_value_period", "balance_sheet_period"} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("Screener response must never contain %q, got body=%s", forbidden, body)
 		}
@@ -2339,5 +2359,297 @@ func TestTaiwanScreenerM7CRegressionExistingFinancialFieldsUnaffected(t *testing
 	}
 	if payload.Data.FinancialsPeriod == nil || *payload.Data.FinancialsPeriod != "2026-Q2" {
 		t.Fatalf("financials_period regression: got %+v", payload.Data)
+	}
+}
+
+// ==================================================
+// M7G — balance-sheet ratios (debt_ratio / debt_to_equity / current_ratio, ci-only, Model B
+// independent balance target period). All three reuse the exact same balance-sheet bulk row
+// (screenerBalanceFixtureRows) already wired by newScreenerServerWithFinancialsAndBalanceDomain -- the
+// httpapi layer never re-derives them, it only copies/filters/sorts what the provider already computed.
+// ==================================================
+
+// Request-bound / income-decoupling matrix (task sections 18-20, 37): the M7G ratios are pure
+// balance-sheet metrics and must never trigger ScreenerFinancials on their own, unlike
+// book_value_per_share which always does.
+func TestTaiwanScreenerM7GRequestBoundIncomeDecoupling(t *testing.T) {
+	server, _, financialsCalls, balanceCalls := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	reset := func() { *financialsCalls, *balanceCalls = 0, 0 }
+
+	cases := []struct {
+		label                        string
+		query                        string
+		wantFinancials, wantBalance int
+	}{
+		{"vanilla", "", 0, 0},
+		{"debt_ratio filter only", "?min_debt_ratio=0", 0, 1},
+		{"debt_to_equity filter only", "?min_debt_to_equity=0", 0, 1},
+		{"current_ratio filter only", "?min_current_ratio=0", 0, 1},
+		{"sort=debt_ratio", "?sort=debt_ratio", 0, 1},
+		{"sort=debt_to_equity", "?sort=debt_to_equity", 0, 1},
+		{"sort=current_ratio", "?sort=current_ratio", 0, 1},
+		{"all three M7G ratios together", "?min_debt_ratio=0&min_debt_to_equity=0&min_current_ratio=0", 0, 1},
+		{"book_value_per_share only (unchanged Model A)", "?min_book_value_per_share=0", 1, 1},
+		{"M7G ratio + BVPS together", "?min_debt_ratio=0&min_book_value_per_share=0", 1, 1},
+		{"M7G ratio + income-only filter", "?min_debt_ratio=0&min_cumulative_eps=0", 1, 1},
+	}
+	for _, c := range cases {
+		reset()
+		requestScreener(t, server, c.query)
+		if *financialsCalls != c.wantFinancials || *balanceCalls != c.wantBalance {
+			t.Fatalf("%s: expected financials=%d balance=%d, got financials=%d balance=%d", c.label, c.wantFinancials, c.wantBalance, *financialsCalls, *balanceCalls)
+		}
+	}
+}
+
+// financials_status/financials_period must remain exactly their pre-M7G "not requested" shape (absent)
+// when only an M7G ratio is engaged -- an M7G-only request must never corrupt or fabricate them
+// (task section 39). balance_period/balance_status are the new, independent M7G domain fields.
+func TestTaiwanScreenerM7GDomainFieldsIndependentOfFinancialsStatus(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+
+	_, ratioOnly, _ := requestScreener(t, server, "?min_debt_ratio=0")
+	if ratioOnly.Data.FinancialsPeriod != nil || ratioOnly.Data.FinancialsStatus != "" {
+		t.Fatalf("M7G-ratio-only request must leave financials_period/financials_status absent (never fetched income), got %+v", ratioOnly.Data)
+	}
+	if ratioOnly.Data.BalancePeriod == nil || *ratioOnly.Data.BalancePeriod != "2026-Q2" {
+		t.Fatalf("balance_period expected 2026-Q2, got %v", ratioOnly.Data.BalancePeriod)
+	}
+	if ratioOnly.Data.BalanceStatus != "available" {
+		t.Fatalf("balance_status expected available, got %q", ratioOnly.Data.BalanceStatus)
+	}
+
+	_, vanilla, _ := requestScreener(t, server, "")
+	if vanilla.Data.BalancePeriod != nil || vanilla.Data.BalanceStatus != "" {
+		t.Fatalf("vanilla request must leave balance_period/balance_status absent, got %+v", vanilla.Data)
+	}
+}
+
+// Row-level fields end-to-end: 2330.TWSE (on the balance target period) exposes all three ratios plus
+// its own balance_period; 6488.TPEX/1101.TWSE (off the balance target period, Model B) have all three
+// nulled along with balance_period; 9999.TWSE has no income row at all yet still exposes the ratios
+// independently (the key Model B behavior -- task section 24/27).
+func TestTaiwanScreenerM7GRowFieldsAndModelBIndependence(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	_, payload, _ := requestScreener(t, server, "?sort=debt_ratio")
+	byCanonical := map[string]struct {
+		debtRatio, debtToEquity, currentRatio *float64
+		balancePeriod                         *string
+		bvps                                  *float64
+		financialPeriod                       *string
+	}{}
+	for _, item := range payload.Data.Securities {
+		byCanonical[item.Canonical] = struct {
+			debtRatio, debtToEquity, currentRatio *float64
+			balancePeriod                         *string
+			bvps                                  *float64
+			financialPeriod                       *string
+		}{item.DebtRatio, item.DebtToEquity, item.CurrentRatio, item.BalancePeriod, item.BookValuePerShare, item.FinancialPeriod}
+	}
+
+	a := byCanonical["2330.TWSE"]
+	if a.debtRatio == nil || *a.debtRatio != 30.94 || a.debtToEquity == nil || *a.debtToEquity != 44.81 || a.currentRatio == nil || *a.currentRatio != 245.76 {
+		t.Fatalf("2330.TWSE (on balance target 2026-Q2): expected all three ratios exposed, got %+v", a)
+	}
+	if a.balancePeriod == nil || *a.balancePeriod != "2026-Q2" {
+		t.Fatalf("2330.TWSE balance_period expected 2026-Q2, got %v", a.balancePeriod)
+	}
+
+	for _, canonical := range []string{"6488.TPEX", "1101.TWSE"} {
+		row := byCanonical[canonical]
+		if row.debtRatio != nil || row.debtToEquity != nil || row.currentRatio != nil {
+			t.Fatalf("%s is off the balance target period (2026-Q1 != 2026-Q2): expected all three ratios nil, got %+v", canonical, row)
+		}
+		if row.balancePeriod != nil {
+			t.Fatalf("%s: balance_period must be nil when no ratio is exposed, got %v", canonical, row.balancePeriod)
+		}
+	}
+
+	// 9999.TWSE: no income row at all, yet the three M7G ratios are still exposed (Model B, fully
+	// independent of income) -- while BVPS/financial_period stay nil (Model A never reaches it).
+	b := byCanonical["9999.TWSE"]
+	if b.debtRatio == nil || *b.debtRatio != 55.88 || b.debtToEquity == nil || *b.debtToEquity != 126.65 || b.currentRatio == nil || *b.currentRatio != 128.14 {
+		t.Fatalf("9999.TWSE (Model B, no income row): expected all three ratios exposed independently, got %+v", b)
+	}
+	if b.balancePeriod == nil || *b.balancePeriod != "2026-Q2" {
+		t.Fatalf("9999.TWSE balance_period expected 2026-Q2, got %v", b.balancePeriod)
+	}
+	if b.bvps != nil || b.financialPeriod != nil {
+		t.Fatalf("9999.TWSE: book_value_per_share/financial_period must remain nil (no income row), got bvps=%v financial_period=%v", b.bvps, b.financialPeriod)
+	}
+}
+
+// Range filter / sort semantics: an active min/max filter excludes a nil metric (missing != zero,
+// never treated as passing); nil values sort last for both asc and desc.
+func TestTaiwanScreenerM7GFilterAndSortSemantics(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+
+	_, filtered, _ := requestScreener(t, server, "?min_debt_ratio=-999999")
+	got := canonicalsOf(filtered)
+	if len(got) != 2 || !contains(got, "2330.TWSE") || !contains(got, "9999.TWSE") {
+		t.Fatalf("min_debt_ratio active filter: expected only the two rows with a non-nil debt_ratio, got %v", got)
+	}
+
+	_, sortedDesc, _ := requestScreener(t, server, "?sort=current_ratio&order=desc")
+	tail := []string{sortedDesc.Data.Securities[2].Canonical, sortedDesc.Data.Securities[3].Canonical}
+	if !contains(tail, "6488.TPEX") || !contains(tail, "1101.TWSE") {
+		t.Fatalf("sort=current_ratio desc: nil current_ratio rows must sort last, got order=%v", canonicalsOf(sortedDesc))
+	}
+	_, sortedAsc, _ := requestScreener(t, server, "?sort=current_ratio&order=asc")
+	tailAsc := []string{sortedAsc.Data.Securities[2].Canonical, sortedAsc.Data.Securities[3].Canonical}
+	if !contains(tailAsc, "6488.TPEX") || !contains(tailAsc, "1101.TWSE") {
+		t.Fatalf("sort=current_ratio asc: nil current_ratio rows must sort last too, got order=%v", canonicalsOf(sortedAsc))
+	}
+}
+
+// Zero is a real, retained value -- never confused with a missing (nil) metric -- for all three M7G
+// range filters. Uses a dedicated fixture (independent of screenerBalanceFixtureRows) so a genuine zero
+// ratio can be asserted unambiguously.
+func TestTaiwanScreenerM7GZeroValuePreserved(t *testing.T) {
+	d := 0
+	balancePeriod := "2026-Q2"
+	rows := []foundation.FinancialStatementPeriod{
+		{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", DebtRatio: floatPtr(0), DebtToEquity: floatPtr(0), CurrentRatio: floatPtr(0)},
+	}
+	server := NewServer(Config{
+		TaiwanScreener:        fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &d},
+		TaiwanScreenerBalance: fixedTaiwanScreenerBalance{rows: rows, freshness: foundation.TaiwanFundamentalsDomainFreshness{AsOf: &balancePeriod, Status: "available"}},
+	})
+	_, payload, _ := requestScreener(t, server, "?min_debt_ratio=0&min_debt_to_equity=0&min_current_ratio=0")
+	if len(canonicalsOf(payload)) != 1 || canonicalsOf(payload)[0] != "2330.TWSE" {
+		t.Fatalf("a genuine zero ratio must pass an active min=0 filter (zero is real, not missing), got %v", canonicalsOf(payload))
+	}
+}
+
+// malformed number / min > max -> 400 for the six new M7G range params; negative numbers accepted
+// syntactically (economically debt_ratio/debt_to_equity/current_ratio are never negative in practice,
+// but the query layer must not invent business bounds -- task section 21).
+func TestTaiwanScreenerM7GInvalidNumberAndMinGreaterThanMax400(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	badCases := []string{
+		"?min_debt_ratio=abc",
+		"?min_debt_to_equity=Infinity",
+		"?max_current_ratio=NaN",
+		"?min_debt_ratio=50&max_debt_ratio=10",
+		"?min_debt_to_equity=50&max_debt_to_equity=10",
+		"?min_current_ratio=50&max_current_ratio=10",
+	}
+	for _, query := range badCases {
+		code, _, _ := requestScreener(t, server, query)
+		if code != http.StatusBadRequest {
+			t.Fatalf("query %q: expected 400, got %d", query, code)
+		}
+	}
+	for _, query := range []string{"?min_debt_ratio=-50", "?min_debt_to_equity=-50", "?min_current_ratio=-50"} {
+		code, _, _ := requestScreener(t, server, query)
+		if code != http.StatusOK {
+			t.Fatalf("query %q: negative filter values must be syntactically valid, got %d", query, code)
+		}
+	}
+}
+
+// Sort key validation: the three new keys are accepted; an unknown key is still rejected exactly as
+// before (regression against the existing sort-key allowlist).
+func TestTaiwanScreenerM7GSortKeyAccepted(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	for _, key := range []string{"debt_ratio", "debt_to_equity", "current_ratio"} {
+		code, _, _ := requestScreener(t, server, "?sort="+key)
+		if code != http.StatusOK {
+			t.Fatalf("sort=%s: expected 200, got %d", key, code)
+		}
+	}
+	code, _, _ := requestScreener(t, server, "?sort=not_a_real_key")
+	if code != http.StatusBadRequest {
+		t.Fatalf("sort=not_a_real_key: expected 400, got %d", code)
+	}
+}
+
+// Partial/total balance-domain failure: successful rows/ratios preserved under partial, all M7G fields
+// nil under unavailable, daily rows always preserved, HTTP always 200 (task sections 30-31, 33-34).
+func TestTaiwanScreenerM7GPartialAndTotalBalanceFailure(t *testing.T) {
+	newServer := func(freshness foundation.TaiwanFundamentalsDomainFreshness, err error) *Server {
+		d := 0
+		return NewServer(Config{
+			TaiwanScreener:        fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &d},
+			TaiwanScreenerBalance: fixedTaiwanScreenerBalance{rows: screenerBalanceFixtureRows(), freshness: freshness, err: err},
+		})
+	}
+
+	period := "2026-Q2"
+	partial := foundation.TaiwanFundamentalsDomainFreshness{AsOf: &period, Status: "partial"}
+	code, partialPayload, _ := requestScreener(t, newServer(partial, nil), "?sort=debt_ratio")
+	if code != http.StatusOK {
+		t.Fatalf("partial balance domain must still return 200, got %d", code)
+	}
+	if partialPayload.Data.BalanceStatus != "partial" {
+		t.Fatalf("expected balance_status=partial, got %q", partialPayload.Data.BalanceStatus)
+	}
+	if partialPayload.Data.Total != 4 {
+		t.Fatalf("daily rows must remain preserved under partial balance domain, got total=%d", partialPayload.Data.Total)
+	}
+	found := false
+	for _, item := range partialPayload.Data.Securities {
+		if item.Canonical == "2330.TWSE" {
+			found = true
+			if item.DebtRatio == nil || *item.DebtRatio != 30.94 {
+				t.Fatalf("successful ratio rows must be preserved under partial, got %+v", item)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("2330.TWSE must remain present under partial balance domain")
+	}
+
+	code, unavailablePayload, _ := requestScreener(t, newServer(foundation.TaiwanFundamentalsDomainFreshness{}, fmt.Errorf("all balance endpoints failed")), "?sort=debt_ratio")
+	if code != http.StatusOK {
+		t.Fatalf("total balance failure must still return 200, got %d", code)
+	}
+	if unavailablePayload.Data.BalanceStatus != "unavailable" {
+		t.Fatalf("expected balance_status=unavailable, got %q", unavailablePayload.Data.BalanceStatus)
+	}
+	if unavailablePayload.Data.BalancePeriod != nil {
+		t.Fatalf("expected balance_period=nil under total failure, got %v", unavailablePayload.Data.BalancePeriod)
+	}
+	if unavailablePayload.Data.Total != 4 {
+		t.Fatalf("daily rows must remain preserved under total balance failure, got total=%d", unavailablePayload.Data.Total)
+	}
+	for _, item := range unavailablePayload.Data.Securities {
+		if item.DebtRatio != nil || item.DebtToEquity != nil || item.CurrentRatio != nil {
+			t.Fatalf("every M7G ratio field must be nil under total balance failure, got %+v", item)
+		}
+	}
+}
+
+// Regression: BVPS's existing Model A behavior (balance period == income period == financials target)
+// is completely unaffected by the presence of M7G ratio filters in the same request.
+func TestTaiwanScreenerM7GBVPSRegressionUnaffected(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	_, payload, _ := requestScreener(t, server, "?min_debt_ratio=-999999&sort=book_value_per_share")
+	for _, item := range payload.Data.Securities {
+		if item.Canonical == "2330.TWSE" {
+			if item.BookValuePerShare == nil || *item.BookValuePerShare != 28.5 {
+				t.Fatalf("2330.TWSE book_value_per_share regression: expected 28.5, got %v", item.BookValuePerShare)
+			}
+			if item.FinancialPeriod == nil || *item.FinancialPeriod != "2026-Q2" {
+				t.Fatalf("2330.TWSE financial_period regression: expected 2026-Q2, got %v", item.FinancialPeriod)
+			}
+		}
+		if item.Canonical == "6488.TPEX" && item.BookValuePerShare != nil {
+			t.Fatalf("6488.TPEX BVPS regression: expected nil (balance/income period mismatch), got %v", item.BookValuePerShare)
+		}
+	}
+	if payload.Data.FinancialsPeriod == nil || *payload.Data.FinancialsPeriod != "2026-Q2" {
+		t.Fatalf("financials_period regression: got %+v", payload.Data)
+	}
+}
+
+// No unrelated side effects: this server is configured ONLY with the daily + financials + balance
+// providers -- a 200 response for an M7G-ratio-only request proves Watchlist/fundamentals-per-security/
+// research/AI were never touched, mirroring TestTaiwanScreenerM7CNoUnrelatedSideEffects.
+func TestTaiwanScreenerM7GNoUnrelatedSideEffects(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	code, _, _ := requestScreener(t, server, "?min_debt_ratio=0&sort=current_ratio")
+	if code != http.StatusOK {
+		t.Fatalf("expected 200 with no unrelated dependencies configured, got %d", code)
 	}
 }

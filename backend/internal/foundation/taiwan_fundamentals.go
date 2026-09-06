@@ -66,10 +66,20 @@ type FinancialStatementPeriod struct {
 	TotalLiabilities   *int64            `json:"total_liabilities"`
 	Equity             *int64            `json:"equity"`
 	EquityParent       *int64            `json:"equity_attributable_to_parent"`
+	// M7G — current assets/liabilities feed CurrentRatio below; only populated by the balance-sheet
+	// bulk reader (parseBalanceSheetRow), never by the income-statement reader.
+	CurrentAssets      *int64            `json:"current_assets"`
+	CurrentLiabilities *int64            `json:"current_liabilities"`
 	BookValuePerShare  *float64          `json:"book_value_per_share"`
 	GrossMargin        *float64          `json:"gross_margin_percent"`
 	OperatingMargin    *float64          `json:"operating_margin_percent"`
 	NetMargin          *float64          `json:"net_margin_percent"`
+	// M7G — debt_ratio/debt_to_equity/current_ratio, derived in the provider layer from the raw
+	// balance-sheet amounts above (ci-only policy + independent balance-target-period nulling are both
+	// applied by ScreenerBalance, not here — see fundamentals.go).
+	DebtRatio          *float64          `json:"debt_ratio_percent"`
+	DebtToEquity       *float64          `json:"debt_to_equity_percent"`
+	CurrentRatio       *float64          `json:"current_ratio_percent"`
 	Currency           string            `json:"currency"`
 	Unit               string            `json:"unit"`
 	RawUnit            string            `json:"raw_unit"`
