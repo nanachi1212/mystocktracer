@@ -79,6 +79,17 @@ export type TaiwanScreenerSecurity = {
 	// balance_period on TaiwanScreenerResponse.
 	debt_ratio: number | null; debt_to_equity: number | null; current_ratio: number | null;
 	balance_period: string | null;
+	// M7H — operating_cash_flow/cash_flow_to_net_income (MOPS official quarterly XBRL bulk archive, all
+	// six categories, gated by the backend's own INDEPENDENT cash-flow-target-quarter discovery —
+	// completely decoupled from financial_period/financials_status and balance_period/balance_status
+	// above). operating_cash_flow is already thousand TWD (same convention as the backend's other raw
+	// monetary fields); cash_flow_to_net_income is already percentage-scale (132.62 means 132.62%),
+	// never rescaled here. cashflow_period is THIS security's own actual cash-flow reporting period,
+	// populated by the backend only when at least one of the two metrics above is exposed for it — never
+	// a substitute for financial_period/balance_period, never synthesized from the domain-level
+	// cashflow_period on TaiwanScreenerResponse. There is deliberately no ProfitLoss field here — the
+	// backend keeps that provider-internal, it never becomes a public field.
+	operating_cash_flow: number | null; cash_flow_to_net_income: number | null; cashflow_period: string | null;
 };
 
 export type TaiwanScreenerResponse = {
@@ -110,6 +121,14 @@ export type TaiwanScreenerResponse = {
 	// backend's own independent balance-target-period (Model B) — a separate domain from financials
 	// entirely, never combined with or substituted for financials_period/financials_status above.
 	balance_period?: string | null; balance_status?: string;
+	// M7H — additive, present only when the cash-flow domain was actually requested (via an active
+	// operating_cash_flow/cash_flow_to_net_income filter or sort key). cashflow_period is the backend's
+	// own independently-discovered target quarter from the MOPS XBRL bulk archive — a genuinely
+	// separate domain, never derived from or combined with financials_period/financials_status or
+	// balance_period/balance_status above. cashflow_status supports available/partial/unavailable,
+	// including a legitimate negatively-cached "unavailable" (a temporary MOPS outage) — never a
+	// fabricated period.
+	cashflow_period?: string | null; cashflow_status?: string;
 };
 
 export type TaiwanScreenerSort =
@@ -118,7 +137,8 @@ export type TaiwanScreenerSort =
 	| 'margin_balance' | 'margin_change' | 'short_balance' | 'short_change' | 'short_margin_ratio'
 	| 'monthly_revenue' | 'revenue_yoy' | 'revenue_mom' | 'cumulative_revenue_yoy' | 'pe' | 'pb' | 'dividend_yield' | 'cash_dividend' | 'stock_dividend' | 'total_dividend'
 	| 'cumulative_eps' | 'gross_margin' | 'operating_margin' | 'net_margin' | 'book_value_per_share'
-	| 'debt_ratio' | 'debt_to_equity' | 'current_ratio';
+	| 'debt_ratio' | 'debt_to_equity' | 'current_ratio'
+	| 'operating_cash_flow' | 'cash_flow_to_net_income';
 export type TaiwanScreenerOrder = 'asc' | 'desc';
 
 export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string }[] = [
@@ -153,6 +173,8 @@ export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string 
 	{ id: 'debt_ratio', label: '負債比率' },
 	{ id: 'debt_to_equity', label: '負債權益比' },
 	{ id: 'current_ratio', label: '流動比率' },
+	{ id: 'operating_cash_flow', label: '營業活動現金流量' },
+	{ id: 'cash_flow_to_net_income', label: '營業現金流／淨利' },
 ];
 
 const taiwanScreenerInstitutionalSortKeys = new Set<TaiwanScreenerSort>(['foreign_net', 'trust_net', 'dealer_net', 'institutional_net']);
@@ -172,6 +194,11 @@ const taiwanScreenerFinancialsSortKeys = new Set<TaiwanScreenerSort>(['cumulativ
 // taiwanScreenerHasFinancialsCriteria above: doing so would make the frontend present financials and
 // balance freshness as one concept when the backend keeps them separate on purpose.
 const taiwanScreenerBalanceSortKeys = new Set<TaiwanScreenerSort>(['debt_ratio', 'debt_to_equity', 'current_ratio']);
+// M7H — operating_cash_flow/cash_flow_to_net_income are a genuinely independent domain on the backend
+// (its own cashflow_period/cashflow_status, sourced from the MOPS XBRL bulk archive — a completely
+// different official source from every other Screener domain). Deliberately its own Set, not folded
+// into taiwanScreenerBalanceSortKeys/taiwanScreenerFinancialsSortKeys above.
+const taiwanScreenerCashflowSortKeys = new Set<TaiwanScreenerSort>(['operating_cash_flow', 'cash_flow_to_net_income']);
 
 export const taiwanScreenerOrderOptions: { id: TaiwanScreenerOrder; label: string }[] = [
 	{ id: 'desc', label: '高到低' },
@@ -223,6 +250,9 @@ export type TaiwanScreenerFilters = {
 	minDebtRatio: string; maxDebtRatio: string;
 	minDebtToEquity: string; maxDebtToEquity: string;
 	minCurrentRatio: string; maxCurrentRatio: string;
+	// M7H financial statement: all-category operating_cash_flow/cash_flow_to_net_income.
+	minOperatingCashFlow: string; maxOperatingCashFlow: string;
+	minCashFlowToNetIncome: string; maxCashFlowToNetIncome: string;
 	sort: TaiwanScreenerSort;
 	order: TaiwanScreenerOrder;
 	limit: number;
@@ -265,6 +295,8 @@ export function taiwanScreenerDefaultFilters(): TaiwanScreenerFilters {
 		minDebtRatio: '', maxDebtRatio: '',
 		minDebtToEquity: '', maxDebtToEquity: '',
 		minCurrentRatio: '', maxCurrentRatio: '',
+		minOperatingCashFlow: '', maxOperatingCashFlow: '',
+		minCashFlowToNetIncome: '', maxCashFlowToNetIncome: '',
 		sort: 'amount', order: 'desc',
 		limit: TAIWAN_SCREENER_PAGE_SIZE, offset: 0,
 	};
@@ -329,6 +361,20 @@ export function taiwanScreenerHasBalanceCriteria(filters: TaiwanScreenerFilters)
 	return [
 		filters.minDebtRatio, filters.maxDebtRatio, filters.minDebtToEquity, filters.maxDebtToEquity,
 		filters.minCurrentRatio, filters.maxCurrentRatio,
+	].some((raw) => taiwanScreenerRangeValue(raw) != null);
+}
+
+// M7H — true when `filters` (pass the APPLIED filters, never draft) actually engages the cash-flow
+// domain: an active min/max filter for operating_cash_flow/cash_flow_to_net_income, or a sort key
+// belonging to that domain. Genuinely independent of taiwanScreenerHasFinancialsCriteria/
+// taiwanScreenerHasBalanceCriteria above — the backend sources this domain from a completely different
+// official archive (MOPS XBRL bulk download, not TWSE OpenAPI/TPEx bulk JSON) with its own
+// cashflow_period/cashflow_status, decoupled from financials_period/financials_status and
+// balance_period/balance_status.
+export function taiwanScreenerHasCashflowCriteria(filters: TaiwanScreenerFilters): boolean {
+	if (taiwanScreenerCashflowSortKeys.has(filters.sort)) return true;
+	return [
+		filters.minOperatingCashFlow, filters.maxOperatingCashFlow, filters.minCashFlowToNetIncome, filters.maxCashFlowToNetIncome,
 	].some((raw) => taiwanScreenerRangeValue(raw) != null);
 }
 
@@ -415,6 +461,10 @@ export function taiwanScreenerPath(filters: TaiwanScreenerFilters): string {
 	setRange('max_debt_to_equity', filters.maxDebtToEquity);
 	setRange('min_current_ratio', filters.minCurrentRatio);
 	setRange('max_current_ratio', filters.maxCurrentRatio);
+	setRange('min_operating_cash_flow', filters.minOperatingCashFlow);
+	setRange('max_operating_cash_flow', filters.maxOperatingCashFlow);
+	setRange('min_cash_flow_to_net_income', filters.minCashFlowToNetIncome);
+	setRange('max_cash_flow_to_net_income', filters.maxCashFlowToNetIncome);
 	return `/api/v1/tw/screener?${params.toString()}`;
 }
 
@@ -453,6 +503,8 @@ export function validateTaiwanScreenerFilters(filters: TaiwanScreenerFilters): s
 		['minDebtRatio', 'maxDebtRatio', '負債比率最小不可高於最大'],
 		['minDebtToEquity', 'maxDebtToEquity', '負債權益比最小不可高於最大'],
 		['minCurrentRatio', 'maxCurrentRatio', '流動比率最小不可高於最大'],
+		['minOperatingCashFlow', 'maxOperatingCashFlow', '營業活動現金流量最小不可高於最大'],
+		['minCashFlowToNetIncome', 'maxCashFlowToNetIncome', '營業現金流／淨利最小不可高於最大'],
 	];
 	for (const [minKey, maxKey, message] of pairs) {
 		const min = taiwanScreenerRangeValue(filters[minKey as keyof TaiwanScreenerFilters] as string);
@@ -573,6 +625,18 @@ export function formatTaiwanPlainNumber(value?: number | null) {
 // unit label for display. Missing stays "—"; a genuine 0 or negative value is preserved untouched.
 export function formatTaiwanBookValuePerShare(value?: number | null) {
 	return value == null ? '—' : `${value.toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 元／股`;
+}
+
+// M7H — operating_cash_flow is already thousand TWD (the backend's thousandTWD() convention, same raw
+// unit as the income-statement's other monetary fields) — this converts to 億元 for DISPLAY ONLY,
+// following the same 億元 convention already used by formatTaiwanTWD for the daily traded amount
+// (1 億 = 100,000 thousand-TWD units, so the divisor here is 100,000 rather than formatTaiwanTWD's
+// 100,000,000 because the input is already in thousands). The underlying raw thousand-TWD number is
+// never touched for filter/sort/query purposes — only this derived string changes. Negative values
+// keep their sign (toLocaleString), and a genuine 0 renders "0 億元", never "—".
+export function formatTaiwanCashFlowTWD(value?: number | null) {
+	if (value == null) return '—';
+	return `${(value / 100_000).toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 億元`;
 }
 
 // Runs an async task as the latest "generation" of a scoped request (e.g. a market scope tab or

@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-	formatTaiwanBookValuePerShare, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
+	formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
 	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath,
-	taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
+	taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasCashflowCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
 	taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters,
 } from './taiwan-product';
 
@@ -435,8 +435,8 @@ describe('M7B — Taiwan Screener local range validation', () => {
 });
 
 describe('M7E-A — Taiwan Screener fundamentals query builder', () => {
-	it('16. sort dropdown offers exactly 31 options (M7A 4 + M7D 9 + M7E-A 8 + M7E-B 3 + M7E-C 2 + M7F 2 + M7G 3)', () => {
-		expect(taiwanScreenerSortOptions.length).toBe(31);
+	it('16. sort dropdown offers exactly 33 options (M7A 4 + M7D 9 + M7E-A 8 + M7E-B 3 + M7E-C 2 + M7F 2 + M7G 3 + M7H 2)', () => {
+		expect(taiwanScreenerSortOptions.length).toBe(33);
 	});
 
 	it('preserves every M7A/M7D sort id and adds the 8 new M7E-A sort ids', () => {
@@ -1059,5 +1059,155 @@ describe('M7G — percentage rendering (existing formatter, no rescale)', () => 
 
 	it('null renders as — (e.g. a non-ci category like 2882.TWSE)', () => {
 		expect(formatTaiwanPercent(null)).toBe('—');
+	});
+});
+
+describe('M7H — cash-flow query builder', () => {
+	it('default filters include the 4 new fields, all blank', () => {
+		const defaults = taiwanScreenerDefaultFilters();
+		for (const key of ['minOperatingCashFlow', 'maxOperatingCashFlow', 'minCashFlowToNetIncome', 'maxCashFlowToNetIncome'] as const) {
+			expect(defaults[key]).toBe('');
+		}
+	});
+
+	it('A. blank fields are omitted from the query', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		expect(path).not.toMatch(/min_operating_cash_flow|max_operating_cash_flow|min_cash_flow_to_net_income|max_cash_flow_to_net_income/);
+	});
+
+	it('B. each exact key is emitted correctly', () => {
+		const withValue = (overrides: Partial<TaiwanScreenerFilters>) => taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), ...overrides });
+		expect(withValue({ minOperatingCashFlow: '10' })).toContain('min_operating_cash_flow=10');
+		expect(withValue({ maxOperatingCashFlow: '20' })).toContain('max_operating_cash_flow=20');
+		expect(withValue({ minCashFlowToNetIncome: '30' })).toContain('min_cash_flow_to_net_income=30');
+		expect(withValue({ maxCashFlowToNetIncome: '40' })).toContain('max_cash_flow_to_net_income=40');
+	});
+
+	it('C. all four combined correctly in one query', () => {
+		const path = taiwanScreenerPath({
+			...taiwanScreenerDefaultFilters(),
+			minOperatingCashFlow: '1', maxOperatingCashFlow: '2', minCashFlowToNetIncome: '3', maxCashFlowToNetIncome: '4',
+		});
+		expect(path).toContain('min_operating_cash_flow=1');
+		expect(path).toContain('max_operating_cash_flow=2');
+		expect(path).toContain('min_cash_flow_to_net_income=3');
+		expect(path).toContain('max_cash_flow_to_net_income=4');
+	});
+
+	it('D. negative values are preserved (both metrics can legitimately be negative)', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '-500000', minCashFlowToNetIncome: '-6.34' });
+		expect(path).toContain('min_operating_cash_flow=-500000');
+		expect(path).toContain('min_cash_flow_to_net_income=-6.34');
+	});
+
+	it('D2. an explicit zero is serialized, never dropped as if blank', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '0', minCashFlowToNetIncome: '0' });
+		expect(path).toContain('min_operating_cash_flow=0');
+		expect(path).toContain('min_cash_flow_to_net_income=0');
+	});
+
+	it('E. malformed/Infinity/NaN draft can never produce those in the query output', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: 'abc', maxCashFlowToNetIncome: 'Infinity' });
+		expect(path).not.toMatch(/min_operating_cash_flow=|max_cash_flow_to_net_income=/);
+		expect(path).not.toMatch(/NaN|Infinity/);
+	});
+
+	it('F. existing M7G query params remain unchanged when the new fields are set', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minDebtRatio: '4', minOperatingCashFlow: '5' });
+		expect(path).toContain('min_debt_ratio=4');
+		expect(path).toContain('min_operating_cash_flow=5');
+	});
+
+	it('rejects inverted ranges', () => {
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '10', maxOperatingCashFlow: '5' })).toBe('營業活動現金流量最小不可高於最大');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minCashFlowToNetIncome: '10', maxCashFlowToNetIncome: '5' })).toBe('營業現金流／淨利最小不可高於最大');
+	});
+});
+
+describe('M7H — sort options', () => {
+	it('exposes operating_cash_flow/cash_flow_to_net_income without removing or duplicating existing options', () => {
+		const ids = taiwanScreenerSortOptions.map((item) => item.id);
+		expect(ids).toContain('operating_cash_flow');
+		expect(ids).toContain('cash_flow_to_net_income');
+		expect(new Set(ids).size).toBe(ids.length); // no duplicate values
+		for (const id of ['price', 'debt_ratio', 'net_margin', 'book_value_per_share']) {
+			expect(ids).toContain(id);
+		}
+	});
+
+	it('sort=operating_cash_flow/cash_flow_to_net_income query construction', () => {
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'operating_cash_flow' })).toContain('sort=operating_cash_flow');
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'cash_flow_to_net_income' })).toContain('sort=cash_flow_to_net_income');
+	});
+});
+
+// M7H's cash-flow domain is a genuinely INDEPENDENT domain on the backend (its own cashflow_period/
+// cashflow_status, sourced from the MOPS XBRL bulk archive rather than TWSE OpenAPI/TPEx bulk JSON), so
+// it gets its own applied-domain detection helper rather than joining taiwanScreenerHasFinancialsCriteria
+// or taiwanScreenerHasBalanceCriteria.
+describe('M7H — applied-domain detection (independent cash-flow criteria helper)', () => {
+	it('taiwanScreenerHasCashflowCriteria is true for an active operating_cash_flow/cash_flow_to_net_income filter or sort key', () => {
+		expect(taiwanScreenerHasCashflowCriteria({ ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '0' })).toBe(true);
+		expect(taiwanScreenerHasCashflowCriteria({ ...taiwanScreenerDefaultFilters(), maxCashFlowToNetIncome: '0' })).toBe(true);
+		expect(taiwanScreenerHasCashflowCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'operating_cash_flow' })).toBe(true);
+		expect(taiwanScreenerHasCashflowCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'cash_flow_to_net_income' })).toBe(true);
+	});
+
+	it('Clear (taiwanScreenerDefaultFilters()) resets it to false', () => {
+		expect(taiwanScreenerHasCashflowCriteria(taiwanScreenerDefaultFilters())).toBe(false);
+	});
+
+	it('is NOT triggered by an active debt_ratio/net_margin filter (separate domains on the backend)', () => {
+		expect(taiwanScreenerHasCashflowCriteria({ ...taiwanScreenerDefaultFilters(), minDebtRatio: '0' })).toBe(false);
+		expect(taiwanScreenerHasCashflowCriteria({ ...taiwanScreenerDefaultFilters(), minNetMargin: '0' })).toBe(false);
+		expect(taiwanScreenerHasCashflowCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'current_ratio' })).toBe(false);
+	});
+
+	it('taiwanScreenerHasFinancialsCriteria/taiwanScreenerHasBalanceCriteria remain unaffected by an active M7H filter', () => {
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '0' })).toBe(false);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'cash_flow_to_net_income' })).toBe(false);
+	});
+});
+
+describe('M7H — ratio rendering (existing formatter, no ×100 regression)', () => {
+	it('132.62 renders as 132.62%, not 13262%', () => {
+		expect(formatTaiwanPercent(132.62)).toBe('132.62%');
+	});
+
+	it('-6.34 renders as -6.34%, sign preserved', () => {
+		expect(formatTaiwanPercent(-6.34)).toBe('-6.34%');
+	});
+
+	it('0 renders as 0%, not missing', () => {
+		expect(formatTaiwanPercent(0)).toBe('0%');
+	});
+
+	it('null renders as —', () => {
+		expect(formatTaiwanPercent(null)).toBe('—');
+	});
+});
+
+describe('M7H — operating_cash_flow display (thousand-TWD raw contract preserved)', () => {
+	it('positive value renders in 億元, derived from the raw thousand-TWD number', () => {
+		expect(formatTaiwanCashFlowTWD(1122637757)).toBe(`${(1122637757 / 100_000).toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 億元`);
+	});
+
+	it('negative value stays visibly negative', () => {
+		const rendered = formatTaiwanCashFlowTWD(-150005);
+		expect(rendered).toContain('-');
+		expect(rendered).toBe(`${(-150005 / 100_000).toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 億元`);
+	});
+
+	it('zero renders as a real zero, not —', () => {
+		expect(formatTaiwanCashFlowTWD(0)).toBe('0 億元');
+	});
+
+	it('null renders as —', () => {
+		expect(formatTaiwanCashFlowTWD(null)).toBe('—');
+	});
+
+	it('does not rescale the underlying raw value for query/filter purposes (raw thousand-TWD number is untouched)', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '1122637757' });
+		expect(path).toContain('min_operating_cash_flow=1122637757');
 	});
 });
