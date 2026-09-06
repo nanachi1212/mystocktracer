@@ -47,12 +47,18 @@ type taiwanScreenerRow struct {
 	// directly by the same bulk row, never FinMind, never locally computed.
 	MonthlyRevenue *int64   `json:"monthly_revenue"`
 	RevenueYoY     *float64 `json:"revenue_yoy"`
-	PE             *float64 `json:"pe"`
-	PB             *float64 `json:"pb"`
-	DividendYield  *float64 `json:"dividend_yield"`
-	CashDividend   *float64 `json:"cash_dividend"`
-	StockDividend  *float64 `json:"stock_dividend"`
-	TotalDividend  *float64 `json:"total_dividend"`
+	// M7F — revenue_mom/cumulative_revenue_yoy come from the exact same official bulk row as
+	// monthly_revenue/revenue_yoy above (never a second lookup, never FinMind). revenue_mom is the
+	// official current-month-over-previous-month %; cumulative_revenue_yoy is the official
+	// cumulative-revenue year-over-year %. Both are already percentage-scale, never rescaled here.
+	RevenueMoM           *float64 `json:"revenue_mom"`
+	CumulativeRevenueYoY *float64 `json:"cumulative_revenue_yoy"`
+	PE                   *float64 `json:"pe"`
+	PB                   *float64 `json:"pb"`
+	DividendYield        *float64 `json:"dividend_yield"`
+	CashDividend         *float64 `json:"cash_dividend"`
+	StockDividend        *float64 `json:"stock_dividend"`
+	TotalDividend        *float64 `json:"total_dividend"`
 	// M7E-B — financial statement (income-statement only; live-current, official-bulk-sourced).
 	// financial_period is the security's OWN actual reporting period (e.g. "2026-Q2"), always set
 	// whenever a valid statement row was parsed for it — independent of whether the metric fields
@@ -144,12 +150,15 @@ type taiwanScreenerQuery struct {
 	// M7E-A revenue/valuation/dividend filters.
 	minMonthlyRevenue, maxMonthlyRevenue *float64
 	minRevenueYoY, maxRevenueYoY         *float64
-	minPE, maxPE                         *float64
-	minPB, maxPB                         *float64
-	minDividendYield, maxDividendYield   *float64
-	minCashDividend, maxCashDividend     *float64
-	minStockDividend, maxStockDividend   *float64
-	minTotalDividend, maxTotalDividend   *float64
+	// M7F revenue growth (official MoM% and cumulative YoY%, same bulk row as above).
+	minRevenueMoM, maxRevenueMoM                     *float64
+	minCumulativeRevenueYoY, maxCumulativeRevenueYoY *float64
+	minPE, maxPE                                     *float64
+	minPB, maxPB                                     *float64
+	minDividendYield, maxDividendYield               *float64
+	minCashDividend, maxCashDividend                 *float64
+	minStockDividend, maxStockDividend               *float64
+	minTotalDividend, maxTotalDividend               *float64
 	// M7E-B financial statement filters (cumulative EPS + ci-only margins).
 	minCumulativeEPS, maxCumulativeEPS     *float64
 	minGrossMargin, maxGrossMargin         *float64
@@ -169,6 +178,7 @@ var taiwanScreenerSortKeys = map[string]bool{
 	"cash_dividend": true, "stock_dividend": true, "total_dividend": true,
 	"cumulative_eps": true, "gross_margin": true, "operating_margin": true,
 	"net_margin": true, "book_value_per_share": true,
+	"revenue_mom": true, "cumulative_revenue_yoy": true,
 }
 
 // taiwanScreenerNeedsInstitutional/taiwanScreenerNeedsMargin decide whether this specific request
@@ -203,11 +213,13 @@ func taiwanScreenerNeedsMargin(q taiwanScreenerQuery) bool {
 // vanilla request (and one that only engages M7A/M7D fields) must never trigger any of these.
 func taiwanScreenerNeedsRevenue(q taiwanScreenerQuery) bool {
 	switch q.sort {
-	case "monthly_revenue", "revenue_yoy":
+	case "monthly_revenue", "revenue_yoy", "revenue_mom", "cumulative_revenue_yoy":
 		return true
 	}
 	return q.minMonthlyRevenue != nil || q.maxMonthlyRevenue != nil ||
-		q.minRevenueYoY != nil || q.maxRevenueYoY != nil
+		q.minRevenueYoY != nil || q.maxRevenueYoY != nil ||
+		q.minRevenueMoM != nil || q.maxRevenueMoM != nil ||
+		q.minCumulativeRevenueYoY != nil || q.maxCumulativeRevenueYoY != nil
 }
 
 func taiwanScreenerNeedsValuation(q taiwanScreenerQuery) bool {
@@ -491,7 +503,7 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		query.sort = "amount"
 	}
 	if !taiwanScreenerSortKeys[query.sort] {
-		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend, cumulative_eps, gross_margin, operating_margin, net_margin, book_value_per_share"
+		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend, cumulative_eps, gross_margin, operating_margin, net_margin, book_value_per_share, revenue_mom, cumulative_revenue_yoy"
 	}
 
 	query.order = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order")))
@@ -599,6 +611,8 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 	}{
 		{"min_monthly_revenue", "max_monthly_revenue", &query.minMonthlyRevenue, &query.maxMonthlyRevenue, "min_monthly_revenue must not be greater than max_monthly_revenue"},
 		{"min_revenue_yoy", "max_revenue_yoy", &query.minRevenueYoY, &query.maxRevenueYoY, "min_revenue_yoy must not be greater than max_revenue_yoy"},
+		{"min_revenue_mom", "max_revenue_mom", &query.minRevenueMoM, &query.maxRevenueMoM, "min_revenue_mom must not be greater than max_revenue_mom"},
+		{"min_cumulative_revenue_yoy", "max_cumulative_revenue_yoy", &query.minCumulativeRevenueYoY, &query.maxCumulativeRevenueYoY, "min_cumulative_revenue_yoy must not be greater than max_cumulative_revenue_yoy"},
 		{"min_pe", "max_pe", &query.minPE, &query.maxPE, "min_pe must not be greater than max_pe"},
 		{"min_pb", "max_pb", &query.minPB, &query.maxPB, "min_pb must not be greater than max_pb"},
 		{"min_dividend_yield", "max_dividend_yield", &query.minDividendYield, &query.maxDividendYield, "min_dividend_yield must not be greater than max_dividend_yield"},
@@ -753,6 +767,12 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 		if !passesRange(row.RevenueYoY, query.minRevenueYoY, query.maxRevenueYoY) {
 			continue
 		}
+		if !passesRange(row.RevenueMoM, query.minRevenueMoM, query.maxRevenueMoM) {
+			continue
+		}
+		if !passesRange(row.CumulativeRevenueYoY, query.minCumulativeRevenueYoY, query.maxCumulativeRevenueYoY) {
+			continue
+		}
 		if !passesRange(row.PE, query.minPE, query.maxPE) {
 			continue
 		}
@@ -841,6 +861,8 @@ func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[s
 	if rev, ok := revenue[row.Canonical]; ok {
 		monthlyRevenue := rev.Revenue
 		out.MonthlyRevenue, out.RevenueYoY = &monthlyRevenue, rev.OfficialYoY
+		// M7F — same official bulk row as monthly_revenue/revenue_yoy above; never a second lookup.
+		out.RevenueMoM, out.CumulativeRevenueYoY = rev.OfficialMoM, rev.CumulativeYoY
 	}
 	if val, ok := valuation[row.Canonical]; ok {
 		out.PE, out.PB, out.DividendYield = val.PE, val.PB, val.DividendYield
@@ -924,6 +946,10 @@ func taiwanScreenerSortValue(row taiwanScreenerRow, field string) *float64 {
 		return int64ToFloatPointer(row.MonthlyRevenue)
 	case "revenue_yoy":
 		return row.RevenueYoY
+	case "revenue_mom":
+		return row.RevenueMoM
+	case "cumulative_revenue_yoy":
+		return row.CumulativeRevenueYoY
 	case "pe":
 		return row.PE
 	case "pb":

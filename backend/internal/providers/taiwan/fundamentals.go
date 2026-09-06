@@ -202,9 +202,15 @@ func parseOfficialRevenue(s foundation.SecurityIdentity, sourceURL string, row m
 	if err != nil {
 		return foundation.MonthlyRevenue{}, fmt.Errorf("previous cumulative revenue: %w", err)
 	}
+	// M7F: 營業收入-上月比較增減(%) (revenue_mom) and 累計營業收入-前期比較增減(%) (cumulative_revenue_yoy)
+	// are cosmetic, optional percentage fields — a malformed value for either one must never fail the
+	// whole row (which would also silently drop this security's otherwise-valid monthly_revenue/
+	// revenue_yoy). A parse error here is therefore treated the same as a blank/missing value (nil),
+	// isolated to just these two fields. This intentionally does NOT change officialYoY's existing
+	// fatal-on-malformed behavior below (out of scope for M7F; revenue_yoy's semantics are unchanged).
 	officialMoM, err := optionalFloat(row["營業收入-上月比較增減(%)"])
 	if err != nil {
-		return foundation.MonthlyRevenue{}, fmt.Errorf("official MoM: %w", err)
+		officialMoM = nil
 	}
 	officialYoY, err := optionalFloat(row["營業收入-去年同月增減(%)"])
 	if err != nil {
@@ -212,7 +218,7 @@ func parseOfficialRevenue(s foundation.SecurityIdentity, sourceURL string, row m
 	}
 	cumulativeYoY, err := optionalFloat(row["累計營業收入-前期比較增減(%)"])
 	if err != nil {
-		return foundation.MonthlyRevenue{}, fmt.Errorf("cumulative YoY: %w", err)
+		cumulativeYoY = nil
 	}
 	item := foundation.MonthlyRevenue{Canonical: s.Canonical, Code: s.Code, Name: s.Name, Exchange: s.Exchange, Year: year, Month: month, Period: fmt.Sprintf("%04d-%02d", year, month), Revenue: revenue, PreviousMonthRevenue: previousMonth, PreviousYearRevenue: previousYear, OfficialMoM: officialMoM, OfficialYoY: officialYoY, CumulativeRevenue: cumulative, PreviousYearCumulativeRevenue: previousCumulative, CumulativeYoY: cumulativeYoY, Currency: "TWD", Unit: "TWD", RawUnit: "thousand_TWD", RawValues: map[string]string{"revenue": row["營業收入-當月營收"]}, Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":monthly_revenue", SourceURL: sourceURL, RetrievedAt: time.Now(), Status: "official"}
 	if previousMonth != nil {
@@ -498,9 +504,15 @@ func sortDividendRecordsDesc(items []foundation.DividendRecord) {
 // dividendsDomainFreshness below) — never a fabricated publication claim.
 
 // ScreenerRevenue returns, for every TWSE/TPEx stock security, the latest official monthly revenue
-// row (including the official YoY% already carried by that same bulk row) — never FinMind, never
-// per-security. ETF company revenue is not applicable, mirroring Fundamentals()'s existing
-// "unsupported" capability for ETFs.
+// row (including the official MoM/YoY/cumulative-YoY% already carried by that same bulk row) — never
+// FinMind, never per-security. ETF company revenue is not applicable, mirroring Fundamentals()'s
+// existing "unsupported" capability for ETFs.
+//
+// M7F: tracks attempted/succeeded per exchange (mirroring the same attempted/succeeded pattern already
+// used by ScreenerFinancials/ScreenerBalance) so revenueDomainFreshness can report a truthful "partial"
+// status when exactly one of the two exchange requests fails — previously this domain only ever
+// reported "available" (any rows at all) or "unavailable" (zero rows), silently treating a one-exchange
+// failure as full coverage.
 func (c *Client) ScreenerRevenue(ctx context.Context, now time.Time) ([]foundation.MonthlyRevenue, foundation.TaiwanFundamentalsDomainFreshness, error) {
 	identities, err := c.Directory(ctx)
 	if err != nil {
@@ -508,16 +520,19 @@ func (c *Client) ScreenerRevenue(ctx context.Context, now time.Time) ([]foundati
 	}
 	allow := identityAllowlist(identities)
 	rows := make([]foundation.MonthlyRevenue, 0, len(identities))
+	attempted, succeeded := 0, 0
 	for _, exchange := range []string{"TWSE", "TPEX"} {
 		path, base := "/opendata/t187ap05_L", c.twseBaseURL
 		if exchange == "TPEX" {
 			path, base = "/mopsfin_t187ap05_O", c.tpexBaseURL
 		}
 		u := base + path
+		attempted++
 		raw, fetchErr := c.fundamentalsRows(ctx, u, 24*time.Hour)
 		if fetchErr != nil {
 			continue
 		}
+		succeeded++
 		for _, row := range raw {
 			identity, ok := allow[exchange][companyCode(row)]
 			if !ok || identity.Type == foundation.SecurityTypeETF {
@@ -530,7 +545,7 @@ func (c *Client) ScreenerRevenue(ctx context.Context, now time.Time) ([]foundati
 			rows = append(rows, item)
 		}
 	}
-	return rows, revenueDomainFreshness(rows), nil
+	return rows, revenueDomainFreshness(rows, attempted, succeeded), nil
 }
 
 // ScreenerValuation returns, for every TWSE/TPEx security present in the official valuation bulk
@@ -610,7 +625,15 @@ func (c *Client) ScreenerDividends(ctx context.Context, now time.Time) ([]founda
 // revenueDomainFreshness reports the latest loaded revenue PERIOD across all rows (e.g. "2026-08"),
 // never a fabricated calendar publication date. Status is "available"/"unavailable" only — a monthly
 // filing cadence has no truthful trading-day days-behind equivalent, so none is computed.
-func revenueDomainFreshness(rows []foundation.MonthlyRevenue) foundation.TaiwanFundamentalsDomainFreshness {
+// revenueDomainFreshness reports the latest loaded revenue PERIOD across all rows (e.g. "2026-08"),
+// never a fabricated calendar publication date, and a truthful coverage status: "available" when both
+// the TWSE and TPEx requests succeeded, "partial" when exactly one succeeded (so that exchange's rows
+// are genuinely usable, but market-wide coverage is incomplete — M7F), and "unavailable" when neither
+// succeeded.
+func revenueDomainFreshness(rows []foundation.MonthlyRevenue, attempted, succeeded int) foundation.TaiwanFundamentalsDomainFreshness {
+	if succeeded == 0 {
+		return foundation.TaiwanFundamentalsDomainFreshness{Status: "unavailable"}
+	}
 	latest := ""
 	for _, row := range rows {
 		if row.Period > latest {
@@ -620,7 +643,11 @@ func revenueDomainFreshness(rows []foundation.MonthlyRevenue) foundation.TaiwanF
 	if latest == "" {
 		return foundation.TaiwanFundamentalsDomainFreshness{Status: "unavailable"}
 	}
-	return foundation.TaiwanFundamentalsDomainFreshness{AsOf: &latest, Status: "available"}
+	status := "available"
+	if succeeded < attempted {
+		status = "partial"
+	}
+	return foundation.TaiwanFundamentalsDomainFreshness{AsOf: &latest, Status: status}
 }
 
 // dividendsDomainFreshness reports the latest loaded dividend YEAR across all rows as a plain

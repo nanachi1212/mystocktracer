@@ -272,6 +272,176 @@ func TestScreenerRevenueExcludesETFs(t *testing.T) {
 	}
 }
 
+// TestScreenerRevenueOneExchangeFailureReportsPartialStatus (M7F) proves that when exactly one of the
+// two exchange revenue requests fails, the successful exchange's rows remain fully usable and the
+// domain status truthfully reads "partial" — not "available" (M7F.0 found the domain previously had
+// no partial state at all, silently reporting "available" whenever any rows existed regardless of
+// whether both exchanges actually succeeded).
+func TestScreenerRevenueOneExchangeFailureReportsPartialStatus(t *testing.T) {
+	twseDirectory := `[{"公司代號":"2330","公司簡稱":"台積電"}]`
+	tpexDirectory := `[{"SecuritiesCompanyCode":"6488","CompanyAbbreviation":"環球晶"}]`
+	twseRevenue := `[{"公司代號":"2330","資料年月":"11507","營業收入-當月營收":"100"}]`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			_, _ = w.Write([]byte(twseDirectory))
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[]`))
+		case "/mopsfin_t187ap03_O":
+			_, _ = w.Write([]byte(tpexDirectory))
+		case "/opendata/t187ap05_L":
+			_, _ = w.Write([]byte(twseRevenue))
+		case "/mopsfin_t187ap05_O":
+			http.Error(w, "boom", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerRevenue(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Canonical != "2330.TWSE" {
+		t.Fatalf("TWSE's successful row must remain usable despite TPEx failure, got %+v", rows)
+	}
+	if freshness.Status != "partial" {
+		t.Fatalf("expected partial status (1/2 exchanges succeeded), got %+v", freshness)
+	}
+}
+
+// TestScreenerRevenueInverseExchangeFailureReportsPartialStatus (M7F) proves the symmetric case: TWSE
+// fails, TPEx succeeds — TPEx rows remain usable, status is truthfully "partial".
+func TestScreenerRevenueInverseExchangeFailureReportsPartialStatus(t *testing.T) {
+	twseDirectory := `[{"公司代號":"2330","公司簡稱":"台積電"}]`
+	tpexDirectory := `[{"SecuritiesCompanyCode":"6488","CompanyAbbreviation":"環球晶"}]`
+	tpexRevenue := `[{"公司代號":"6488","資料年月":"11507","營業收入-當月營收":"100"}]`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			_, _ = w.Write([]byte(twseDirectory))
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[]`))
+		case "/mopsfin_t187ap03_O":
+			_, _ = w.Write([]byte(tpexDirectory))
+		case "/opendata/t187ap05_L":
+			http.Error(w, "boom", http.StatusInternalServerError)
+		case "/mopsfin_t187ap05_O":
+			_, _ = w.Write([]byte(tpexRevenue))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerRevenue(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Canonical != "6488.TPEX" {
+		t.Fatalf("TPEx's successful row must remain usable despite TWSE failure, got %+v", rows)
+	}
+	if freshness.Status != "partial" {
+		t.Fatalf("expected partial status (1/2 exchanges succeeded), got %+v", freshness)
+	}
+}
+
+// TestScreenerRevenueBothExchangesFailYieldsUnavailable (M7F) proves that when both exchange requests
+// fail, the domain truthfully reports unavailable with zero rows — never a fabricated partial result.
+func TestScreenerRevenueBothExchangesFailYieldsUnavailable(t *testing.T) {
+	twseDirectory := `[{"公司代號":"2330","公司簡稱":"台積電"}]`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			_, _ = w.Write([]byte(twseDirectory))
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[]`))
+		case "/mopsfin_t187ap03_O":
+			_, _ = w.Write([]byte(`[]`))
+		case "/opendata/t187ap05_L", "/mopsfin_t187ap05_O":
+			http.Error(w, "boom", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, freshness, err := client.ScreenerRevenue(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("expected zero rows when both exchanges fail, got %+v", rows)
+	}
+	if freshness.Status != "unavailable" {
+		t.Fatalf("expected unavailable status, got %+v", freshness)
+	}
+}
+
+// TestScreenerRevenueMalformedMoMOrCumulativeYoYIsolatesFieldNotWholeRow (M7F) proves that a malformed
+// 營業收入-上月比較增減(%) or 累計營業收入-前期比較增減(%) value never fails the whole row — the row's
+// other valid fields (including monthly_revenue and official YoY) remain usable, and only the
+// malformed percentage field itself becomes nil. Before M7F, parseOfficialRevenue treated a malformed
+// value for either field as a fatal row-level error (via optionalFloat's returned error propagating up
+// and the caller's `continue`), silently dropping the entire security from the Screener domain.
+func TestScreenerRevenueMalformedMoMOrCumulativeYoYIsolatesFieldNotWholeRow(t *testing.T) {
+	twseDirectory := `[{"公司代號":"1001","公司簡稱":"A"},{"公司代號":"1002","公司簡稱":"B"}]`
+	twseRevenue := `[
+		{"公司代號":"1001","資料年月":"11507","營業收入-當月營收":"100","營業收入-去年同月增減(%)":"12.5","營業收入-上月比較增減(%)":"garbage","累計營業收入-前期比較增減(%)":"garbage"},
+		{"公司代號":"1002","資料年月":"11507","營業收入-當月營收":"200","營業收入-去年同月增減(%)":"5.0","營業收入-上月比較增減(%)":"7.5","累計營業收入-前期比較增減(%)":"9.9"}
+	]`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			_, _ = w.Write([]byte(twseDirectory))
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[]`))
+		case "/mopsfin_t187ap03_O":
+			_, _ = w.Write([]byte(`[]`))
+		case "/opendata/t187ap05_L":
+			_, _ = w.Write([]byte(twseRevenue))
+		case "/mopsfin_t187ap05_O":
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	now := time.Date(2026, 8, 28, 18, 0, 0, 0, taipei())
+	client := NewClient(Config{TWSEBaseURL: server.URL, TPExBaseURL: server.URL, Now: func() time.Time { return now }})
+	rows, _, err := client.ScreenerRevenue(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byCanonical := map[string]foundation.MonthlyRevenue{}
+	for _, row := range rows {
+		byCanonical[row.Canonical] = row
+	}
+	malformed, ok := byCanonical["1001.TWSE"]
+	if !ok {
+		t.Fatalf("row with malformed MoM/cumulative-YoY must still be present (row isolation), got %+v", byCanonical)
+	}
+	if malformed.Revenue != 100000 || malformed.OfficialYoY == nil || *malformed.OfficialYoY != 12.5 {
+		t.Fatalf("row's other valid fields must remain usable despite malformed MoM/cumulative-YoY, got %+v", malformed)
+	}
+	if malformed.OfficialMoM != nil {
+		t.Fatalf("malformed official MoM must become nil, not a fatal error, got %+v", malformed.OfficialMoM)
+	}
+	if malformed.CumulativeYoY != nil {
+		t.Fatalf("malformed cumulative YoY must become nil, not a fatal error, got %+v", malformed.CumulativeYoY)
+	}
+	valid, ok := byCanonical["1002.TWSE"]
+	if !ok || valid.OfficialMoM == nil || *valid.OfficialMoM != 7.5 || valid.CumulativeYoY == nil || *valid.CumulativeYoY != 9.9 {
+		t.Fatalf("well-formed row must be unaffected, got %+v", valid)
+	}
+}
+
 // TestScreenerValuationUsesOneBulkRequestPerExchangeRegardlessOfRowCount (M7E-A) proves
 // ScreenerValuation makes exactly one TWSE + one TPEx official valuation request in total.
 func TestScreenerValuationUsesOneBulkRequestPerExchangeRegardlessOfRowCount(t *testing.T) {

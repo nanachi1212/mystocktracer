@@ -134,12 +134,13 @@ func (f fixedTaiwanScreenerDividends) ScreenerDividends(context.Context, time.Ti
 	return f.rows, f.freshness, f.err
 }
 
-// screenerRevenueFixtureRows: 2330.TWSE has official revenue+YoY; 6488.TPEX has a genuine zero YoY;
-// 9999.TWSE (from screenerFixtureRows) deliberately has NO revenue row.
+// screenerRevenueFixtureRows: 2330.TWSE has official revenue+YoY+MoM+cumulative YoY; 6488.TPEX has a
+// genuine zero YoY and a genuine negative MoM (M7F). 9999.TWSE (from screenerFixtureRows) deliberately
+// has NO revenue row.
 func screenerRevenueFixtureRows() []foundation.MonthlyRevenue {
 	return []foundation.MonthlyRevenue{
-		{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", Period: "2026-08", Revenue: 200000000, OfficialYoY: floatPtr(12.5)},
-		{Canonical: "6488.TPEX", Code: "6488", Exchange: "TPEX", Period: "2026-08", Revenue: 0, OfficialYoY: floatPtr(0)},
+		{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", Period: "2026-08", Revenue: 200000000, OfficialYoY: floatPtr(12.5), OfficialMoM: floatPtr(5.62), CumulativeYoY: floatPtr(37.01)},
+		{Canonical: "6488.TPEX", Code: "6488", Exchange: "TPEX", Period: "2026-08", Revenue: 0, OfficialYoY: floatPtr(0), OfficialMoM: floatPtr(-11.5), CumulativeYoY: floatPtr(-4.44)},
 	}
 }
 
@@ -374,9 +375,11 @@ type screenerTestResponse struct {
 			ShortBalance     *int64   `json:"short_balance"`
 			ShortChange      *int64   `json:"short_change"`
 			ShortMarginRatio *float64 `json:"short_margin_ratio"`
-			MonthlyRevenue   *int64   `json:"monthly_revenue"`
-			RevenueYoY       *float64 `json:"revenue_yoy"`
-			PE               *float64 `json:"pe"`
+			MonthlyRevenue       *int64   `json:"monthly_revenue"`
+			RevenueYoY           *float64 `json:"revenue_yoy"`
+			RevenueMoM           *float64 `json:"revenue_mom"`
+			CumulativeRevenueYoY *float64 `json:"cumulative_revenue_yoy"`
+			PE                   *float64 `json:"pe"`
 			PB               *float64 `json:"pb"`
 			DividendYield    *float64 `json:"dividend_yield"`
 			CashDividend     *float64 `json:"cash_dividend"`
@@ -1547,6 +1550,247 @@ func TestTaiwanScreenerM7EFreshnessScopedAndNoFabricatedPublicationTimestamp(t *
 
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/screener?min_monthly_revenue=0&min_pe=0&min_cash_dividend=0", nil))
+	body := response.Body.String()
+	if strings.Contains(body, "published_at") || strings.Contains(body, "available_at") {
+		t.Fatalf("Screener response must never contain published_at/available_at, got body=%s", body)
+	}
+}
+
+// ==================================================
+// M7F -- Revenue growth (revenue_mom + cumulative_revenue_yoy) Screener filters
+// ==================================================
+
+// legacy request unchanged/lazy: the revenue provider is never called for a plain request, and the two
+// new fields never appear on any row.
+func TestTaiwanScreenerM7FLegacyRequestUnchangedAndLazy(t *testing.T) {
+	server, dailyCalls, revenueCalls, _, _ := newScreenerServerWithFundamentalsDomains(t)
+	code, payload, _ := requestScreener(t, server, "")
+	if code != http.StatusOK || payload.Data.Total != 4 {
+		t.Fatalf("legacy request should behave exactly as before: code=%d total=%d", code, payload.Data.Total)
+	}
+	if *dailyCalls != 1 {
+		t.Fatalf("expected exactly 1 daily call, got %d", *dailyCalls)
+	}
+	if *revenueCalls != 0 {
+		t.Fatalf("legacy request must not call the revenue provider, got %d calls", *revenueCalls)
+	}
+}
+
+// malformed number / min > max -> 400 for the two new range pairs; negative accepted.
+func TestTaiwanScreenerM7FInvalidNumberAndMinGreaterThanMax400(t *testing.T) {
+	server, _, _, _, _ := newScreenerServerWithFundamentalsDomains(t)
+	badCases := []string{
+		"?min_revenue_mom=abc",
+		"?min_cumulative_revenue_yoy=abc",
+		"?min_revenue_mom=Infinity",
+		"?max_cumulative_revenue_yoy=NaN",
+		"?min_revenue_mom=10&max_revenue_mom=5",
+		"?min_cumulative_revenue_yoy=10&max_cumulative_revenue_yoy=5",
+	}
+	for _, query := range badCases {
+		code, _, _ := requestScreener(t, server, query)
+		if code != http.StatusBadRequest {
+			t.Fatalf("query %q: expected 400, got %d", query, code)
+		}
+	}
+	for _, query := range []string{"?min_revenue_mom=-20", "?min_cumulative_revenue_yoy=-20"} {
+		code, _, _ := requestScreener(t, server, query)
+		if code != http.StatusOK {
+			t.Fatalf("query %q: negative filter values must be valid, got %d", query, code)
+		}
+	}
+}
+
+// revenue_mom / cumulative_revenue_yoy filters, including genuine-negative-in-range and
+// missing-excludes-only-when-active.
+func TestTaiwanScreenerM7FRevenueGrowthFilters(t *testing.T) {
+	server, _, _, _, _ := newScreenerServerWithFundamentalsDomains(t)
+	// 6488.TPEX has a genuine official MoM of -11.5 -- an in-range negative filter must include it.
+	_, momRange, _ := requestScreener(t, server, "?min_revenue_mom=-20&max_revenue_mom=0")
+	if len(canonicalsOf(momRange)) != 1 || canonicalsOf(momRange)[0] != "6488.TPEX" {
+		t.Fatalf("min_revenue_mom=-20&max_revenue_mom=0 expected only 6488.TPEX (mom=-11.5), got %v", canonicalsOf(momRange))
+	}
+	_, cumYoYMin, _ := requestScreener(t, server, "?min_cumulative_revenue_yoy=10")
+	if len(canonicalsOf(cumYoYMin)) != 1 || canonicalsOf(cumYoYMin)[0] != "2330.TWSE" {
+		t.Fatalf("min_cumulative_revenue_yoy=10 expected only 2330.TWSE (37.01), got %v", canonicalsOf(cumYoYMin))
+	}
+	// 9999.TWSE (from screenerFixtureRows) has no revenue row at all -- an active filter must exclude it.
+	_, active, _ := requestScreener(t, server, "?min_revenue_mom=-999999")
+	for _, c := range canonicalsOf(active) {
+		if c == "9999.TWSE" {
+			t.Fatalf("security with no revenue row must be excluded by an active revenue_mom filter (missing != zero), got %v", canonicalsOf(active))
+		}
+	}
+}
+
+// sort=revenue_mom / cumulative_revenue_yoy query construction and dropdown-independent sort behavior.
+func TestTaiwanScreenerM7FRevenueGrowthSorting(t *testing.T) {
+	server, _, _, _, _ := newScreenerServerWithFundamentalsDomains(t)
+	_, momDesc, _ := requestScreener(t, server, "?sort=revenue_mom&order=desc")
+	if momDesc.Data.Securities[0].Canonical != "2330.TWSE" {
+		t.Fatalf("sort=revenue_mom desc: expected 2330.TWSE (mom=5.62) first, got %v", canonicalsOf(momDesc))
+	}
+	_, cumYoYAsc, _ := requestScreener(t, server, "?sort=cumulative_revenue_yoy&order=asc")
+	if cumYoYAsc.Data.Securities[0].Canonical != "6488.TPEX" {
+		t.Fatalf("sort=cumulative_revenue_yoy asc: expected 6488.TPEX (-4.44) first, got %v", canonicalsOf(cumYoYAsc))
+	}
+}
+
+// null/zero/negative rendering for revenue_mom/cumulative_revenue_yoy.
+func TestTaiwanScreenerM7FNullZeroNegativeRendering(t *testing.T) {
+	server, _, _, _, _ := newScreenerServerWithFundamentalsDomains(t)
+	_, payload, _ := requestScreener(t, server, "?sort=revenue_mom")
+	byCanonical := map[string]struct{ mom, cumYoY *float64 }{}
+	for _, item := range payload.Data.Securities {
+		byCanonical[item.Canonical] = struct{ mom, cumYoY *float64 }{item.RevenueMoM, item.CumulativeRevenueYoY}
+	}
+	if v := byCanonical["9999.TWSE"]; v.mom != nil || v.cumYoY != nil {
+		t.Fatalf("9999.TWSE has no revenue row at all -- both fields must be nil, got %+v", v)
+	}
+	if v := byCanonical["6488.TPEX"]; v.mom == nil || *v.mom != -11.5 {
+		t.Fatalf("6488.TPEX genuine negative MoM must render as -11.5, not nil, got %+v", v)
+	}
+	if v := byCanonical["6488.TPEX"]; v.cumYoY == nil || *v.cumYoY != -4.44 {
+		t.Fatalf("6488.TPEX genuine negative cumulative YoY must render as -4.44, not nil, got %+v", v)
+	}
+}
+
+// request-bound matrix (task section 28): revenue domain calls must stay at exactly 2 (or 0 for a
+// vanilla request), regardless of which revenue-related field/sort triggered it, and must never
+// trigger any other domain.
+func TestTaiwanScreenerM7FRequestBoundMatrix(t *testing.T) {
+	dailyCalls, instCalls, marginCalls, revenueCalls, valuationCalls, dividendsCalls, financialsCalls, balanceCalls := 0, 0, 0, 0, 0, 0, 0, 0
+	server := NewServer(Config{
+		TaiwanScreener:              fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &dailyCalls},
+		TaiwanScreenerInstitutional: fixedTaiwanScreenerInstitutional{rows: screenerInstitutionalFixtureRows(), freshness: screenerInstitutionalFixtureFreshness(), calls: &instCalls},
+		TaiwanScreenerMargin:        fixedTaiwanScreenerMargin{rows: screenerMarginFixtureRows(), freshness: screenerMarginFixtureFreshness(), calls: &marginCalls},
+		TaiwanScreenerRevenue:       fixedTaiwanScreenerRevenue{rows: screenerRevenueFixtureRows(), freshness: screenerRevenueFixtureFreshness(), calls: &revenueCalls},
+		TaiwanScreenerValuation:     fixedTaiwanScreenerValuation{rows: screenerValuationFixtureRows(), freshness: screenerValuationFixtureFreshness(), calls: &valuationCalls},
+		TaiwanScreenerDividends:     fixedTaiwanScreenerDividends{rows: screenerDividendsFixtureRows(), freshness: screenerDividendsFixtureFreshness(), calls: &dividendsCalls},
+		TaiwanScreenerFinancials:    fixedTaiwanScreenerFinancials{rows: screenerFinancialsFixtureRows(), freshness: screenerFinancialsFixtureFreshness(), calls: &financialsCalls},
+		TaiwanScreenerBalance:       fixedTaiwanScreenerBalance{rows: screenerBalanceFixtureRows(), freshness: screenerBalanceFixtureFreshness(), calls: &balanceCalls},
+	})
+	reset := func() {
+		dailyCalls, instCalls, marginCalls, revenueCalls, valuationCalls, dividendsCalls, financialsCalls, balanceCalls = 0, 0, 0, 0, 0, 0, 0, 0
+	}
+
+	reset()
+	requestScreener(t, server, "")
+	if revenueCalls != 0 {
+		t.Fatalf("vanilla request: expected revenue=0, got %d", revenueCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "?min_monthly_revenue=0")
+	if revenueCalls != 1 {
+		t.Fatalf("existing monthly_revenue criteria: expected exactly 1 provider call, got %d", revenueCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "?min_revenue_yoy=0")
+	if revenueCalls != 1 {
+		t.Fatalf("existing revenue_yoy criteria: expected exactly 1 provider call, got %d", revenueCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "?min_revenue_mom=0")
+	if revenueCalls != 1 || instCalls != 0 || marginCalls != 0 || valuationCalls != 0 || dividendsCalls != 0 || financialsCalls != 0 || balanceCalls != 0 {
+		t.Fatalf("revenue_mom only: expected revenue=1 and all other domains=0, got revenue=%d inst=%d margin=%d valuation=%d dividends=%d financials=%d balance=%d", revenueCalls, instCalls, marginCalls, valuationCalls, dividendsCalls, financialsCalls, balanceCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "?min_cumulative_revenue_yoy=0")
+	if revenueCalls != 1 {
+		t.Fatalf("cumulative_revenue_yoy only: expected revenue=1, got %d", revenueCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "?min_revenue_mom=0&min_cumulative_revenue_yoy=0")
+	if revenueCalls != 1 {
+		t.Fatalf("both new revenue-growth metrics: expected exactly 1 provider call (not 2), got %d", revenueCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "?min_revenue_mom=0&min_cumulative_eps=0")
+	if revenueCalls != 1 || financialsCalls != 1 || balanceCalls != 0 {
+		t.Fatalf("revenue growth + M7E-B financial metric: expected revenue=1 financials=1 balance=0, got revenue=%d financials=%d balance=%d", revenueCalls, financialsCalls, balanceCalls)
+	}
+	if dailyCalls != 1 {
+		t.Fatalf("expected daily=1, got %d", dailyCalls)
+	}
+}
+
+// existing revenue status semantics before M7F: revenueDomainFreshness() only ever returned
+// "available" (any rows at all) or "unavailable" (zero rows) -- there was no "partial" state, so a
+// one-exchange failure was silently reported as full "available" coverage. M7F fixes this at the
+// provider layer (see TestScreenerRevenueOneExchangeFailureReportsPartialStatus in
+// fundamentals_test.go); this test proves the truthful "partial" status now flows through the HTTP
+// layer unchanged (revenue_status is a verbatim pass-through of the provider's freshness.Status).
+func TestTaiwanScreenerM7FPartialStatusSurfacedThroughHTTP(t *testing.T) {
+	dailyCalls, revenueCalls := 0, 0
+	period := "2026-08"
+	server := NewServer(Config{
+		TaiwanScreener: fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &dailyCalls},
+		TaiwanScreenerRevenue: fixedTaiwanScreenerRevenue{
+			rows:      screenerRevenueFixtureRows(),
+			freshness: foundation.TaiwanFundamentalsDomainFreshness{AsOf: &period, Status: "partial"},
+			calls:     &revenueCalls,
+		},
+	})
+	_, payload, _ := requestScreener(t, server, "?min_revenue_mom=0")
+	if payload.Data.RevenueStatus != "partial" {
+		t.Fatalf("expected revenue_status=partial to pass through truthfully, got %q", payload.Data.RevenueStatus)
+	}
+	if payload.Data.Total == 0 {
+		t.Fatalf("partial coverage must still allow the successful exchange's rows to match an active filter")
+	}
+}
+
+// optional-domain failure: revenue provider error must not erase daily rows or fail the request.
+func TestTaiwanScreenerM7FDomainUnavailableDoesNotEraseDailyRows(t *testing.T) {
+	dailyCalls := 0
+	server := NewServer(Config{
+		TaiwanScreener:        fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &dailyCalls},
+		TaiwanScreenerRevenue: fixedTaiwanScreenerRevenue{err: fmt.Errorf("revenue upstream unavailable")},
+	})
+	code, payload, _ := requestScreener(t, server, "?sort=revenue_mom")
+	if code != http.StatusOK {
+		t.Fatalf("revenue domain failure must not fail the base Screener request, got %d", code)
+	}
+	if payload.Data.Total != 4 {
+		t.Fatalf("daily rows must remain fully usable despite revenue failure, got total=%d", payload.Data.Total)
+	}
+	if payload.Data.RevenueStatus != "unavailable" {
+		t.Fatalf("revenue status should read unavailable, got %q", payload.Data.RevenueStatus)
+	}
+}
+
+// canonical identity: same code on two exchanges must never collapse (end-to-end through the HTTP
+// layer, reusing the existing 2330.TWSE/6488.TPEX fixture split).
+func TestTaiwanScreenerM7FExactCanonicalIdentityThroughJoin(t *testing.T) {
+	server, _, _, _, _ := newScreenerServerWithFundamentalsDomains(t)
+	_, payload, _ := requestScreener(t, server, "?sort=revenue_mom")
+	byCanonical := map[string]*float64{}
+	for _, item := range payload.Data.Securities {
+		byCanonical[item.Canonical] = item.RevenueMoM
+	}
+	if v := byCanonical["2330.TWSE"]; v == nil || *v != 5.62 {
+		t.Fatalf("2330.TWSE exact canonical wrong revenue_mom: %v", v)
+	}
+	if v := byCanonical["6488.TPEX"]; v == nil || *v != -11.5 {
+		t.Fatalf("6488.TPEX exact canonical wrong revenue_mom: %v", v)
+	}
+}
+
+// no unrelated side effects; no fabricated publication timestamp.
+func TestTaiwanScreenerM7FNoUnrelatedSideEffectsOrFabricatedTimestamp(t *testing.T) {
+	server, _, _, _, _ := newScreenerServerWithFundamentalsDomains(t)
+	code, _, _ := requestScreener(t, server, "?min_revenue_mom=0&sort=cumulative_revenue_yoy")
+	if code != http.StatusOK {
+		t.Fatalf("expected 200 with no unrelated dependencies configured, got %d", code)
+	}
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/screener?min_revenue_mom=0", nil))
 	body := response.Body.String()
 	if strings.Contains(body, "published_at") || strings.Contains(body, "available_at") {
 		t.Fatalf("Screener response must never contain published_at/available_at, got body=%s", body)
