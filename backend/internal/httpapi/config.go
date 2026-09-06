@@ -148,6 +148,15 @@ type TaiwanScreenerBalanceProvider interface {
 	ScreenerBalance(ctx context.Context, now time.Time) ([]foundation.FinancialStatementPeriod, foundation.TaiwanFundamentalsDomainFreshness, error)
 }
 
+// TaiwanScreenerCashflowProvider is the M7H analogue — a separate, narrow capability so existing
+// Screener test fakes never need to implement a cash-flow method they don't use. Called ONLY when a
+// Screener request actually needs the cash-flow domain (an active operating_cash_flow/
+// cash_flow_to_net_income filter or sort key) — never unconditionally, and never merely because the
+// income-statement or balance-sheet domains were requested (a genuinely independent official source).
+type TaiwanScreenerCashflowProvider interface {
+	ScreenerCashflow(ctx context.Context, now time.Time) ([]foundation.FinancialStatementPeriod, foundation.TaiwanFundamentalsDomainFreshness, error)
+}
+
 type TaiwanEmotionProvider interface {
 	MarketEmotion(ctx context.Context, now time.Time) (marketemotion.TaiwanMarketEmotion, error)
 }
@@ -215,6 +224,7 @@ type Config struct {
 	TaiwanScreenerDividends     TaiwanScreenerDividendsProvider
 	TaiwanScreenerFinancials    TaiwanScreenerFinancialsProvider
 	TaiwanScreenerBalance       TaiwanScreenerBalanceProvider
+	TaiwanScreenerCashflow      TaiwanScreenerCashflowProvider
 	TaiwanEmotion               TaiwanEmotionProvider
 	TaiwanIndustryRadar         TaiwanIndustryRadarProvider
 	TaiwanIntelligence          TaiwanStockIntelligenceProvider

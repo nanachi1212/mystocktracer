@@ -44,53 +44,59 @@ type MonthlyRevenue struct {
 }
 
 type FinancialStatementPeriod struct {
-	Canonical          string            `json:"canonical"`
-	Code               string            `json:"code"`
-	Exchange           string            `json:"exchange"`
-	FiscalYear         int               `json:"fiscal_year"`
-	FiscalQuarter      int               `json:"fiscal_quarter"`
-	PeriodStart        string            `json:"period_start"`
-	PeriodEnd          string            `json:"period_end"`
-	StatementType      string            `json:"statement_type"`
-	AccountingCategory string            `json:"accounting_category"`
-	Revision           string            `json:"revision,omitempty"`
-	IsCumulative       bool              `json:"is_cumulative"`
-	Revenue            *int64            `json:"revenue"`
-	GrossProfit        *int64            `json:"gross_profit"`
-	OperatingIncome    *int64            `json:"operating_income"`
-	PretaxIncome       *int64            `json:"pretax_income"`
-	NetIncome          *int64            `json:"net_income"`
-	NetIncomeParent    *int64            `json:"net_income_attributable_to_parent"`
-	CumulativeEPS      *float64          `json:"cumulative_eps"`
-	TotalAssets        *int64            `json:"total_assets"`
-	TotalLiabilities   *int64            `json:"total_liabilities"`
-	Equity             *int64            `json:"equity"`
-	EquityParent       *int64            `json:"equity_attributable_to_parent"`
+	Canonical          string   `json:"canonical"`
+	Code               string   `json:"code"`
+	Exchange           string   `json:"exchange"`
+	FiscalYear         int      `json:"fiscal_year"`
+	FiscalQuarter      int      `json:"fiscal_quarter"`
+	PeriodStart        string   `json:"period_start"`
+	PeriodEnd          string   `json:"period_end"`
+	StatementType      string   `json:"statement_type"`
+	AccountingCategory string   `json:"accounting_category"`
+	Revision           string   `json:"revision,omitempty"`
+	IsCumulative       bool     `json:"is_cumulative"`
+	Revenue            *int64   `json:"revenue"`
+	GrossProfit        *int64   `json:"gross_profit"`
+	OperatingIncome    *int64   `json:"operating_income"`
+	PretaxIncome       *int64   `json:"pretax_income"`
+	NetIncome          *int64   `json:"net_income"`
+	NetIncomeParent    *int64   `json:"net_income_attributable_to_parent"`
+	CumulativeEPS      *float64 `json:"cumulative_eps"`
+	TotalAssets        *int64   `json:"total_assets"`
+	TotalLiabilities   *int64   `json:"total_liabilities"`
+	Equity             *int64   `json:"equity"`
+	EquityParent       *int64   `json:"equity_attributable_to_parent"`
 	// M7G — current assets/liabilities feed CurrentRatio below; only populated by the balance-sheet
 	// bulk reader (parseBalanceSheetRow), never by the income-statement reader.
-	CurrentAssets      *int64            `json:"current_assets"`
-	CurrentLiabilities *int64            `json:"current_liabilities"`
-	BookValuePerShare  *float64          `json:"book_value_per_share"`
-	GrossMargin        *float64          `json:"gross_margin_percent"`
-	OperatingMargin    *float64          `json:"operating_margin_percent"`
-	NetMargin          *float64          `json:"net_margin_percent"`
+	CurrentAssets      *int64   `json:"current_assets"`
+	CurrentLiabilities *int64   `json:"current_liabilities"`
+	BookValuePerShare  *float64 `json:"book_value_per_share"`
+	GrossMargin        *float64 `json:"gross_margin_percent"`
+	OperatingMargin    *float64 `json:"operating_margin_percent"`
+	NetMargin          *float64 `json:"net_margin_percent"`
 	// M7G — debt_ratio/debt_to_equity/current_ratio, derived in the provider layer from the raw
 	// balance-sheet amounts above (ci-only policy + independent balance-target-period nulling are both
 	// applied by ScreenerBalance, not here — see fundamentals.go).
-	DebtRatio          *float64          `json:"debt_ratio_percent"`
-	DebtToEquity       *float64          `json:"debt_to_equity_percent"`
-	CurrentRatio       *float64          `json:"current_ratio_percent"`
-	Currency           string            `json:"currency"`
-	Unit               string            `json:"unit"`
-	RawUnit            string            `json:"raw_unit"`
-	RawValues          map[string]string `json:"raw_values,omitempty"`
-	Provider           string            `json:"provider"`
-	Source             string            `json:"source"`
-	SourceURL          string            `json:"source_url"`
-	RetrievedAt        time.Time         `json:"retrieved_at"`
-	PublishedAt        *time.Time        `json:"published_at"`
-	AvailableAt        *time.Time        `json:"available_at"`
-	Status             string            `json:"status"`
+	DebtRatio    *float64 `json:"debt_ratio_percent"`
+	DebtToEquity *float64 `json:"debt_to_equity_percent"`
+	CurrentRatio *float64 `json:"current_ratio_percent"`
+	// M7H — operating_cash_flow/cash_flow_to_net_income, sourced from MOPS' official quarterly XBRL
+	// bulk archive (see providers/taiwan/cashflow_xbrl.go), completely independent of the income-
+	// statement/balance-sheet bulk payloads above. ProfitLoss (the ratio's denominator) is deliberately
+	// NOT added here — it is provider-internal only (cashflowRow), never a public/shared field.
+	OperatingCashFlow   *int64            `json:"operating_cash_flow"`
+	CashFlowToNetIncome *float64          `json:"cash_flow_to_net_income"`
+	Currency            string            `json:"currency"`
+	Unit                string            `json:"unit"`
+	RawUnit             string            `json:"raw_unit"`
+	RawValues           map[string]string `json:"raw_values,omitempty"`
+	Provider            string            `json:"provider"`
+	Source              string            `json:"source"`
+	SourceURL           string            `json:"source_url"`
+	RetrievedAt         time.Time         `json:"retrieved_at"`
+	PublishedAt         *time.Time        `json:"published_at"`
+	AvailableAt         *time.Time        `json:"available_at"`
+	Status              string            `json:"status"`
 }
 
 // LatestAvailableStatement applies the cross-project strict rule: an

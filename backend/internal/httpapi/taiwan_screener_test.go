@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -268,6 +269,53 @@ func screenerBalanceFixtureFreshness() foundation.TaiwanFundamentalsDomainFreshn
 	return foundation.TaiwanFundamentalsDomainFreshness{AsOf: &period, Status: "available"}
 }
 
+// fixedTaiwanScreenerCashflow is the M7H test double, mirroring fixedTaiwanScreenerBalance — a
+// genuinely independent domain (MOPS XBRL bulk archive), never merely reusing the financials/balance
+// fixtures.
+type fixedTaiwanScreenerCashflow struct {
+	rows      []foundation.FinancialStatementPeriod
+	freshness foundation.TaiwanFundamentalsDomainFreshness
+	err       error
+	calls     *int
+}
+
+func (f fixedTaiwanScreenerCashflow) ScreenerCashflow(context.Context, time.Time) ([]foundation.FinancialStatementPeriod, foundation.TaiwanFundamentalsDomainFreshness, error) {
+	if f.calls != nil {
+		*f.calls++
+	}
+	return f.rows, f.freshness, f.err
+}
+
+// screenerCashflowFixtureRows: 2330.TWSE has both metrics (positive OCF, positive ratio); 6488.TPEX has
+// a NEGATIVE operating_cash_flow (sign preserved) with a positive ratio; 1101.TWSE has a genuine ZERO
+// cash_flow_to_net_income input (ProfitLoss == 0 upstream — the provider already nulled the ratio,
+// simulated here directly) while still exposing operating_cash_flow; 9999.TWSE has NO cashflow row at
+// all (absent from the archive — e.g. excluded/unmatched issuer).
+func screenerCashflowFixtureRows() []foundation.FinancialStatementPeriod {
+	return []foundation.FinancialStatementPeriod{
+		{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", OperatingCashFlow: int64Ptr(1122637757), CashFlowToNetIncome: floatPtr(148.06)},
+		{Canonical: "6488.TPEX", Code: "6488", Exchange: "TPEX", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", OperatingCashFlow: int64Ptr(-150005), CashFlowToNetIncome: floatPtr(-6.34)},
+		{Canonical: "1101.TWSE", Code: "1101", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", OperatingCashFlow: int64Ptr(50000), CashFlowToNetIncome: nil},
+	}
+}
+
+func screenerCashflowFixtureFreshness() foundation.TaiwanFundamentalsDomainFreshness {
+	period := "2026-Q2"
+	return foundation.TaiwanFundamentalsDomainFreshness{AsOf: &period, Status: "available"}
+}
+
+// newScreenerServerWithCashflowDomain wires daily + the M7H cashflow provider with an independent call
+// counter, so request-bound tests can prove it is never engaged by income/balance-only requests.
+func newScreenerServerWithCashflowDomain(t *testing.T) (server *Server, dailyCalls, cashflowCalls *int) {
+	t.Helper()
+	d, cf := 0, 0
+	server = NewServer(Config{
+		TaiwanScreener:         fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &d},
+		TaiwanScreenerCashflow: fixedTaiwanScreenerCashflow{rows: screenerCashflowFixtureRows(), freshness: screenerCashflowFixtureFreshness(), calls: &cf},
+	})
+	return server, &d, &cf
+}
+
 // newScreenerServerWithFinancialsAndBalanceDomain wires daily + both M7E-B financials and M7E-C
 // balance providers with independent call counters, so request-bound tests can prove exactly which
 // domain(s) a given query engages.
@@ -368,46 +416,51 @@ type screenerTestResponse struct {
 		FinancialsStatus        string  `json:"financials_status"`
 		BalancePeriod           *string `json:"balance_period"`
 		BalanceStatus           string  `json:"balance_status"`
+		CashflowPeriod          *string `json:"cashflow_period"`
+		CashflowStatus          string  `json:"cashflow_status"`
 		Securities              []struct {
-			Canonical        string   `json:"canonical"`
-			Code             string   `json:"code"`
-			Name             string   `json:"name"`
-			Exchange         string   `json:"exchange"`
-			SecurityType     string   `json:"security_type"`
-			Price            *float64 `json:"price"`
-			Change           *float64 `json:"change"`
-			ChangePercent    *float64 `json:"change_percent"`
-			Volume           *int64   `json:"volume"`
-			Amount           *float64 `json:"amount"`
-			ForeignNet       *int64   `json:"foreign_net"`
-			TrustNet         *int64   `json:"trust_net"`
-			DealerNet        *int64   `json:"dealer_net"`
-			InstitutionalNet *int64   `json:"institutional_net"`
-			MarginBalance    *int64   `json:"margin_balance"`
-			MarginChange     *int64   `json:"margin_change"`
-			ShortBalance     *int64   `json:"short_balance"`
-			ShortChange      *int64   `json:"short_change"`
-			ShortMarginRatio *float64 `json:"short_margin_ratio"`
+			Canonical            string   `json:"canonical"`
+			Code                 string   `json:"code"`
+			Name                 string   `json:"name"`
+			Exchange             string   `json:"exchange"`
+			SecurityType         string   `json:"security_type"`
+			Price                *float64 `json:"price"`
+			Change               *float64 `json:"change"`
+			ChangePercent        *float64 `json:"change_percent"`
+			Volume               *int64   `json:"volume"`
+			Amount               *float64 `json:"amount"`
+			ForeignNet           *int64   `json:"foreign_net"`
+			TrustNet             *int64   `json:"trust_net"`
+			DealerNet            *int64   `json:"dealer_net"`
+			InstitutionalNet     *int64   `json:"institutional_net"`
+			MarginBalance        *int64   `json:"margin_balance"`
+			MarginChange         *int64   `json:"margin_change"`
+			ShortBalance         *int64   `json:"short_balance"`
+			ShortChange          *int64   `json:"short_change"`
+			ShortMarginRatio     *float64 `json:"short_margin_ratio"`
 			MonthlyRevenue       *int64   `json:"monthly_revenue"`
 			RevenueYoY           *float64 `json:"revenue_yoy"`
 			RevenueMoM           *float64 `json:"revenue_mom"`
 			CumulativeRevenueYoY *float64 `json:"cumulative_revenue_yoy"`
 			PE                   *float64 `json:"pe"`
-			PB               *float64 `json:"pb"`
-			DividendYield    *float64 `json:"dividend_yield"`
-			CashDividend     *float64 `json:"cash_dividend"`
-			StockDividend    *float64 `json:"stock_dividend"`
-			TotalDividend    *float64 `json:"total_dividend"`
-			FinancialPeriod   *string  `json:"financial_period"`
-			CumulativeEPS     *float64 `json:"cumulative_eps"`
-			GrossMargin       *float64 `json:"gross_margin"`
-			OperatingMargin   *float64 `json:"operating_margin"`
-			NetMargin         *float64 `json:"net_margin"`
-			BookValuePerShare *float64 `json:"book_value_per_share"`
-			DebtRatio         *float64 `json:"debt_ratio"`
-			DebtToEquity      *float64 `json:"debt_to_equity"`
-			CurrentRatio      *float64 `json:"current_ratio"`
-			BalancePeriod     *string  `json:"balance_period"`
+			PB                   *float64 `json:"pb"`
+			DividendYield        *float64 `json:"dividend_yield"`
+			CashDividend         *float64 `json:"cash_dividend"`
+			StockDividend        *float64 `json:"stock_dividend"`
+			TotalDividend        *float64 `json:"total_dividend"`
+			FinancialPeriod      *string  `json:"financial_period"`
+			CumulativeEPS        *float64 `json:"cumulative_eps"`
+			GrossMargin          *float64 `json:"gross_margin"`
+			OperatingMargin      *float64 `json:"operating_margin"`
+			NetMargin            *float64 `json:"net_margin"`
+			BookValuePerShare    *float64 `json:"book_value_per_share"`
+			DebtRatio            *float64 `json:"debt_ratio"`
+			DebtToEquity         *float64 `json:"debt_to_equity"`
+			CurrentRatio         *float64 `json:"current_ratio"`
+			BalancePeriod        *string  `json:"balance_period"`
+			OperatingCashFlow    *int64   `json:"operating_cash_flow"`
+			CashFlowToNetIncome  *float64 `json:"cash_flow_to_net_income"`
+			CashflowPeriod       *string  `json:"cashflow_period"`
 		} `json:"securities"`
 	} `json:"data"`
 }
@@ -2377,8 +2430,8 @@ func TestTaiwanScreenerM7GRequestBoundIncomeDecoupling(t *testing.T) {
 	reset := func() { *financialsCalls, *balanceCalls = 0, 0 }
 
 	cases := []struct {
-		label                        string
-		query                        string
+		label                       string
+		query                       string
 		wantFinancials, wantBalance int
 	}{
 		{"vanilla", "", 0, 0},
@@ -2653,3 +2706,207 @@ func TestTaiwanScreenerM7GNoUnrelatedSideEffects(t *testing.T) {
 		t.Fatalf("expected 200 with no unrelated dependencies configured, got %d", code)
 	}
 }
+
+// ==================================================
+// M7H — cash-flow screener filters (operating_cash_flow / cash_flow_to_net_income)
+// ==================================================
+
+// newScreenerServerWithAllStatementDomains wires daily + financials + balance + cashflow, each with
+// its own independent call counter, so request-bound tests can prove the three statement-adjacent
+// domains never accidentally trigger one another.
+func newScreenerServerWithAllStatementDomains(t *testing.T) (server *Server, dailyCalls, financialsCalls, balanceCalls, cashflowCalls *int) {
+	t.Helper()
+	d, f, b, cf := 0, 0, 0, 0
+	server = NewServer(Config{
+		TaiwanScreener:           fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &d},
+		TaiwanScreenerFinancials: fixedTaiwanScreenerFinancials{rows: screenerFinancialsFixtureRows(), freshness: screenerFinancialsFixtureFreshness(), calls: &f},
+		TaiwanScreenerBalance:    fixedTaiwanScreenerBalance{rows: screenerBalanceFixtureRows(), freshness: screenerBalanceFixtureFreshness(), calls: &b},
+		TaiwanScreenerCashflow:   fixedTaiwanScreenerCashflow{rows: screenerCashflowFixtureRows(), freshness: screenerCashflowFixtureFreshness(), calls: &cf},
+	})
+	return server, &d, &f, &b, &cf
+}
+
+// taiwanScreenerNeedsCashflow is the sole gate for the M7H domain -- a vanilla request, and one that
+// only engages income/balance (or any earlier domain), must never trigger it; only an active
+// operating_cash_flow/cash_flow_to_net_income filter or sort does.
+func TestTaiwanScreenerM7HRequestBoundIndependence(t *testing.T) {
+	server, _, financialsCalls, balanceCalls, cashflowCalls := newScreenerServerWithAllStatementDomains(t)
+	reset := func() { *financialsCalls, *balanceCalls, *cashflowCalls = 0, 0, 0 }
+
+	cases := []struct {
+		label                                     string
+		query                                     string
+		wantFinancials, wantBalance, wantCashflow int
+	}{
+		{"vanilla", "", 0, 0, 0},
+		{"income-only", "?min_cumulative_eps=0", 1, 0, 0},
+		{"balance-only", "?min_debt_ratio=0", 0, 1, 0},
+		{"operating_cash_flow filter only", "?min_operating_cash_flow=0", 0, 0, 1},
+		{"cash_flow_to_net_income filter only", "?min_cash_flow_to_net_income=0", 0, 0, 1},
+		{"sort=operating_cash_flow", "?sort=operating_cash_flow", 0, 0, 1},
+		{"sort=cash_flow_to_net_income", "?sort=cash_flow_to_net_income", 0, 0, 1},
+		{"both M7H filters together (one archive, no duplicate call)", "?min_operating_cash_flow=0&min_cash_flow_to_net_income=0", 0, 0, 1},
+		{"M7H + income", "?min_operating_cash_flow=0&min_cumulative_eps=0", 1, 0, 1},
+		{"M7H + balance", "?min_operating_cash_flow=0&min_debt_ratio=0", 0, 1, 1},
+		{"M7H + income + balance", "?min_operating_cash_flow=0&min_cumulative_eps=0&min_debt_ratio=0", 1, 1, 1},
+	}
+	for _, c := range cases {
+		reset()
+		requestScreener(t, server, c.query)
+		if *financialsCalls != c.wantFinancials || *balanceCalls != c.wantBalance || *cashflowCalls != c.wantCashflow {
+			t.Fatalf("%s: expected financials=%d balance=%d cashflow=%d, got financials=%d balance=%d cashflow=%d",
+				c.label, c.wantFinancials, c.wantBalance, c.wantCashflow, *financialsCalls, *balanceCalls, *cashflowCalls)
+		}
+	}
+}
+
+// cashflow_period/cashflow_status are independent of financials_period/financials_status and
+// balance_period/balance_status -- an M7H-only request must never populate or corrupt the other two.
+func TestTaiwanScreenerM7HDomainFieldsIndependent(t *testing.T) {
+	server, _, _, _, _ := newScreenerServerWithAllStatementDomains(t)
+
+	_, cashflowOnly, _ := requestScreener(t, server, "?min_operating_cash_flow=0")
+	if cashflowOnly.Data.FinancialsPeriod != nil || cashflowOnly.Data.FinancialsStatus != "" {
+		t.Fatalf("M7H-only request must leave financials_period/financials_status absent, got %+v", cashflowOnly.Data)
+	}
+	if cashflowOnly.Data.BalancePeriod != nil || cashflowOnly.Data.BalanceStatus != "" {
+		t.Fatalf("M7H-only request must leave balance_period/balance_status absent, got %+v", cashflowOnly.Data)
+	}
+	if cashflowOnly.Data.CashflowPeriod == nil || *cashflowOnly.Data.CashflowPeriod != "2026-Q2" {
+		t.Fatalf("cashflow_period expected 2026-Q2, got %v", cashflowOnly.Data.CashflowPeriod)
+	}
+	if cashflowOnly.Data.CashflowStatus != "available" {
+		t.Fatalf("cashflow_status expected available, got %q", cashflowOnly.Data.CashflowStatus)
+	}
+
+	_, vanilla, _ := requestScreener(t, server, "")
+	if vanilla.Data.CashflowPeriod != nil || vanilla.Data.CashflowStatus != "" {
+		t.Fatalf("vanilla request must leave cashflow_period/cashflow_status absent, got %+v", vanilla.Data)
+	}
+}
+
+// Row-level fields end-to-end: 2330.TWSE has both metrics + cashflow_period; 6488.TPEX has a negative
+// operating_cash_flow (sign preserved) with its own cashflow_period; 1101.TWSE has a real zero-ratio
+// upstream null (cash_flow_to_net_income nil) while operating_cash_flow is still exposed, and
+// cashflow_period is still set because AT LEAST ONE of the two metrics is non-nil; 9999.TWSE has no
+// cashflow row at all -- both metrics AND cashflow_period stay nil (never fabricated).
+func TestTaiwanScreenerM7HRowFieldsAndPeriodContract(t *testing.T) {
+	server, _, _, _, _ := newScreenerServerWithAllStatementDomains(t)
+	_, payload, _ := requestScreener(t, server, "?sort=operating_cash_flow")
+	byCanonical := map[string]struct {
+		ocf            *int64
+		ratio          *float64
+		cashflowPeriod *string
+	}{}
+	for _, item := range payload.Data.Securities {
+		byCanonical[item.Canonical] = struct {
+			ocf            *int64
+			ratio          *float64
+			cashflowPeriod *string
+		}{item.OperatingCashFlow, item.CashFlowToNetIncome, item.CashflowPeriod}
+	}
+
+	a := byCanonical["2330.TWSE"]
+	if a.ocf == nil || *a.ocf != 1122637757 || a.ratio == nil || *a.ratio != 148.06 {
+		t.Fatalf("2330.TWSE: expected both M7H metrics exposed, got %+v", a)
+	}
+	if a.cashflowPeriod == nil || *a.cashflowPeriod != "2026-Q2" {
+		t.Fatalf("2330.TWSE cashflow_period expected 2026-Q2, got %v", a.cashflowPeriod)
+	}
+
+	b := byCanonical["6488.TPEX"]
+	if b.ocf == nil || *b.ocf != -150005 {
+		t.Fatalf("6488.TPEX: expected negative operating_cash_flow preserved, got %v", b.ocf)
+	}
+	if b.ratio == nil || *b.ratio != -6.34 {
+		t.Fatalf("6488.TPEX: expected negative ratio preserved, got %v", b.ratio)
+	}
+
+	c := byCanonical["1101.TWSE"]
+	if c.ocf == nil || *c.ocf != 50000 {
+		t.Fatalf("1101.TWSE: expected operating_cash_flow exposed even though ratio is null, got %v", c.ocf)
+	}
+	if c.ratio != nil {
+		t.Fatalf("1101.TWSE: expected null cash_flow_to_net_income (zero-denominator upstream), got %v", *c.ratio)
+	}
+	if c.cashflowPeriod == nil || *c.cashflowPeriod != "2026-Q2" {
+		t.Fatalf("1101.TWSE: cashflow_period must still be set (at least one metric non-nil), got %v", c.cashflowPeriod)
+	}
+
+	e := byCanonical["9999.TWSE"]
+	if e.ocf != nil || e.ratio != nil || e.cashflowPeriod != nil {
+		t.Fatalf("9999.TWSE: no cashflow row at all -- expected everything nil, got %+v", e)
+	}
+}
+
+// Range filter / sort semantics for the two new M7H fields, mirroring the M7G-style assertions.
+func TestTaiwanScreenerM7HFilterAndSortSemantics(t *testing.T) {
+	server, _, _, _, _ := newScreenerServerWithAllStatementDomains(t)
+
+	_, filtered, _ := requestScreener(t, server, "?min_operating_cash_flow=-999999999")
+	got := canonicalsOf(filtered)
+	if len(got) != 3 || !contains(got, "2330.TWSE") || !contains(got, "6488.TPEX") || !contains(got, "1101.TWSE") {
+		t.Fatalf("min_operating_cash_flow active filter: expected the three rows with a non-nil value, got %v", got)
+	}
+
+	_, sortedDesc, _ := requestScreener(t, server, "?sort=cash_flow_to_net_income&order=desc")
+	last := sortedDesc.Data.Securities[len(sortedDesc.Data.Securities)-1].Canonical
+	if last != "9999.TWSE" && last != "1101.TWSE" {
+		t.Fatalf("sort=cash_flow_to_net_income desc: a nil-ratio row must sort last, got last=%s order=%v", last, canonicalsOf(sortedDesc))
+	}
+}
+
+func TestTaiwanScreenerM7HInvalidNumberAndMinGreaterThanMax400(t *testing.T) {
+	server, _, _ := newScreenerServerWithCashflowDomain(t)
+	code, _, errMsg := requestScreener(t, server, "?min_operating_cash_flow=abc")
+	if code != http.StatusBadRequest || errMsg != "min_operating_cash_flow must be a number" {
+		t.Fatalf("expected 400 min_operating_cash_flow must be a number, got %d %q", code, errMsg)
+	}
+	code, _, errMsg = requestScreener(t, server, "?min_operating_cash_flow=100&max_operating_cash_flow=0")
+	if code != http.StatusBadRequest || errMsg != "min_operating_cash_flow must not be greater than max_operating_cash_flow" {
+		t.Fatalf("expected 400 min>max, got %d %q", code, errMsg)
+	}
+	code, _, errMsg = requestScreener(t, server, "?min_cash_flow_to_net_income=100&max_cash_flow_to_net_income=0")
+	if code != http.StatusBadRequest || errMsg != "min_cash_flow_to_net_income must not be greater than max_cash_flow_to_net_income" {
+		t.Fatalf("expected 400 min>max, got %d %q", code, errMsg)
+	}
+}
+
+func TestTaiwanScreenerM7HSortKeysAccepted(t *testing.T) {
+	server, _, _ := newScreenerServerWithCashflowDomain(t)
+	for _, key := range []string{"operating_cash_flow", "cash_flow_to_net_income"} {
+		code, _, errMsg := requestScreener(t, server, "?sort="+key)
+		if code != http.StatusOK {
+			t.Fatalf("sort=%s: expected 200, got %d (%s)", key, code, errMsg)
+		}
+	}
+}
+
+// A cashflow provider failure (simulating a negatively-cached MOPS outage) must never fail the whole
+// Screener request -- HTTP 200, cashflow_status "unavailable", both M7H row fields absent, other
+// domains/rows completely unaffected.
+func TestTaiwanScreenerM7HProviderFailureStaysHTTP200(t *testing.T) {
+	d, cf := 0, 0
+	server := NewServer(Config{
+		TaiwanScreener:         fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &d},
+		TaiwanScreenerCashflow: fixedTaiwanScreenerCashflow{err: errScreenerCashflowFixture, freshness: foundation.TaiwanFundamentalsDomainFreshness{Status: "unavailable"}, calls: &cf},
+	})
+	code, payload, _ := requestScreener(t, server, "?min_operating_cash_flow=0")
+	if code != http.StatusOK {
+		t.Fatalf("expected HTTP 200 on cashflow provider failure, got %d", code)
+	}
+	if payload.Data.CashflowStatus != "unavailable" {
+		t.Fatalf("expected cashflow_status unavailable, got %q", payload.Data.CashflowStatus)
+	}
+	if payload.Data.CashflowPeriod != nil {
+		t.Fatalf("cashflow_period must never be fabricated on failure, got %v", payload.Data.CashflowPeriod)
+	}
+	if len(payload.Data.Securities) != 0 {
+		// min_operating_cash_flow=0 is an active filter, so with the domain unavailable every row's
+		// operating_cash_flow is nil and therefore excluded -- proving the filter genuinely engaged the
+		// (failed) domain rather than silently no-op-ing, while the request itself still succeeded.
+		t.Fatalf("expected all rows excluded (nil operating_cash_flow with an active filter), got %d", len(payload.Data.Securities))
+	}
+}
+
+var errScreenerCashflowFixture = errors.New("simulated MOPS outage")

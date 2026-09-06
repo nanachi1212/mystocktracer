@@ -61,6 +61,7 @@ type Server struct {
 	taiwanScreenerDividends     TaiwanScreenerDividendsProvider
 	taiwanScreenerFinancials    TaiwanScreenerFinancialsProvider
 	taiwanScreenerBalance       TaiwanScreenerBalanceProvider
+	taiwanScreenerCashflow      TaiwanScreenerCashflowProvider
 	taiwanEmotion               TaiwanEmotionProvider
 	taiwanIndustryRadar         TaiwanIndustryRadarProvider
 	taiwanIntelligence          TaiwanStockIntelligenceProvider
@@ -191,6 +192,9 @@ func NewServer(config any) *Server {
 		}
 		if cfg.TaiwanScreenerBalance == nil {
 			cfg.TaiwanScreenerBalance = taiwanClient
+		}
+		if cfg.TaiwanScreenerCashflow == nil {
+			cfg.TaiwanScreenerCashflow = taiwanClient
 		}
 		if cfg.TaiwanEmotion == nil {
 			cfg.TaiwanEmotion = taiwanClient
@@ -361,6 +365,7 @@ func NewServer(config any) *Server {
 		taiwanScreenerDividends:     cfg.TaiwanScreenerDividends,
 		taiwanScreenerFinancials:    cfg.TaiwanScreenerFinancials,
 		taiwanScreenerBalance:       cfg.TaiwanScreenerBalance,
+		taiwanScreenerCashflow:      cfg.TaiwanScreenerCashflow,
 		taiwanEmotion:               cfg.TaiwanEmotion,
 		taiwanIndustryRadar:         cfg.TaiwanIndustryRadar,
 		taiwanIntelligence:          cfg.TaiwanIntelligence,

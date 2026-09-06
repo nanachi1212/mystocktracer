@@ -93,6 +93,14 @@ type taiwanScreenerRow struct {
 	DebtToEquity  *float64 `json:"debt_to_equity"`
 	CurrentRatio  *float64 `json:"current_ratio"`
 	BalancePeriod *string  `json:"balance_period"`
+	// M7H — operating_cash_flow/cash_flow_to_net_income (MOPS official quarterly XBRL bulk archive,
+	// all six categories, gated by ScreenerCashflow's own independent target-quarter discovery —
+	// completely decoupled from financial_period/balance_period). cashflow_period is this row's own
+	// actual cash-flow reporting period, populated only when at least one of the two metrics above is
+	// actually exposed for it.
+	OperatingCashFlow   *int64   `json:"operating_cash_flow"`
+	CashFlowToNetIncome *float64 `json:"cash_flow_to_net_income"`
+	CashflowPeriod      *string  `json:"cashflow_period"`
 }
 
 type taiwanScreenerResponse struct {
@@ -145,6 +153,13 @@ type taiwanScreenerResponse struct {
 	// requested).
 	BalancePeriod *string `json:"balance_period,omitempty"`
 	BalanceStatus string  `json:"balance_status,omitempty"`
+	// M7H — additive, present only when the cash-flow domain was actually requested. CashflowPeriod is
+	// ScreenerCashflow's own independently-discovered target quarter (from the MOPS XBRL bulk archive) —
+	// never derived from or combined with FinancialsPeriod/BalancePeriod. CashflowStatus additionally
+	// reports "unavailable" as a legitimate, negatively-cached result (a temporary MOPS outage), never a
+	// fabricated period.
+	CashflowPeriod *string `json:"cashflow_period,omitempty"`
+	CashflowStatus string  `json:"cashflow_status,omitempty"`
 }
 
 type taiwanScreenerQuery struct {
@@ -184,11 +199,14 @@ type taiwanScreenerQuery struct {
 	minNetMargin, maxNetMargin                 *float64
 	minBookValuePerShare, maxBookValuePerShare *float64
 	// M7G balance-sheet ratio filters (ci-only, Model B independent balance target period).
-	minDebtRatio, maxDebtRatio         *float64
-	minDebtToEquity, maxDebtToEquity   *float64
-	minCurrentRatio, maxCurrentRatio   *float64
-	sort                               string
-	order                              string // "asc" | "desc"
+	minDebtRatio, maxDebtRatio       *float64
+	minDebtToEquity, maxDebtToEquity *float64
+	minCurrentRatio, maxCurrentRatio *float64
+	// M7H cash-flow filters (all six categories, MOPS XBRL bulk archive).
+	minOperatingCashFlow, maxOperatingCashFlow     *float64
+	minCashFlowToNetIncome, maxCashFlowToNetIncome *float64
+	sort                                           string
+	order                                          string // "asc" | "desc"
 }
 
 var taiwanScreenerSortKeys = map[string]bool{
@@ -201,6 +219,7 @@ var taiwanScreenerSortKeys = map[string]bool{
 	"net_margin": true, "book_value_per_share": true,
 	"revenue_mom": true, "cumulative_revenue_yoy": true,
 	"debt_ratio": true, "debt_to_equity": true, "current_ratio": true,
+	"operating_cash_flow": true, "cash_flow_to_net_income": true,
 }
 
 // taiwanScreenerNeedsInstitutional/taiwanScreenerNeedsMargin decide whether this specific request
@@ -309,6 +328,18 @@ func taiwanScreenerNeedsBalanceRatios(q taiwanScreenerQuery) bool {
 // book_value_per_share OR M7G ratio filter/sort does.
 func taiwanScreenerNeedsBalance(q taiwanScreenerQuery) bool {
 	return taiwanScreenerNeedsBVPS(q) || taiwanScreenerNeedsBalanceRatios(q)
+}
+
+// taiwanScreenerNeedsCashflow is the M7H gate for operating_cash_flow/cash_flow_to_net_income — a
+// genuinely independent official source (MOPS XBRL bulk archive), never triggered merely because the
+// income-statement or balance-sheet domains were requested.
+func taiwanScreenerNeedsCashflow(q taiwanScreenerQuery) bool {
+	switch q.sort {
+	case "operating_cash_flow", "cash_flow_to_net_income":
+		return true
+	}
+	return q.minOperatingCashFlow != nil || q.maxOperatingCashFlow != nil ||
+		q.minCashFlowToNetIncome != nil || q.maxCashFlowToNetIncome != nil
 }
 
 // combineFinancialsStatus reports one truthful financials_status across the income-statement domain
@@ -478,7 +509,25 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	filtered := filterAndSortTaiwanScreener(rows, institutional, margin, revenue, valuation, dividends, financials, balance, financialsFreshness.AsOf, query)
+	// M7H lazy domain loading: cash-flow is fetched ONLY when this request actually engages it — a
+	// genuinely independent official source (MOPS XBRL bulk archive), never triggered merely because
+	// income/balance were requested. An "unavailable" cashflow result (including a negatively-cached
+	// MOPS outage) never fails the whole request — it only leaves the two M7H fields/freshness absent.
+	var cashflow map[string]foundation.FinancialStatementPeriod
+	var cashflowFreshness foundation.TaiwanFundamentalsDomainFreshness
+	cashflowRequested := taiwanScreenerNeedsCashflow(query)
+	if cashflowRequested && s.taiwanScreenerCashflow != nil {
+		cfRows, cfFreshness, cfErr := s.taiwanScreenerCashflow.ScreenerCashflow(ctx, time.Now())
+		cashflowFreshness = cfFreshness
+		if cfErr == nil {
+			cashflow = make(map[string]foundation.FinancialStatementPeriod, len(cfRows))
+			for _, row := range cfRows {
+				cashflow[row.Canonical] = row
+			}
+		}
+	}
+
+	filtered := filterAndSortTaiwanScreener(rows, institutional, margin, revenue, valuation, dividends, financials, balance, cashflow, financialsFreshness.AsOf, query)
 	total := len(filtered)
 	page := paginateTaiwanScreener(filtered, offset, limit)
 
@@ -539,6 +588,13 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 			response.BalanceStatus = "unavailable"
 		}
 	}
+	if cashflowRequested {
+		response.CashflowPeriod = cashflowFreshness.AsOf
+		response.CashflowStatus = cashflowFreshness.Status
+		if response.CashflowStatus == "" {
+			response.CashflowStatus = "unavailable"
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": response})
 }
 
@@ -557,7 +613,7 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		query.sort = "amount"
 	}
 	if !taiwanScreenerSortKeys[query.sort] {
-		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend, cumulative_eps, gross_margin, operating_margin, net_margin, book_value_per_share, revenue_mom, cumulative_revenue_yoy, debt_ratio, debt_to_equity, current_ratio"
+		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend, cumulative_eps, gross_margin, operating_margin, net_margin, book_value_per_share, revenue_mom, cumulative_revenue_yoy, debt_ratio, debt_to_equity, current_ratio, operating_cash_flow, cash_flow_to_net_income"
 	}
 
 	query.order = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order")))
@@ -751,6 +807,27 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		}
 	}
 
+	// M7H cash-flow range params (operating_cash_flow/cash_flow_to_net_income) — same pattern.
+	m7hRanges := []struct {
+		minKey, maxKey string
+		min, max       **float64
+		label          string
+	}{
+		{"min_operating_cash_flow", "max_operating_cash_flow", &query.minOperatingCashFlow, &query.maxOperatingCashFlow, "min_operating_cash_flow must not be greater than max_operating_cash_flow"},
+		{"min_cash_flow_to_net_income", "max_cash_flow_to_net_income", &query.minCashFlowToNetIncome, &query.maxCashFlowToNetIncome, "min_cash_flow_to_net_income must not be greater than max_cash_flow_to_net_income"},
+	}
+	for _, item := range m7hRanges {
+		if *item.min, err = parseOptionalScreenerFloat(r, item.minKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if *item.max, err = parseOptionalScreenerFloat(r, item.maxKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if rangeInvalid(*item.min, *item.max) {
+			return query, 0, 0, item.label
+		}
+	}
+
 	limit, err := marketLimitQuery(r, 50, 200)
 	if err != nil {
 		return query, 0, 0, err.Error()
@@ -791,13 +868,13 @@ func rangeInvalid(min, max *float64) bool {
 // requested (min/max present) AND the row's value for that field is unavailable (nil) — a filter
 // that was never requested never excludes a row for that field, and an unavailable value is never
 // treated as 0.
-func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod, balance map[string]foundation.FinancialStatementPeriod, financialsTargetPeriod *string, query taiwanScreenerQuery) []taiwanScreenerRow {
+func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod, balance map[string]foundation.FinancialStatementPeriod, cashflow map[string]foundation.FinancialStatementPeriod, financialsTargetPeriod *string, query taiwanScreenerQuery) []taiwanScreenerRow {
 	filtered := make([]taiwanScreenerRow, 0, len(rows))
 	for _, raw := range rows {
 		if query.scope != "" && query.scope != "combined" && !strings.EqualFold(raw.Exchange, query.scope) {
 			continue
 		}
-		row := toTaiwanScreenerRow(raw, institutional, margin, revenue, valuation, dividends, financials, balance, financialsTargetPeriod)
+		row := toTaiwanScreenerRow(raw, institutional, margin, revenue, valuation, dividends, financials, balance, cashflow, financialsTargetPeriod)
 		if !passesRange(row.Price, query.minPrice, query.maxPrice) {
 			continue
 		}
@@ -891,6 +968,12 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 		if !passesRange(row.CurrentRatio, query.minCurrentRatio, query.maxCurrentRatio) {
 			continue
 		}
+		if !passesIntRange(row.OperatingCashFlow, query.minOperatingCashFlow, query.maxOperatingCashFlow) {
+			continue
+		}
+		if !passesRange(row.CashFlowToNetIncome, query.minCashFlowToNetIncome, query.maxCashFlowToNetIncome) {
+			continue
+		}
 		filtered = append(filtered, row)
 	}
 
@@ -920,7 +1003,7 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 	return filtered
 }
 
-func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod, balance map[string]foundation.FinancialStatementPeriod, financialsTargetPeriod *string) taiwanScreenerRow {
+func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod, balance map[string]foundation.FinancialStatementPeriod, cashflow map[string]foundation.FinancialStatementPeriod, financialsTargetPeriod *string) taiwanScreenerRow {
 	out := taiwanScreenerRow{
 		Canonical: row.Canonical, Code: row.Code, Name: row.Name, Exchange: row.Exchange, SecurityType: string(row.Type),
 		TradeDate: row.TradeDate, Price: row.Close, Change: row.Change,
@@ -988,6 +1071,18 @@ func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[s
 		if bal.DebtRatio != nil || bal.DebtToEquity != nil || bal.CurrentRatio != nil {
 			balancePeriod := fmt.Sprintf("%d-Q%d", bal.FiscalYear, bal.FiscalQuarter)
 			out.BalancePeriod = &balancePeriod
+		}
+	}
+	// M7H — operating_cash_flow/cash_flow_to_net_income are independent of every join above (a
+	// genuinely separate official source, MOPS XBRL bulk archive): ScreenerCashflow has already resolved
+	// CR/IR duplicates and joined canonical identity itself, so this handler copies the two metrics
+	// verbatim. cashflow_period is this row's own actual cash-flow reporting period, set only when at
+	// least one of the two metrics is actually exposed for it.
+	if cf, ok := cashflow[row.Canonical]; ok {
+		out.OperatingCashFlow, out.CashFlowToNetIncome = cf.OperatingCashFlow, cf.CashFlowToNetIncome
+		if cf.OperatingCashFlow != nil || cf.CashFlowToNetIncome != nil {
+			cashflowPeriod := fmt.Sprintf("%d-Q%d", cf.FiscalYear, cf.FiscalQuarter)
+			out.CashflowPeriod = &cashflowPeriod
 		}
 	}
 	return out
@@ -1076,6 +1171,10 @@ func taiwanScreenerSortValue(row taiwanScreenerRow, field string) *float64 {
 		return row.DebtToEquity
 	case "current_ratio":
 		return row.CurrentRatio
+	case "operating_cash_flow":
+		return int64ToFloatPointer(row.OperatingCashFlow)
+	case "cash_flow_to_net_income":
+		return row.CashFlowToNetIncome
 	}
 	return nil
 }

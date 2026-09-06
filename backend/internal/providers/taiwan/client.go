@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	defaultTWSEBaseURL = "https://openapi.twse.com.tw/v1"
-	defaultTPExBaseURL = "https://www.tpex.org.tw/openapi/v1"
-	defaultFinMindURL  = "https://api.finmindtrade.com/api/v4/data"
-	maxDirectoryBytes  = 16 << 20
+	defaultTWSEBaseURL     = "https://openapi.twse.com.tw/v1"
+	defaultTPExBaseURL     = "https://www.tpex.org.tw/openapi/v1"
+	defaultFinMindURL      = "https://api.finmindtrade.com/api/v4/data"
+	defaultCashflowBaseURL = "https://mopsov.twse.com.tw"
+	maxDirectoryBytes      = 16 << 20
 )
 
 type Client struct {
@@ -27,16 +28,23 @@ type Client struct {
 	finMindURL        string
 	twseReportBaseURL string
 	tpexReportBaseURL string
+	cashflowBaseURL   string
 	chipMu            sync.Mutex
 	chipDays          map[string]chipSnapshot
 	fundMu            sync.Mutex
 	fundRows          map[string]fundSnapshot
-	snapshotMu        sync.RWMutex
-	dailyDays         map[string][]foundation.TaiwanDailySnapshot
-	instDays          map[string][]foundation.InstitutionalFlow
-	marginDays        map[string][]foundation.MarginTrading
-	calendar          foundation.TaiwanTradingCalendar
-	now               func() time.Time
+	// M7H — cashflowMu guards the single current cashflowSnapshot (see cashflow_xbrl.go): the whole
+	// check-cache/discover/download/parse/store sequence runs under this lock (mirroring chipDay's
+	// existing tight-locking pattern, not fundamentalsRows' looser check-then-fetch one), so concurrent
+	// cold Screener requests never each trigger their own 110-130MB archive download.
+	cashflowMu       sync.Mutex
+	cashflowSnapshot *cashflowSnapshot
+	snapshotMu       sync.RWMutex
+	dailyDays        map[string][]foundation.TaiwanDailySnapshot
+	instDays         map[string][]foundation.InstitutionalFlow
+	marginDays       map[string][]foundation.MarginTrading
+	calendar         foundation.TaiwanTradingCalendar
+	now              func() time.Time
 }
 
 type Config struct {
@@ -46,6 +54,7 @@ type Config struct {
 	FinMindURL        string
 	TWSEReportBaseURL string
 	TPExReportBaseURL string
+	CashflowBaseURL   string
 	Holidays          map[string]bool
 	Now               func() time.Time
 }
@@ -66,6 +75,7 @@ func NewClient(config Config) *Client {
 		finMindURL:        first(config.FinMindURL, defaultFinMindURL),
 		twseReportBaseURL: first(config.TWSEReportBaseURL, "https://www.twse.com.tw"),
 		tpexReportBaseURL: first(config.TPExReportBaseURL, "https://www.tpex.org.tw"),
+		cashflowBaseURL:   first(config.CashflowBaseURL, defaultCashflowBaseURL),
 		chipDays:          map[string]chipSnapshot{},
 		fundRows:          map[string]fundSnapshot{},
 		dailyDays:         map[string][]foundation.TaiwanDailySnapshot{},
