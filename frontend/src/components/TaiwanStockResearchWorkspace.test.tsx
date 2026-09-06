@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { InterpretationView, ScreenerEntryContext, TaiwanResearchSnapshot, type Component, type Intelligence, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
+import { InterpretationView, ResearchView, ScreenerEntryContext, TaiwanResearchSnapshot, type Component, type Intelligence, type Research, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
 import type { TaiwanResearchEntryContext } from '../lib/taiwan-product';
 import { TaiwanStockResearchErrorBoundary } from './TaiwanStockResearchErrorBoundary';
 
@@ -403,5 +403,43 @@ describe('M8B — navigation wiring (Screener context threaded through the exist
 
 	it('the Watchlist call site is unaffected -- it still calls onOpenResearch(item.canonical) with no context, per the existing M6C wiring', () => {
 		expect(watchlistSource()).toContain('onOpen={() => onOpenResearch(item.canonical)}');
+	});
+});
+
+// ==================================================
+// M8C -- Evidence-grounded Taiwan Research Synthesis: minimal strengths/risks rendering.
+// ==================================================
+
+const researchResult = (overrides: Partial<Research> = {}): Research => ({
+	status: 'available', model_version: 'taiwan_ai_research_v1', headline: '證據綜合摘要', summary: '摘要內容。',
+	sections: { price: { text: '價格證據。', evidence_keys: ['interpretation.components.price'] } },
+	strengths: [], risks: [], conflicts: [], data_limitations: [], research_notes: [],
+	...overrides,
+});
+
+describe('M8C — ResearchView strengths/risks rendering', () => {
+	it('renders 支持性證據/風險證據 with text and evidence_keys when non-empty', () => {
+		const html = renderToStaticMarkup(<ResearchView research={researchResult({
+			strengths: [{ text: '營業活動現金流量為正。', evidence_keys: ['fundamentals.data.cashflow.operating_cash_flow'] }],
+			risks: [{ text: '營業現金流／淨利為負。', evidence_keys: ['fundamentals.data.cashflow.cash_flow_to_net_income'] }],
+		})} />);
+		expect(html).toContain('支持性證據');
+		expect(html).toContain('營業活動現金流量為正。');
+		expect(html).toContain('fundamentals.data.cashflow.operating_cash_flow');
+		expect(html).toContain('風險證據');
+		expect(html).toContain('營業現金流／淨利為負。');
+		expect(html).toContain('fundamentals.data.cashflow.cash_flow_to_net_income');
+	});
+
+	it('renders neither block when both arrays are empty', () => {
+		const html = renderToStaticMarkup(<ResearchView research={researchResult()} />);
+		expect(html).not.toContain('支持性證據');
+		expect(html).not.toContain('風險證據');
+	});
+
+	it('renders only the non-empty one when only strengths (or only risks) is populated', () => {
+		const strengthsOnly = renderToStaticMarkup(<ResearchView research={researchResult({ strengths: [{ text: '正向觀察。', evidence_keys: ['fundamentals.data.valuation.pe'] }] })} />);
+		expect(strengthsOnly).toContain('支持性證據');
+		expect(strengthsOnly).not.toContain('風險證據');
 	});
 });
