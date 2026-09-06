@@ -11,6 +11,47 @@ import {
 
 export type WatchlistMembershipState = 'idle' | 'loading' | 'ready' | 'error';
 
+// M8E — Screener preset modes: product-layer shortcuts over the EXISTING TaiwanScreenerFilters
+// contract only (M8E.1/M8E.1R). Each preset is a plain data object — overrides + sort/order + which
+// existing collapsed advanced group to auto-expand — never a new filter type, never a hidden score,
+// never a new market fact. Deliberately component-local (not in taiwan-product.ts): this is pure UI
+// shortcut data, not a reusable data contract, and there is no generic "preset framework" here —
+// just five fixed entries.
+export type TaiwanScreenerPreset = {
+	id: string;
+	label: string;
+	description: string;
+	overrides: Partial<TaiwanScreenerFilters>;
+	sort: TaiwanScreenerFilters['sort'];
+	order: TaiwanScreenerFilters['order'];
+	// Which existing collapsed advanced group (see ScreenerFilterPanel's institutionalExpanded/
+	// fundamentalsExpanded state) this preset's fields live inside, so clicking the preset can
+	// auto-expand it — otherwise the user would see the preset applied but be unable to see or edit
+	// the actual condition values without a second manual click.
+	group: 'institutional' | 'fundamentals';
+};
+
+// M8E.1R — 低估值觀察 uses minPE/minPB = "0.01" (not "0"): passesRange()'s min comparison is
+// inclusive (>=), so "0" would incorrectly include a zero/invalid PE or PB as "low valuation".
+// "0.01" is the smallest value consistent with existing float parsing (strconv.ParseFloat, no
+// backend change) that excludes zero and negative (loss-making) values while still including any
+// real positive ratio.
+export const taiwanScreenerPresets: TaiwanScreenerPreset[] = [
+	{ id: 'revenue-growth', label: '營收成長', description: '最新月營收年增率達 15% 以上', overrides: { minRevenueYoY: '15' }, sort: 'revenue_yoy', order: 'desc', group: 'fundamentals' },
+	{ id: 'institutional-net-buy', label: '法人偏多', description: '最新交易日三大法人合計買超', overrides: { minInstitutionalNet: '1' }, sort: 'institutional_net', order: 'desc', group: 'institutional' },
+	{ id: 'financial-stability', label: '財務穩健', description: '負債比 ≤ 50%、流動比 ≥ 100%', overrides: { maxDebtRatio: '50', minCurrentRatio: '100' }, sort: 'debt_ratio', order: 'asc', group: 'fundamentals' },
+	{ id: 'cashflow-health', label: '現金流健康', description: '營業現金流為正，且現金流／淨利比 ≥ 80%', overrides: { minOperatingCashFlow: '1', minCashFlowToNetIncome: '80' }, sort: 'cash_flow_to_net_income', order: 'desc', group: 'fundamentals' },
+	{ id: 'low-valuation-watch', label: '低估值觀察', description: 'PE 0.01–20、PB 0.01–2', overrides: { minPE: '0.01', maxPE: '20', minPB: '0.01', maxPB: '2' }, sort: 'pe', order: 'asc', group: 'fundamentals' },
+];
+
+// Builds a complete TaiwanScreenerFilters from a preset: always starts from
+// taiwanScreenerDefaultFilters() (never the previous draft/applied state), so switching presets — or
+// applying one after manual edits — always fully replaces prior filters rather than merging with
+// them. offset/limit come from the defaults (offset 0), matching the required "reset offset" behavior.
+function buildPresetFilters(preset: TaiwanScreenerPreset): TaiwanScreenerFilters {
+	return { ...taiwanScreenerDefaultFilters(), ...preset.overrides, sort: preset.sort, order: preset.order };
+}
+
 // M7B — Taiwan Screener. Loads/screens/sorts/paginates entirely through the existing M7A backend
 // contract (GET /api/v1/tw/screener); this component never fetches the full market and filters it
 // locally. All form controls are draft state — nothing here issues a request until 套用條件 is
@@ -36,6 +77,11 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 	const [draft, setDraft] = useState<TaiwanScreenerFilters>(taiwanScreenerDefaultFilters);
 	const [applied, setApplied] = useState<TaiwanScreenerFilters>(taiwanScreenerDefaultFilters);
 	const [localError, setLocalError] = useState('');
+	// M8E — tracks which preset (if any) is currently active, for highlighting only. Cleared on any
+	// manual filter edit (handleDraftChange below) or Clear (clearFilters below) — never persisted,
+	// never compared structurally against draft/applied (the simplest contract per M8E.1 §10: exact
+	// preset click = highlighted, any manual edit = not highlighted, no "已修改" intermediate state).
+	const [activePresetId, setActivePresetId] = useState<string | null>(null);
 	const [data, setData] = useState<TaiwanScreenerResponse | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
@@ -85,6 +131,28 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 		setDraft(defaults);
 		setLocalError('');
 		setApplied(defaults);
+		setActivePresetId(null);
+	};
+
+	// M8E — any manual field edit (typing, select change) clears the active-preset highlight. This is
+	// the ONLY place draft changes for reasons other than a preset click, so it is the correct single
+	// point to clear activePresetId — applyPreset below sets draft through its own separate path and
+	// therefore is unaffected by this handler.
+	const handleDraftChange = (next: TaiwanScreenerFilters) => {
+		setDraft(next);
+		setActivePresetId(null);
+	};
+
+	// M8E — clicking a preset fully replaces draft AND applied (never merges with whatever was
+	// previously set — switching presets, or applying one after manual edits, always starts from
+	// taiwanScreenerDefaultFilters()), triggers the existing screener query path (via `applied`
+	// changing, same effect as a manual Apply), and marks the preset active for highlighting.
+	const applyPreset = (preset: TaiwanScreenerPreset) => {
+		const next = buildPresetFilters(preset);
+		setDraft(next);
+		setLocalError('');
+		setApplied(next);
+		setActivePresetId(preset.id);
 	};
 
 	const goPrevious = () => {
@@ -145,7 +213,7 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 	const showCashflow = taiwanScreenerHasCashflowCriteria(applied);
 
 	return <div className="taiwan-product-workspace taiwan-screener-workspace">
-		<ScreenerFilterPanel draft={draft} onChange={setDraft} onApply={applyFilters} onClear={clearFilters} localError={localError} />
+		<ScreenerFilterPanel draft={draft} onChange={handleDraftChange} onApply={applyFilters} onClear={clearFilters} localError={localError} presets={taiwanScreenerPresets} activePresetId={activePresetId} onApplyPreset={applyPreset} />
 		{error && <div className="market-partial-warning">{error}</div>}
 		{watchlistState === 'error' && <div className="market-partial-warning">自選股狀態暫時無法取得</div>}
 		{data && showInstitutional && <ScreenerDomainFreshness label="法人資料" asOf={data.institutional_as_of} status={data.institutional_status} unavailableMessage="法人資料暫時無法取得" />}
@@ -223,12 +291,18 @@ export function ScreenerFinancialsFreshness({ period, status }: { period?: strin
 	</>;
 }
 
-export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localError }: {
+// M8E — presets/activePresetId/onApplyPreset are additive and optional (inert defaults: no presets
+// rendered, nothing highlighted, no-op handler) so this component remains directly callable exactly
+// as before — every pre-existing call site that only tests manual filter behavior is unaffected.
+export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localError, presets = [], activePresetId = null, onApplyPreset = () => {} }: {
 	draft: TaiwanScreenerFilters;
 	onChange: (next: TaiwanScreenerFilters) => void;
 	onApply: () => void;
 	onClear: () => void;
 	localError: string;
+	presets?: TaiwanScreenerPreset[];
+	activePresetId?: string | null;
+	onApplyPreset?: (preset: TaiwanScreenerPreset) => void;
 }) {
 	// M7D/M7E-A — collapse/expand is local UI state only: it never touches draft/applied, never sends
 	// a request, and is intentionally NOT reset by Clear (clearing filter values is a data concern;
@@ -237,7 +311,24 @@ export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localEr
 	const [marginExpanded, setMarginExpanded] = useState(false);
 	const [fundamentalsExpanded, setFundamentalsExpanded] = useState(false);
 	const set = <K extends keyof TaiwanScreenerFilters>(key: K, value: TaiwanScreenerFilters[K]) => onChange({ ...draft, [key]: value });
+	// M8E — clicking a preset also auto-expands whichever existing collapsed advanced group its
+	// fields live inside (never redesigning the advanced filter UI itself) — otherwise the user could
+	// not see or edit the very condition values the preset just applied.
+	const handlePresetClick = (preset: TaiwanScreenerPreset) => {
+		onApplyPreset(preset);
+		if (preset.group === 'institutional') setInstitutionalExpanded(true);
+		if (preset.group === 'fundamentals') setFundamentalsExpanded(true);
+	};
 	return <section className="taiwan-screener-filters">
+		<div className="taiwan-screener-filter-actions" role="group" aria-label="快速選股">
+			{presets.map((preset) => (
+				<button key={preset.id} type="button" title={preset.description} aria-pressed={activePresetId === preset.id}
+					className={activePresetId === preset.id ? 'taiwan-screener-apply' : 'taiwan-screener-clear'}
+					onClick={() => handlePresetClick(preset)}>
+					{preset.label}
+				</button>
+			))}
+		</div>
 		<div className="taiwan-screener-filter-grid">
 			<label><span>市場</span><select value={draft.scope} onChange={(event) => set('scope', event.target.value as TaiwanScreenerFilters['scope'])}>{taiwanScopes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
 			<label><span>最低價格</span><input type="number" inputMode="decimal" value={draft.minPrice} onChange={(event) => set('minPrice', event.target.value)} placeholder="不限" /></label>

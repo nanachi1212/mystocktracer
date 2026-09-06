@@ -9,8 +9,14 @@ import {
 } from '../lib/taiwan-product';
 import {
 	ScreenerAdvancedCell, ScreenerDomainFreshness, ScreenerFilterPanel, ScreenerFinancialsFreshness, ScreenerPagination, ScreenerRow, ScreenerSummary, ScreenerTable,
-	ScreenerWatchlistAction, type WatchlistMembershipState,
+	ScreenerWatchlistAction, taiwanScreenerPresets, type WatchlistMembershipState,
 } from './TaiwanScreenerWorkspace';
+
+const presetById = (id: string) => {
+	const preset = taiwanScreenerPresets.find((item) => item.id === id);
+	if (!preset) throw new Error(`unknown preset id: ${id}`);
+	return preset;
+};
 
 const root = path.resolve(__dirname, '../../..');
 const workspaceSource = () => fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanScreenerWorkspace.tsx'), 'utf8');
@@ -2477,5 +2483,181 @@ describe('M7H -- no request fan-out introduced', () => {
 		const matches = source.match(/requestJSON</g) || [];
 		expect(matches.length).toBe(1);
 		expect(source).not.toMatch(/mopsov|t203sb02|FileDownLoad|tifrs-|\/api\/v1\/tw\/cashflow/i);
+	});
+});
+
+// ==================================================
+// M8E -- Screener preset modes: five product-layer shortcuts over existing TaiwanScreenerFilters.
+// ==================================================
+
+describe('M8E — preset data contract (exact field mapping)', () => {
+	it('exactly five presets are defined', () => {
+		expect(taiwanScreenerPresets.length).toBe(5);
+	});
+
+	it('營收成長: exact field mapping', () => {
+		const preset = presetById('revenue-growth');
+		expect(preset.label).toBe('營收成長');
+		expect(preset.overrides).toEqual({ minRevenueYoY: '15' });
+		expect(preset.sort).toBe('revenue_yoy');
+		expect(preset.order).toBe('desc');
+	});
+
+	it('法人偏多: exact field mapping', () => {
+		const preset = presetById('institutional-net-buy');
+		expect(preset.label).toBe('法人偏多');
+		expect(preset.overrides).toEqual({ minInstitutionalNet: '1' });
+		expect(preset.sort).toBe('institutional_net');
+		expect(preset.order).toBe('desc');
+	});
+
+	it('財務穩健: exact field mapping', () => {
+		const preset = presetById('financial-stability');
+		expect(preset.label).toBe('財務穩健');
+		expect(preset.overrides).toEqual({ maxDebtRatio: '50', minCurrentRatio: '100' });
+		expect(preset.sort).toBe('debt_ratio');
+		expect(preset.order).toBe('asc');
+	});
+
+	it('現金流健康: exact field mapping', () => {
+		const preset = presetById('cashflow-health');
+		expect(preset.label).toBe('現金流健康');
+		expect(preset.overrides).toEqual({ minOperatingCashFlow: '1', minCashFlowToNetIncome: '80' });
+		expect(preset.sort).toBe('cash_flow_to_net_income');
+		expect(preset.order).toBe('desc');
+	});
+
+	it('低估值觀察: exact field mapping (0.01 boundary, matching M8E.1R correction -- never "0")', () => {
+		const preset = presetById('low-valuation-watch');
+		expect(preset.label).toBe('低估值觀察');
+		expect(preset.overrides).toEqual({ minPE: '0.01', maxPE: '20', minPB: '0.01', maxPB: '2' });
+		expect(preset.sort).toBe('pe');
+		expect(preset.order).toBe('asc');
+	});
+
+	it('every preset override key actually exists on taiwanScreenerDefaultFilters() -- no typo/non-existent field', () => {
+		const defaults = taiwanScreenerDefaultFilters();
+		for (const preset of taiwanScreenerPresets) {
+			for (const key of Object.keys(preset.overrides)) {
+				expect(Object.prototype.hasOwnProperty.call(defaults, key)).toBe(true);
+			}
+		}
+	});
+});
+
+describe('M8E — preset UI rendering', () => {
+	it('renders exactly five preset buttons with their labels', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" presets={taiwanScreenerPresets} activePresetId={null} onApplyPreset={() => {}} />);
+		for (const preset of taiwanScreenerPresets) {
+			expect(html).toContain(preset.label);
+		}
+	});
+
+	it('the active preset renders aria-pressed="true"; others render aria-pressed="false"', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" presets={taiwanScreenerPresets} activePresetId="revenue-growth" onApplyPreset={() => {}} />);
+		expect(html).toMatch(/aria-pressed="true"[^>]*>營收成長/);
+		expect(html).toMatch(/aria-pressed="false"[^>]*>法人偏多/);
+	});
+
+	it('rendering with no presets supplied (default) shows no preset buttons -- backward compatible with existing call sites', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		for (const preset of taiwanScreenerPresets) {
+			expect(html).not.toContain(preset.label);
+		}
+	});
+});
+
+describe('M8E — preset interaction wiring (source-verified, matching this codebase\'s existing convention for hook-driven logic)', () => {
+	it('buildPresetFilters always starts from taiwanScreenerDefaultFilters() -- never merges with prior draft/applied state', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('function buildPresetFilters'), source.indexOf('export function TaiwanScreenerWorkspace'));
+		expect(fn).toContain('return { ...taiwanScreenerDefaultFilters(), ...preset.overrides, sort: preset.sort, order: preset.order };');
+	});
+
+	it('applyPreset sets draft, applied, and activePresetId together (offset resets to 0 via taiwanScreenerDefaultFilters())', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const applyPreset = '), source.indexOf('return <div className="taiwan-product-workspace taiwan-screener-workspace">'));
+		expect(fn).toContain('const next = buildPresetFilters(preset);');
+		expect(fn).toContain('setDraft(next);');
+		expect(fn).toContain('setApplied(next);');
+		expect(fn).toContain('setActivePresetId(preset.id);');
+	});
+
+	it('handleDraftChange (any manual field edit) clears activePresetId', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const handleDraftChange = '), source.indexOf('const applyPreset = '));
+		expect(fn).toContain('setDraft(next);');
+		expect(fn).toContain('setActivePresetId(null);');
+	});
+
+	it('clearFilters clears activePresetId in addition to the existing reset behavior', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const clearFilters = '), source.indexOf('const handleDraftChange = '));
+		expect(fn).toContain('setDraft(defaults);');
+		expect(fn).toContain('setApplied(defaults);');
+		expect(fn).toContain('setActivePresetId(null);');
+	});
+
+	it('ScreenerFilterPanel receives onChange={handleDraftChange} (not the raw setDraft), so manual edits always clear activePresetId', () => {
+		const source = workspaceSource();
+		expect(source).toContain('<ScreenerFilterPanel draft={draft} onChange={handleDraftChange} onApply={applyFilters} onClear={clearFilters} localError={localError} presets={taiwanScreenerPresets} activePresetId={activePresetId} onApplyPreset={applyPreset} />');
+	});
+
+	it('applyFilters (existing manual Apply button) is unaffected -- never touches activePresetId', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const applyFilters = '), source.indexOf('const clearFilters = '));
+		expect(fn).not.toContain('activePresetId');
+	});
+});
+
+describe('M8E — advanced group auto-expand on preset click', () => {
+	it('handlePresetClick expands institutionalExpanded/fundamentalsExpanded based on the preset\'s own group tag, reusing the existing expand state', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const handlePresetClick = '), source.indexOf('return <section className="taiwan-screener-filters">'));
+		expect(fn).toContain('onApplyPreset(preset);');
+		expect(fn).toContain("if (preset.group === 'institutional') setInstitutionalExpanded(true);");
+		expect(fn).toContain("if (preset.group === 'fundamentals') setFundamentalsExpanded(true);");
+	});
+
+	it('every preset is tagged with the correct group: only 法人偏多 is institutional, the other four are fundamentals', () => {
+		expect(presetById('institutional-net-buy').group).toBe('institutional');
+		for (const id of ['revenue-growth', 'financial-stability', 'cashflow-health', 'low-valuation-watch']) {
+			expect(presetById(id).group).toBe('fundamentals');
+		}
+	});
+});
+
+describe('M8E — lazy domain gating preserved (no new request path, no eager unrelated domains)', () => {
+	it('still issues exactly one requestJSON call (Screener) -- presets introduce zero new network calls', () => {
+		const source = workspaceSource();
+		const matches = source.match(/requestJSON</g) || [];
+		expect(matches.length).toBe(1);
+	});
+
+	it('each preset activates exactly the one existing domain-criteria helper matching its own fields', () => {
+		expect(taiwanScreenerHasRevenueCriteria({ ...taiwanScreenerDefaultFilters(), ...presetById('revenue-growth').overrides })).toBe(true);
+		expect(taiwanScreenerHasInstitutionalCriteria({ ...taiwanScreenerDefaultFilters(), ...presetById('institutional-net-buy').overrides })).toBe(true);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), ...presetById('financial-stability').overrides })).toBe(true);
+		expect(taiwanScreenerHasCashflowCriteria({ ...taiwanScreenerDefaultFilters(), ...presetById('cashflow-health').overrides })).toBe(true);
+		expect(taiwanScreenerHasValuationCriteria({ ...taiwanScreenerDefaultFilters(), ...presetById('low-valuation-watch').overrides })).toBe(true);
+	});
+
+	it('presets never accidentally activate an unrelated domain (no eager multi-domain fetch)', () => {
+		expect(taiwanScreenerHasInstitutionalCriteria({ ...taiwanScreenerDefaultFilters(), ...presetById('revenue-growth').overrides })).toBe(false);
+		expect(taiwanScreenerHasCashflowCriteria({ ...taiwanScreenerDefaultFilters(), ...presetById('financial-stability').overrides })).toBe(false);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), ...presetById('cashflow-health').overrides })).toBe(false);
+		expect(taiwanScreenerHasValuationCriteria({ ...taiwanScreenerDefaultFilters(), ...presetById('financial-stability').overrides })).toBe(false);
+	});
+});
+
+describe('M8E — no AI, no persistence, no new backend path', () => {
+	it('introduces no AI research call, no persistence mechanism', () => {
+		const source = workspaceSource();
+		expect(source).not.toMatch(/taiwanResearchPath|GenerateTaiwanResearch|localStorage|sessionStorage|indexedDB/i);
+	});
+
+	it('does not introduce a generic preset framework -- taiwanScreenerPresets is a fixed five-entry array, not an extensible/persisted structure', () => {
+		const source = workspaceSource();
+		expect(source).not.toMatch(/customPreset|savePreset|userPreset|PresetStore|preset.*localStorage/i);
 	});
 });
