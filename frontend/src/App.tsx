@@ -75,6 +75,7 @@ import { TaiwanScreenerWorkspace } from './components/TaiwanScreenerWorkspace';
 import { TaiwanStockResearchWorkspace } from './components/TaiwanStockResearchWorkspace';
 import { TaiwanStockResearchErrorBoundary } from './components/TaiwanStockResearchErrorBoundary';
 import { TaiwanWatchlistWorkspace } from './components/TaiwanWatchlistWorkspace';
+import type { TaiwanResearchEntryContext } from './lib/taiwan-product';
 import { logRuntimeEvent } from './lib/runtime-log';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
@@ -158,7 +159,9 @@ export function App() {
 	// same saved security twice in a row still produces a new value the workspace's effect reacts
 	// to — React would otherwise bail out on an unchanged string. Null by default; never fetched or
 	// touched by App itself, and never causes any cold-start request.
-	const [requestedTaiwanSymbol, setRequestedTaiwanSymbol] = useState<{ canonical: string; token: number } | null>(null);
+	// M8B: `context` is optional and only ever set by the Screener call site below — a Watchlist-
+	// originated request never has Screener filters to attach, so it stays undefined there.
+	const [requestedTaiwanSymbol, setRequestedTaiwanSymbol] = useState<{ canonical: string; token: number; context?: TaiwanResearchEntryContext | null } | null>(null);
 	const taiwanSymbolRequestNonce = useRef(0);
 	const themeRequestID = useRef(0);
 	const leadershipHistoriesRef = useRef<KLineLookup>({});
@@ -639,9 +642,12 @@ export function App() {
 	// M6C: a Watchlist row was clicked. Carries the exact persisted canonical identity (never
 	// code-only) into the existing stock research workspace and switches to it — no new fetch
 	// logic here, no fuzzy re-resolution; the workspace itself resolves and loads the symbol.
-	const openTaiwanStockResearch = (canonical: string) => {
+	// M8B: `context` is optional — the Screener call site passes the applied filters/sort as a
+	// TaiwanResearchEntryContext; the Watchlist call site (same function) omits it entirely, so a
+	// Watchlist-originated navigation never shows Screener provenance in Research.
+	const openTaiwanStockResearch = (canonical: string, context?: TaiwanResearchEntryContext | null) => {
 		taiwanSymbolRequestNonce.current += 1;
-		setRequestedTaiwanSymbol({ canonical, token: taiwanSymbolRequestNonce.current });
+		setRequestedTaiwanSymbol({ canonical, token: taiwanSymbolRequestNonce.current, context });
 		switchWorkspace('taiwan-stock');
 	};
 

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { BackendConfig, SecurityIdentity } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
-import { addTaiwanWatchlistSecurity, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel } from '../lib/taiwan-product';
+import { addTaiwanWatchlistSecurity, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel, type TaiwanResearchEntryContext } from '../lib/taiwan-product';
 
 export type Evidence = { status: string; freshness?: string; as_of?: string; reason?: string; data?: Record<string, unknown> };
 export type Component = { state: string; status: string; freshness?: string; as_of?: string; reasons: string[] };
@@ -43,7 +43,10 @@ const researchLabels: Record<string, string> = { price: '價格', market: '市�
 // canonical Taiwan security. `token` is a strictly increasing nonce, not just the canonical string
 // — clicking the same saved security twice in a row must still be treated as a new request even
 // though the canonical value did not change.
-export type ExternalTaiwanSymbolRequest = { canonical: string; token: number };
+// M8B: `context` is optional — only a Screener-originated request carries the applied filters/sort
+// as a TaiwanResearchEntryContext; a Watchlist-originated request (or any other caller) omits it,
+// and the workspace then shows no "來自台股篩選器" block.
+export type ExternalTaiwanSymbolRequest = { canonical: string; token: number; context?: TaiwanResearchEntryContext | null };
 
 export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbolRequest }: { config: BackendConfig | null; refreshKey: number; externalSymbolRequest?: ExternalTaiwanSymbolRequest | null }) {
 	const [query, setQuery] = useState('2330');
@@ -68,6 +71,11 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 	// a newer one — the same runScopedRequest pattern already used for select()/search() above.
 	const lastExternalTokenRef = useRef<number | null>(null);
 	const externalResolveRequestID = useRef(0);
+	// M8B: the Screener-originated navigation context (if any) for the currently displayed security.
+	// Set only when select() is explicitly given a context argument (undefined leaves it untouched,
+	// so the refreshKey retry of the already-selected symbol below preserves it); explicit null clears
+	// it for a manual search/selection, since that is not a Screener-originated navigation.
+	const [screenerContext, setScreenerContext] = useState<TaiwanResearchEntryContext | null>(null);
 
 	const search = async (value = query) => {
 		if (!config || !value.trim()) return;
@@ -75,13 +83,18 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 		try {
 			const payload = await requestJSON<{ data: { securities: SecurityIdentity[] } }>(config, `/api/v1/tw/securities?query=${encodeURIComponent(value.trim())}`);
 			setMatches(payload.data.securities);
-			if (payload.data.securities.length === 1) await select(payload.data.securities[0]);
+			if (payload.data.securities.length === 1) await select(payload.data.securities[0], null);
 			else if (payload.data.securities.length === 0) setError(`找不到符合「${value.trim()}」的台灣證券`);
 		} catch (reason) { setError(taiwanErrorMessage(reason, '台灣證券搜尋失敗')); }
 		finally { setLoading(false); }
 	};
-	const select = async (security: SecurityIdentity) => {
+	// M8B: `context` is optional and distinct from omission — undefined means "leave screenerContext
+	// untouched" (used by the refreshKey retry of an already-selected symbol, which is not a new
+	// navigation), while null explicitly clears it (a manual search/selection) and a real context
+	// object sets it (a Screener-originated external request).
+	const select = async (security: SecurityIdentity, context?: TaiwanResearchEntryContext | null) => {
 		if (!config) return;
+		if (context !== undefined) setScreenerContext(context);
 		setSelected(security);
 		// Independent of the main intelligence fetch below: check Watchlist membership for the
 		// newly selected security. Scoped so a stale check for a since-abandoned selection can
@@ -150,7 +163,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 				onSuccess: (payload) => {
 					const exact = payload.data.securities.find((item) => item.canonical === canonical);
 					if (!exact) { setLoading(false); setError('找不到自選股對應的台灣證券資料。'); return; }
-					void select(exact);
+					void select(exact, externalSymbolRequest.context ?? null);
 				},
 				onError: (reason) => { setLoading(false); setError(taiwanErrorMessage(reason, '找不到自選股對應的台灣證券資料。')); },
 			});
@@ -163,10 +176,11 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 	return <div className="taiwan-product-workspace taiwan-stock-research">
 		<form className="market-filter" onSubmit={submit}><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="輸入 2330、台積電、2330.TWSE 或 6488.TPEX" aria-label="台灣證券名稱或代碼" /></label><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : '搜尋'}</button></form>
 		{error && <div className="market-partial-warning">{error}</div>}
-		{matches.length > 1 && <div className="taiwan-search-results">{matches.map((item) => <button type="button" key={item.canonical} onClick={() => void select(item)}><strong>{item.code} {item.name}</strong><span>{item.exchange} · {taiwanSecurityTypeLabel(item.security_type)}</span></button>)}</div>}
+		{matches.length > 1 && <div className="taiwan-search-results">{matches.map((item) => <button type="button" key={item.canonical} onClick={() => void select(item, null)}><strong>{item.code} {item.name}</strong><span>{item.exchange} · {taiwanSecurityTypeLabel(item.security_type)}</span></button>)}</div>}
 		{selected && inWatchlist !== null && <div><button type="button" className={`taiwan-watchlist-toggle${inWatchlist ? ' saved' : ''}`} onClick={() => void toggleWatchlist()} disabled={watchlistBusy}>{watchlistBusy ? <LoaderCircle className="spin" size={14} /> : <Star size={14} />}{inWatchlist ? '移除自選' : '加入自選'}</button>{watchlistError && <span className="taiwan-watchlist-toggle-error">{watchlistError}</span>}</div>}
 		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取官方個股資料</div>}
 		{intelligence && <>
+			{screenerContext && <ScreenerEntryContext context={screenerContext} />}
 			<section className="taiwan-stock-heading"><div><span>{intelligence.identity.exchange} · {taiwanSecurityTypeLabel(intelligence.identity.security_type)} · {intelligence.identity.currency}</span><h2>{intelligence.identity.name} {intelligence.identity.code}</h2><small>{intelligence.identity.canonical_symbol}{intelligence.identity.industry_name ? ` · ${intelligence.identity.industry_name}` : ''}</small></div>{intelligence.quote.data && <div><strong>{intelligence.quote.data.price.toLocaleString('zh-TW')}</strong><em className={intelligence.quote.data.change_percent > 0 ? 'up' : intelligence.quote.data.change_percent < 0 ? 'down' : 'flat'}>{formatTaiwanPercent(intelligence.quote.data.change_percent, true)}</em></div>}</section>
 			<section className="taiwan-status-card"><div><span className={`taiwan-status ${intelligence.quote.status}`}>{taiwanStatusLabel(intelligence.quote.status)}</span><span>{taiwanStatusLabel(intelligence.quote.freshness)}</span></div><small>資料日期 {intelligence.quote.as_of || intelligence.quote.data?.meta?.trade_date || '未提供'} · 最新完成交易日 {intelligence.quote.target_latest_completed_trading_date || '未提供'}</small></section>
 			<section className="taiwan-detail-grid"><article><span>5 日收盤報酬</span><strong>{formatTaiwanPercent(intelligence.price_history_summary.return_5d_percent, true)}</strong><small>{intelligence.price_history_summary.latest_bar_date || '資料不足'}</small></article><article><span>20 日收盤報酬</span><strong>{formatTaiwanPercent(intelligence.price_history_summary.return_20d_percent, true)}</strong></article><article><span>市場狀態</span><strong>{taiwanStatusLabel(intelligence.market_context.state)}</strong><small>資料信心 {taiwanStatusLabel(intelligence.market_context.confidence)}</small></article></section>
@@ -178,6 +192,23 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 		</>}
 		{!intelligence && !loading && <div className="taiwan-empty-state"><strong>選擇台灣證券開始研究</strong><p>可搜尋上市或上櫃股票；原始資料載入不會呼叫 AI。</p></div>}
 	</div>;
+}
+
+// M8B — a small, secondary provenance block shown only when this Research page was opened via a
+// Screener row click, carrying the exact APPLIED filters/sort at that moment. Deliberately separate
+// from EvidenceOverview/TaiwanResearchSnapshot/InterpretationView below — this is navigation
+// provenance, not evidence, and is never passed into BuildTaiwanResearchPayload/GenerateTaiwanResearch
+// or seen by the AI. Wording uses provenance language ("你從以下篩選條件的結果中開啟此研究") rather
+// than any present-tense match claim ("目前仍符合") — the underlying data may have changed since the
+// Screener request, and this component never re-fetches Screener or re-validates the match.
+export function ScreenerEntryContext({ context }: { context: TaiwanResearchEntryContext }) {
+	return <section className="taiwan-screener-entry-context">
+		<header><span>來自台股篩選器</span><h3>你從以下篩選條件的結果中開啟此研究</h3></header>
+		<div className="taiwan-detail-grid">
+			<article><span>篩選條件</span>{context.filterLabels.length > 0 ? <ul>{context.filterLabels.map((label) => <li key={label}>{label}</li>)}</ul> : <small>未設定篩選條件</small>}</article>
+			<article><span>排序方式</span><small>{context.sortLabel}</small></article>
+		</div>
+	</section>;
 }
 
 function EvidenceOverview({ intelligence }: { intelligence: Intelligence }) {

@@ -384,6 +384,88 @@ function taiwanScreenerRangeValue(raw: string): number | null {
 	return Number.isFinite(value) ? value : null;
 }
 
+// M8B — Screener → Research navigation context. Ephemeral, frontend-only: carries the APPLIED
+// Screener filters/sort (never draft, never the API response, never full rows) as a small
+// human-readable snapshot so the Research workspace can show where the user navigated from. This
+// is navigation provenance, not evidence — it must never be threaded into TaiwanFundamentalsEvidence/
+// TaiwanInterpretation/BuildTaiwanResearchPayload/GenerateTaiwanResearch, and never re-validated
+// against current data (the security may no longer match by the time Research is opened).
+export type TaiwanResearchEntryContext = {
+	source: 'screener';
+	filterLabels: string[];
+	sortLabel: string;
+};
+
+type TaiwanScreenerCriterionDescriptor = { minKey: keyof TaiwanScreenerFilters; maxKey: keyof TaiwanScreenerFilters; label: string; unit: string };
+
+// Base label + unit exactly mirror the Screener's own advanced-filter field labels (see
+// TaiwanScreenerWorkspace.tsx) — this is deliberately not a second, independently-worded dictionary.
+// Units are never rescaled here: operating cash flow keeps its raw 仟元 (thousand-TWD) semantics
+// (the same units the filter input itself is entered in), percentages stay percentages.
+const taiwanScreenerCriteriaDescriptors: TaiwanScreenerCriterionDescriptor[] = [
+	{ minKey: 'minPrice', maxKey: 'maxPrice', label: '股價', unit: '元' },
+	{ minKey: 'minChangePercent', maxKey: 'maxChangePercent', label: '漲跌幅', unit: '%' },
+	{ minKey: 'minVolume', maxKey: 'maxVolume', label: '成交量', unit: '股' },
+	{ minKey: 'minAmount', maxKey: 'maxAmount', label: '成交金額', unit: '元' },
+	{ minKey: 'minForeignNet', maxKey: 'maxForeignNet', label: '外資買賣超', unit: '股' },
+	{ minKey: 'minTrustNet', maxKey: 'maxTrustNet', label: '投信買賣超', unit: '股' },
+	{ minKey: 'minDealerNet', maxKey: 'maxDealerNet', label: '自營商買賣超', unit: '股' },
+	{ minKey: 'minInstitutionalNet', maxKey: 'maxInstitutionalNet', label: '三大法人合計', unit: '股' },
+	{ minKey: 'minMarginBalance', maxKey: 'maxMarginBalance', label: '融資餘額', unit: '股' },
+	{ minKey: 'minMarginChange', maxKey: 'maxMarginChange', label: '融資增減', unit: '股' },
+	{ minKey: 'minShortBalance', maxKey: 'maxShortBalance', label: '融券餘額', unit: '股' },
+	{ minKey: 'minShortChange', maxKey: 'maxShortChange', label: '融券增減', unit: '股' },
+	{ minKey: 'minShortMarginRatio', maxKey: 'maxShortMarginRatio', label: '券資比', unit: '%' },
+	{ minKey: 'minMonthlyRevenue', maxKey: 'maxMonthlyRevenue', label: '月營收', unit: '元' },
+	{ minKey: 'minRevenueYoY', maxKey: 'maxRevenueYoY', label: '月營收年增率', unit: '%' },
+	{ minKey: 'minRevenueMoM', maxKey: 'maxRevenueMoM', label: '月營收月增率', unit: '%' },
+	{ minKey: 'minCumulativeRevenueYoY', maxKey: 'maxCumulativeRevenueYoY', label: '累計營收年增率', unit: '%' },
+	{ minKey: 'minPE', maxKey: 'maxPE', label: '本益比（PE）', unit: '' },
+	{ minKey: 'minPB', maxKey: 'maxPB', label: '股價淨值比（PB）', unit: '' },
+	{ minKey: 'minDividendYield', maxKey: 'maxDividendYield', label: '殖利率', unit: '%' },
+	{ minKey: 'minCashDividend', maxKey: 'maxCashDividend', label: '現金股利', unit: '' },
+	{ minKey: 'minStockDividend', maxKey: 'maxStockDividend', label: '股票股利', unit: '' },
+	{ minKey: 'minTotalDividend', maxKey: 'maxTotalDividend', label: '合計股利', unit: '' },
+	{ minKey: 'minCumulativeEPS', maxKey: 'maxCumulativeEPS', label: '累計 EPS', unit: '' },
+	{ minKey: 'minGrossMargin', maxKey: 'maxGrossMargin', label: '毛利率', unit: '%' },
+	{ minKey: 'minOperatingMargin', maxKey: 'maxOperatingMargin', label: '營業利益率', unit: '%' },
+	{ minKey: 'minNetMargin', maxKey: 'maxNetMargin', label: '淨利率', unit: '%' },
+	{ minKey: 'minBookValuePerShare', maxKey: 'maxBookValuePerShare', label: '每股參考淨值', unit: '' },
+	{ minKey: 'minDebtRatio', maxKey: 'maxDebtRatio', label: '負債比率', unit: '%' },
+	{ minKey: 'minDebtToEquity', maxKey: 'maxDebtToEquity', label: '負債權益比', unit: '%' },
+	{ minKey: 'minCurrentRatio', maxKey: 'maxCurrentRatio', label: '流動比率', unit: '%' },
+	{ minKey: 'minOperatingCashFlow', maxKey: 'maxOperatingCashFlow', label: '營業活動現金流量', unit: '仟元' },
+	{ minKey: 'minCashFlowToNetIncome', maxKey: 'maxCashFlowToNetIncome', label: '營業現金流／淨利', unit: '%' },
+];
+
+function formatTaiwanCriterionValue(value: number, unit: string): string {
+	return `${value.toLocaleString('zh-TW')}${unit}`;
+}
+
+// Builds the human-readable "來自台股篩選器" context from the APPLIED Screener filters (never
+// draft). Pagination (limit/offset) is deliberately excluded — it is not a match reason. An explicit
+// 0 or a negative threshold is preserved (taiwanScreenerRangeValue only treats a blank/non-numeric
+// string as "no filter"), matching the same null≠zero semantics used everywhere else in Screener.
+// scope is not listed as a criterion — every Screener request always carries one, so it is not a
+// narrowing choice worth surfacing here. sortLabel is returned separately from filterLabels so the
+// UI can visually and linguistically distinguish 篩選條件 from 排序方式, reusing
+// taiwanScreenerSortOptions/taiwanScreenerOrderOptions' own labels rather than a second dictionary.
+export function buildTaiwanScreenerContext(filters: TaiwanScreenerFilters): TaiwanResearchEntryContext {
+	const filterLabels: string[] = [];
+	for (const { minKey, maxKey, label, unit } of taiwanScreenerCriteriaDescriptors) {
+		const min = taiwanScreenerRangeValue(filters[minKey] as string);
+		const max = taiwanScreenerRangeValue(filters[maxKey] as string);
+		if (min == null && max == null) continue;
+		if (min != null && max != null) filterLabels.push(`${label} ${formatTaiwanCriterionValue(min, unit)} ～ ${formatTaiwanCriterionValue(max, unit)}`);
+		else if (min != null) filterLabels.push(`${label} ≥ ${formatTaiwanCriterionValue(min, unit)}`);
+		else filterLabels.push(`${label} ≤ ${formatTaiwanCriterionValue(max as number, unit)}`);
+	}
+	const sortOption = taiwanScreenerSortOptions.find((item) => item.id === filters.sort);
+	const orderOption = taiwanScreenerOrderOptions.find((item) => item.id === filters.order);
+	const sortLabel = `${sortOption?.label || filters.sort}（${orderOption?.label || filters.order}）`;
+	return { source: 'screener', filterLabels, sortLabel };
+}
+
 // Builds the exact M7A query contract. Blank optional fields are omitted; an explicitly entered 0
 // is preserved (Number("0") is finite, so it is not treated as blank); a non-numeric or
 // non-finite (NaN/Infinity) entry is silently omitted rather than sent upstream. scope/sort/order

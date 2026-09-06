@@ -208,6 +208,17 @@ describe('M7B — row click passes exact canonical to the existing App research 
 		expect(source).not.toMatch(/token|Nonce/);
 	});
 
+	it('M8B: TaiwanScreenerWorkspace passes onOpenResearch the exact APPLIED filters as a built context, never draft', () => {
+		const source = workspaceSource();
+		expect(source).toContain('onOpenResearch={(canonical) => onOpenResearch(canonical, buildTaiwanScreenerContext(applied))}');
+		expect(source).not.toContain('buildTaiwanScreenerContext(draft)');
+	});
+
+	it('M8B: onOpenResearch prop type accepts an optional TaiwanResearchEntryContext second argument', () => {
+		const source = workspaceSource();
+		expect(source).toContain('onOpenResearch: (canonical: string, context?: TaiwanResearchEntryContext | null) => void');
+	});
+
 	it('the Watchlist action cell is a sibling <td> of the identity <td>, never nested inside it', () => {
 		const element = ScreenerRow({ security: security(), onOpen: () => {}, ...rowWatchlistProps() });
 		const cells = (element.props.children as unknown[]).filter(Boolean) as { type: string }[];

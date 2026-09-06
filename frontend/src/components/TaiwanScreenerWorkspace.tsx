@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 import type { BackendConfig } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
 import {
-	addTaiwanWatchlistSecurity, fetchTaiwanWatchlist, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatioPercent, formatTaiwanRevenueTWD, formatTaiwanSignedShares, formatTaiwanTWD,
+	addTaiwanWatchlistSecurity, buildTaiwanScreenerContext, fetchTaiwanWatchlist, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatioPercent, formatTaiwanRevenueTWD, formatTaiwanSignedShares, formatTaiwanTWD,
 	removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanFinancialsStatusLabel, taiwanScopes, taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasCashflowCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasInstitutionalCriteria,
 	taiwanScreenerHasMarginCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria, taiwanScreenerOrderOptions, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanSecurityTypeLabel, taiwanStatusLabel,
-	validateTaiwanScreenerFilters, type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
+	validateTaiwanScreenerFilters, type TaiwanResearchEntryContext, type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
 } from '../lib/taiwan-product';
 
 export type WatchlistMembershipState = 'idle' | 'loading' | 'ready' | 'error';
@@ -32,7 +32,7 @@ export type WatchlistMembershipState = 'idle' | 'loading' | 'ready' | 'error';
 // never calls a separate endpoint for them, never knows about provider internals). Result
 // presentation (which advanced columns to show) is derived from `applied` (never `draft`), so typing
 // into an advanced field never changes what is currently displayed before Apply.
-export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: { config: BackendConfig | null; refreshKey: number; onOpenResearch: (canonical: string) => void }) {
+export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: { config: BackendConfig | null; refreshKey: number; onOpenResearch: (canonical: string, context?: TaiwanResearchEntryContext | null) => void }) {
 	const [draft, setDraft] = useState<TaiwanScreenerFilters>(taiwanScreenerDefaultFilters);
 	const [applied, setApplied] = useState<TaiwanScreenerFilters>(taiwanScreenerDefaultFilters);
 	const [localError, setLocalError] = useState('');
@@ -160,7 +160,7 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 		{data && <ScreenerSummary data={data} />}
 		{data && data.total === 0 && <div className="taiwan-empty-state"><strong>沒有符合目前條件的台灣證券</strong><p>可放寬篩選條件或按下「清除條件」查看全部結果。</p></div>}
 		{data && data.securities.length > 0 && <ScreenerTable
-			securities={data.securities} onOpenResearch={onOpenResearch}
+			securities={data.securities} onOpenResearch={(canonical) => onOpenResearch(canonical, buildTaiwanScreenerContext(applied))}
 			watchlistState={watchlistState} watchlistedCanonicals={watchlistedCanonicals}
 			busyCanonicals={busyCanonicals} mutationErrors={mutationErrors}
 			onToggleWatchlist={(canonical) => void toggleWatchlist(canonical)}

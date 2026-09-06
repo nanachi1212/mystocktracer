@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-	formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
+	buildTaiwanScreenerContext, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
 	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath,
 	taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasCashflowCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
 	taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters,
@@ -1209,5 +1209,69 @@ describe('M7H — operating_cash_flow display (thousand-TWD raw contract preserv
 	it('does not rescale the underlying raw value for query/filter purposes (raw thousand-TWD number is untouched)', () => {
 		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '1122637757' });
 		expect(path).toContain('min_operating_cash_flow=1122637757');
+	});
+});
+
+describe('M8B — buildTaiwanScreenerContext (Screener → Research navigation provenance)', () => {
+	it('no active criteria: filterLabels is empty, sortLabel reflects the default sort/order', () => {
+		const context = buildTaiwanScreenerContext(taiwanScreenerDefaultFilters());
+		expect(context.source).toBe('screener');
+		expect(context.filterLabels).toEqual([]);
+		expect(context.sortLabel).toBe('成交金額（高到低）');
+	});
+
+	it('min only renders "≥"', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), minPE: '10' });
+		expect(context.filterLabels).toContain('本益比（PE） ≥ 10');
+	});
+
+	it('max only renders "≤"', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), maxPE: '25' });
+		expect(context.filterLabels).toContain('本益比（PE） ≤ 25');
+	});
+
+	it('min+max renders a single range constraint', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), minDebtRatio: '10', maxDebtRatio: '50' });
+		expect(context.filterLabels).toContain('負債比率 10% ～ 50%');
+	});
+
+	it('explicit zero is included, never treated as inactive', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '0' });
+		expect(context.filterLabels).toContain('營業活動現金流量 ≥ 0仟元');
+	});
+
+	it('a negative threshold is included and preserves its sign', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), minChangePercent: '-5' });
+		expect(context.filterLabels).toContain('漲跌幅 ≥ -5%');
+	});
+
+	it('percentage fields keep the % suffix, never rescaled', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), minCashFlowToNetIncome: '100' });
+		expect(context.filterLabels).toContain('營業現金流／淨利 ≥ 100%');
+	});
+
+	it('cash-flow amount keeps its raw thousand-TWD (仟元) semantics, never converted to 億元', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), minForeignNet: '1000' });
+		expect(context.filterLabels).toContain('外資買賣超 ≥ 1,000股');
+	});
+
+	it('sort ascending is labeled distinctly from descending', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), sort: 'pe', order: 'asc' });
+		expect(context.sortLabel).toBe('本益比（PE）（低到高）');
+	});
+
+	it('sort descending', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), sort: 'pe', order: 'desc' });
+		expect(context.sortLabel).toBe('本益比（PE）（高到低）');
+	});
+
+	it('pagination (limit/offset) is never surfaced as a criterion', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), limit: 100, offset: 50 });
+		expect(context.filterLabels).toEqual([]);
+	});
+
+	it('scope alone (no numeric filter) is not surfaced as a criterion', () => {
+		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), scope: 'twse' });
+		expect(context.filterLabels).toEqual([]);
 	});
 });

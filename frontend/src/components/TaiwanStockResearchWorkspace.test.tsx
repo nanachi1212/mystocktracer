@@ -3,7 +3,8 @@ import path from 'node:path';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { InterpretationView, TaiwanResearchSnapshot, type Component, type Intelligence, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
+import { InterpretationView, ScreenerEntryContext, TaiwanResearchSnapshot, type Component, type Intelligence, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
+import type { TaiwanResearchEntryContext } from '../lib/taiwan-product';
 import { TaiwanStockResearchErrorBoundary } from './TaiwanStockResearchErrorBoundary';
 
 const root = path.resolve(__dirname, '../../..');
@@ -134,7 +135,7 @@ describe('M6C — Watchlist row passes canonical identity, not code, into App-le
 		const app = appSource();
 		const fn = app.slice(app.indexOf('const openTaiwanStockResearch ='), app.indexOf('const askMasteryAI ='));
 		expect(fn).toContain('taiwanSymbolRequestNonce.current += 1');
-		expect(fn).toContain('setRequestedTaiwanSymbol({ canonical, token: taiwanSymbolRequestNonce.current })');
+		expect(fn).toContain('setRequestedTaiwanSymbol({ canonical, token: taiwanSymbolRequestNonce.current, context });');
 		expect(fn).toContain("switchWorkspace('taiwan-stock')");
 	});
 
@@ -309,5 +310,98 @@ describe('M8A — null / zero / negative semantics', () => {
 		const html = renderToStaticMarkup(<TaiwanResearchSnapshot fundamentals={{ status: 'not_applicable', reason: 'ordinary-stock fundamentals are not applicable' }} />);
 		expect(html).toContain('估值');
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(9);
+	});
+});
+
+// ==================================================
+// M8B -- Screener → Research navigation context ("來自台股篩選器"), ephemeral and frontend-only.
+// ==================================================
+
+const screenerContext = (overrides: Partial<TaiwanResearchEntryContext> = {}): TaiwanResearchEntryContext => ({
+	source: 'screener', filterLabels: ['本益比（PE） ≤ 25', '負債比率 ≤ 50%'], sortLabel: '本益比（PE）（低到高）',
+	...overrides,
+});
+
+describe('M8B — ScreenerEntryContext rendering', () => {
+	it('renders the exact heading and both subsections, separating 篩選條件 from 排序方式', () => {
+		const html = renderToStaticMarkup(<ScreenerEntryContext context={screenerContext()} />);
+		expect(html).toContain('來自台股篩選器');
+		expect(html).toContain('你從以下篩選條件的結果中開啟此研究');
+		expect(html).toContain('篩選條件');
+		expect(html).toContain('排序方式');
+		expect(html).toContain('本益比（PE） ≤ 25');
+		expect(html).toContain('負債比率 ≤ 50%');
+		expect(html).toContain('本益比（PE）（低到高）');
+		// Never uses a present-tense match claim -- this is provenance, not a re-validated match.
+		expect(html).not.toContain('目前仍符合');
+		expect(html).not.toContain('此股票符合以下條件');
+	});
+
+	it('no active filters still shows the block (sort is always active) with an explicit "no criteria" note', () => {
+		const html = renderToStaticMarkup(<ScreenerEntryContext context={screenerContext({ filterLabels: [] })} />);
+		expect(html).toContain('未設定篩選條件');
+		expect(html).toContain('排序方式');
+	});
+
+	it('zero and negative criterion values render exactly as given, never dropped or rewritten', () => {
+		const html = renderToStaticMarkup(<ScreenerEntryContext context={screenerContext({ filterLabels: ['營業活動現金流量 ≥ 0仟元', '漲跌幅 ≥ -5%'] })} />);
+		expect(html).toContain('營業活動現金流量 ≥ 0仟元');
+		expect(html).toContain('漲跌幅 ≥ -5%');
+	});
+});
+
+describe('M8B — navigation wiring (Screener context threaded through the existing M6C handoff)', () => {
+	it('ExternalTaiwanSymbolRequest carries an optional context field, never required', () => {
+		const source = researchSource();
+		expect(source).toContain('export type ExternalTaiwanSymbolRequest = { canonical: string; token: number; context?: TaiwanResearchEntryContext | null };');
+	});
+
+	it('select() accepts an optional context override distinguishing "leave untouched" (undefined) from "clear" (null)', () => {
+		const source = researchSource();
+		expect(source).toContain('const select = async (security: SecurityIdentity, context?: TaiwanResearchEntryContext | null) => {');
+		expect(source).toContain('if (context !== undefined) setScreenerContext(context);');
+	});
+
+	it('a Screener-originated external request threads its own context (or null) into select()', () => {
+		const source = researchSource();
+		expect(source).toContain('void select(exact, externalSymbolRequest.context ?? null);');
+	});
+
+	it('manual search/selection (not Screener-originated) always clears the context explicitly', () => {
+		const source = researchSource();
+		expect(source).toContain("await select(payload.data.securities[0], null);");
+		expect(source).toContain('onClick={() => void select(item, null)}');
+	});
+
+	it('the refreshKey retry of an already-selected symbol calls select() with no context argument, preserving whatever context is already set', () => {
+		const body = combinedEffectBody();
+		expect(body).toContain('if (selectedRef.current) { void select(selectedRef.current); return; }');
+	});
+
+	it('the context block is rendered only when screenerContext is set, and appears before EvidenceOverview -- never inside it', () => {
+		const source = researchSource();
+		expect(source).toContain('{screenerContext && <ScreenerEntryContext context={screenerContext} />}');
+		const contextIndex = source.indexOf('{screenerContext && <ScreenerEntryContext context={screenerContext} />}');
+		const evidenceIndex = source.indexOf('<EvidenceOverview intelligence={intelligence} />');
+		expect(contextIndex).toBeGreaterThan(-1);
+		expect(contextIndex).toBeLessThan(evidenceIndex);
+	});
+
+	it('ScreenerEntryContext is never referenced from EvidenceOverview/TaiwanResearchSnapshot/InterpretationView', () => {
+		const source = researchSource();
+		const evidenceOverviewBody = source.slice(source.indexOf('function EvidenceOverview'), source.indexOf('function snapshotPeriod'));
+		const snapshotBody = source.slice(source.indexOf('export function TaiwanResearchSnapshot'), source.indexOf('export function InterpretationView'));
+		expect(evidenceOverviewBody).not.toContain('ScreenerEntryContext');
+		expect(snapshotBody).not.toContain('ScreenerEntryContext');
+	});
+
+	it('App.tsx builds no separate screener-context plumbing beyond the existing requestedTaiwanSymbol/openTaiwanStockResearch handoff', () => {
+		const app = appSource();
+		expect(app).toContain('const openTaiwanStockResearch = (canonical: string, context?: TaiwanResearchEntryContext | null) => {');
+		expect(app).toContain('setRequestedTaiwanSymbol({ canonical, token: taiwanSymbolRequestNonce.current, context });');
+	});
+
+	it('the Watchlist call site is unaffected -- it still calls onOpenResearch(item.canonical) with no context, per the existing M6C wiring', () => {
+		expect(watchlistSource()).toContain('onOpen={() => onOpenResearch(item.canonical)}');
 	});
 });
