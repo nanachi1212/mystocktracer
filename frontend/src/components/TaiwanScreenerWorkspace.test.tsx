@@ -2661,3 +2661,128 @@ describe('M8E — no AI, no persistence, no new backend path', () => {
 		expect(source).not.toMatch(/customPreset|savePreset|userPreset|PresetStore|preset.*localStorage/i);
 	});
 });
+
+// ==================================================
+// M8F -- Screener Match Reasons: inline "why did this stock match?" annotations, derived purely
+// from applied filters + the row's own returned values. No AI, no score, no new request.
+// ==================================================
+
+describe('M8F — inline annotation rendering (real values, no separate panel/column)', () => {
+	it('no active filters at all -> no annotation anywhere in the advanced cell', () => {
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ revenue_yoy: 28.4 })} applied={taiwanScreenerDefaultFilters()} {...tableWatchlistProps({ showRevenue: true })} />);
+		expect(html).not.toMatch(/（[≥≤].*）/);
+	});
+
+	it('rendering with no `applied` supplied (default) shows no annotation -- backward compatible with existing call sites', () => {
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ revenue_yoy: 28.4 })} {...tableWatchlistProps({ showRevenue: true })} />);
+		expect(html).not.toMatch(/（[≥≤].*）/);
+		expect(html).toContain('+28.4%');
+	});
+
+	it('an active min filter annotates only the matching field, leaving unrelated fields in the same block untouched', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '15' };
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ revenue_yoy: 28.4, revenue_mom: 3.1, monthly_revenue: 1000000000 })} applied={applied} {...tableWatchlistProps({ showRevenue: true })} />);
+		expect(html).toContain('年增 +28.4%（≥ 15%）');
+		expect(html).toContain('<span>月增率 +3.1%</span>');
+		expect(html).toContain('<span>月營收 1,000,000,000</span>');
+	});
+
+	it('base columns (price/change_percent/volume/amount) annotate inline via ScreenerRow, not a new column', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minPrice: '50', minChangePercent: '5', minVolume: '1000000', minAmount: '10000000000' };
+		const row = security({ price: 65, change_percent: 8.2, volume: 14102018, amount: 33917316870 });
+		const element = ScreenerRow({ security: row, applied, onOpen: () => {}, ...rowWatchlistProps() });
+		const html = renderToStaticMarkup(element);
+		expect(html).toContain('（≥ 50）');
+		expect(html).toContain('（≥ 5%）');
+	});
+});
+
+describe('M8F — preset annotation examples (M8E presets produce real facts, never just the preset label)', () => {
+	it('營收成長 preset annotates revenue_yoy with its own threshold', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), ...presetById('revenue-growth').overrides };
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ revenue_yoy: 28.4 })} applied={applied} {...tableWatchlistProps({ showRevenue: true })} />);
+		expect(html).toContain('年增 +28.4%（≥ 15%）');
+		expect(html).not.toContain('營收成長');
+	});
+
+	it('法人偏多 preset annotates institutional_net', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), ...presetById('institutional-net-buy').overrides };
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ institutional_net: 2300000 })} applied={applied} {...tableWatchlistProps({ showInstitutional: true })} />);
+		expect(html).toMatch(/三大法人 \+[\d,]+（≥ \+1）/);
+	});
+
+	it('財務穩健 preset annotates both debt_ratio and current_ratio', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), ...presetById('financial-stability').overrides };
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ debt_ratio: 30.94, current_ratio: 245.76 })} applied={applied} {...tableWatchlistProps({ showBalance: true })} />);
+		expect(html).toContain('負債比 30.94%（≤ 50%）');
+		expect(html).toContain('流動比 245.76%（≥ 100%）');
+	});
+
+	it('現金流健康 preset annotates both operating_cash_flow and cash_flow_to_net_income, both in consistent units', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), ...presetById('cashflow-health').overrides };
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ operating_cash_flow: 1122637757, cash_flow_to_net_income: 148.06 })} applied={applied} {...tableWatchlistProps({ showCashflow: true })} />);
+		expect(html).toMatch(/營業活動現金流量 [\d.,]+ 億元（≥ [\d.,]+ 億元）/);
+		expect(html).toContain('營業現金流／淨利 148.06%（≥ 80%）');
+	});
+
+	it('低估值觀察 preset annotates both PE and PB as ranges', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), ...presetById('low-valuation-watch').overrides };
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ pe: 18.5, pb: 1.6 })} applied={applied} {...tableWatchlistProps({ showValuation: true })} />);
+		expect(html).toContain('PE 18.5（0.01–20）');
+		expect(html).toContain('PB 1.6（0.01–2）');
+	});
+});
+
+describe('M8F — manual filters (no preset) produce identical annotation quality', () => {
+	it('manually set minPE/maxPE (activePresetId irrelevant to this component) annotates exactly like a preset would', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minPE: '8', maxPE: '15' };
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ pe: 12.1 })} applied={applied} {...tableWatchlistProps({ showValuation: true })} />);
+		expect(html).toContain('PE 12.1（8–15）');
+	});
+});
+
+describe('M8F — null/unavailable safety', () => {
+	it('a filtered field with a null row value renders — with no annotation appended (never fabricated)', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '15' };
+		const html = renderToStaticMarkup(<ScreenerAdvancedCell security={security({ revenue_yoy: null })} applied={applied} {...tableWatchlistProps({ showRevenue: true })} />);
+		expect(html).toContain('年增 —');
+		expect(html).not.toMatch(/年增 —（/);
+	});
+});
+
+describe('M8F — propagation and existing behavior preserved', () => {
+	it('TaiwanScreenerWorkspace passes applied={applied} into ScreenerTable', () => {
+		const source = workspaceSource();
+		expect(source).toContain('securities={data.securities} applied={applied} onOpenResearch={');
+	});
+
+	it('ScreenerTable passes applied down to each ScreenerRow', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('export function ScreenerTable'), source.indexOf('// Pure/presentational row.'));
+		expect(fn).toContain('security={item} applied={applied}');
+	});
+
+	it('ScreenerRow passes applied down to ScreenerAdvancedCell', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('export function ScreenerRow'), source.indexOf('// M7D — pure/presentational compact advanced-data cell.'));
+		expect(fn).toContain('security={security} applied={applied}');
+	});
+
+	it('introduces no new requestJSON call -- still exactly one (the existing Screener query)', () => {
+		const source = workspaceSource();
+		const matches = source.match(/requestJSON</g) || [];
+		expect(matches.length).toBe(1);
+	});
+
+	it('introduces no AI call and no persistence', () => {
+		const source = workspaceSource();
+		const importsBlock = source.slice(0, source.indexOf('type QuoteLookup') > -1 ? source.length : source.length);
+		expect(source).not.toMatch(/taiwanResearchPath|GenerateTaiwanResearch|localStorage|sessionStorage|indexedDB/i);
+		expect(importsBlock).toBeDefined();
+	});
+
+	it('existing M8E preset tests remain unaffected (5 presets, exact field mapping) -- spot check', () => {
+		expect(taiwanScreenerPresets.length).toBe(5);
+		expect(presetById('revenue-growth').overrides).toEqual({ minRevenueYoY: '15' });
+	});
+});

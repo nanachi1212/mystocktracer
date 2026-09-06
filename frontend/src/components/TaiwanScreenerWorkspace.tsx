@@ -5,7 +5,7 @@ import { requestJSON } from '../lib/backend';
 import {
 	addTaiwanWatchlistSecurity, buildTaiwanScreenerContext, fetchTaiwanWatchlist, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatioPercent, formatTaiwanRevenueTWD, formatTaiwanSignedShares, formatTaiwanTWD,
 	removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanFinancialsStatusLabel, taiwanScopes, taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasCashflowCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasInstitutionalCriteria,
-	taiwanScreenerHasMarginCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria, taiwanScreenerOrderOptions, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanSecurityTypeLabel, taiwanStatusLabel,
+	taiwanScreenerHasMarginCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria, taiwanScreenerMatchReasonSuffix, taiwanScreenerOrderOptions, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanSecurityTypeLabel, taiwanStatusLabel,
 	validateTaiwanScreenerFilters, type TaiwanResearchEntryContext, type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
 } from '../lib/taiwan-product';
 
@@ -228,7 +228,7 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 		{data && <ScreenerSummary data={data} />}
 		{data && data.total === 0 && <div className="taiwan-empty-state"><strong>沒有符合目前條件的台灣證券</strong><p>可放寬篩選條件或按下「清除條件」查看全部結果。</p></div>}
 		{data && data.securities.length > 0 && <ScreenerTable
-			securities={data.securities} onOpenResearch={(canonical) => onOpenResearch(canonical, buildTaiwanScreenerContext(applied))}
+			securities={data.securities} applied={applied} onOpenResearch={(canonical) => onOpenResearch(canonical, buildTaiwanScreenerContext(applied))}
 			watchlistState={watchlistState} watchlistedCanonicals={watchlistedCanonicals}
 			busyCanonicals={busyCanonicals} mutationErrors={mutationErrors}
 			onToggleWatchlist={(canonical) => void toggleWatchlist(canonical)}
@@ -453,8 +453,12 @@ export function ScreenerSummary({ data }: { data: TaiwanScreenerResponse }) {
 	return <section className="taiwan-status-card"><div><strong>{data.scope}</strong><span className={`taiwan-status ${data.freshness}`}>{taiwanStatusLabel(data.freshness)}</span><span>{data.total.toLocaleString('zh-TW')} 檔符合條件</span></div><small>資料日期 {data.as_of || '未提供'}</small></section>;
 }
 
-export function ScreenerTable({ securities, onOpenResearch, watchlistState, watchlistedCanonicals, busyCanonicals, mutationErrors, onToggleWatchlist, showInstitutional, showMargin, showRevenue, showValuation, showDividends, showFinancials, showBalance, showCashflow }: {
+// M8F — `applied` is additive and optional (inert default: undefined, meaning no Match Reason
+// annotations render, byte-identical to pre-M8F output) so existing call sites that only test the
+// M7-era table/row behavior are unaffected.
+export function ScreenerTable({ securities, applied, onOpenResearch, watchlistState, watchlistedCanonicals, busyCanonicals, mutationErrors, onToggleWatchlist, showInstitutional, showMargin, showRevenue, showValuation, showDividends, showFinancials, showBalance, showCashflow }: {
 	securities: TaiwanScreenerSecurity[];
+	applied?: TaiwanScreenerFilters;
 	onOpenResearch: (canonical: string) => void;
 	watchlistState: WatchlistMembershipState;
 	watchlistedCanonicals: Set<string>;
@@ -474,7 +478,7 @@ export function ScreenerTable({ securities, onOpenResearch, watchlistState, watc
 	return <div className="taiwan-screener-table-wrap"><table className="taiwan-screener-table">
 		<thead><tr><th>證券</th><th>市場</th><th>價格</th><th>漲跌幅</th><th>成交量</th><th>成交金額</th><th>資料日期</th><th>自選</th>{showAdvanced && <th>進階資料</th>}</tr></thead>
 		<tbody>{securities.map((item) => <ScreenerRow
-			key={item.canonical} security={item} onOpen={() => onOpenResearch(item.canonical)}
+			key={item.canonical} security={item} applied={applied} onOpen={() => onOpenResearch(item.canonical)}
 			membershipState={watchlistState} saved={watchlistedCanonicals.has(item.canonical)}
 			busy={busyCanonicals.has(item.canonical)} mutationError={mutationErrors[item.canonical]}
 			onToggleWatchlist={() => onToggleWatchlist(item.canonical)}
@@ -492,8 +496,14 @@ export function ScreenerTable({ securities, onOpenResearch, watchlistState, watc
 // columns are always rendered identically to M7A/M7B/M7C — the optional 9th (advanced) cell is only
 // appended when at least one advanced domain is active, keeping the legacy table byte-identical
 // when neither institutional nor margin criteria apply.
-export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mutationError, onToggleWatchlist, showInstitutional, showMargin, showRevenue, showValuation, showDividends, showFinancials, showBalance, showCashflow }: {
+// M8F — `applied` is additive and optional (inert default: undefined, meaning no Match Reason
+// annotations render — every existing call site testing pre-M8F behavior is unaffected). When
+// present, it drives inline "why did this stock match" annotations on the base price/change%/
+// volume/amount columns via taiwanScreenerMatchReasonSuffix — appended only to fields that actually
+// have an active min/max filter in `applied`; every other field renders exactly as before.
+export function ScreenerRow({ security, applied, onOpen, membershipState, saved, busy, mutationError, onToggleWatchlist, showInstitutional, showMargin, showRevenue, showValuation, showDividends, showFinancials, showBalance, showCashflow }: {
 	security: TaiwanScreenerSecurity;
+	applied?: TaiwanScreenerFilters;
 	onOpen: () => void;
 	membershipState: WatchlistMembershipState;
 	saved: boolean;
@@ -510,17 +520,18 @@ export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mu
 	showCashflow: boolean;
 }) {
 	const tone = security.change_percent == null ? '' : security.change_percent > 0 ? 'up' : security.change_percent < 0 ? 'down' : 'flat';
+	const reason = (rowKey: keyof TaiwanScreenerSecurity) => applied ? taiwanScreenerMatchReasonSuffix(rowKey, applied, security) : '';
 	return <tr>
 		<td><button type="button" className="taiwan-screener-identity" onClick={onOpen}><strong>{security.name} {security.code}</strong></button></td>
 		<td>{security.exchange} · {taiwanSecurityTypeLabel(security.security_type)}</td>
-		<td>{security.price == null ? '—' : security.price.toLocaleString('zh-TW')}</td>
-		<td className={tone}>{formatTaiwanPercent(security.change_percent, true)}</td>
-		<td>{security.volume == null ? '—' : security.volume.toLocaleString('zh-TW')}</td>
-		<td>{formatTaiwanTWD(security.amount)}</td>
+		<td>{security.price == null ? '—' : security.price.toLocaleString('zh-TW')}{reason('price')}</td>
+		<td className={tone}>{formatTaiwanPercent(security.change_percent, true)}{reason('change_percent')}</td>
+		<td>{security.volume == null ? '—' : security.volume.toLocaleString('zh-TW')}{reason('volume')}</td>
+		<td>{formatTaiwanTWD(security.amount)}{reason('amount')}</td>
 		<td>{security.trade_date || '—'}</td>
 		<td><ScreenerWatchlistAction membershipState={membershipState} saved={saved} busy={busy} mutationError={mutationError} onToggle={onToggleWatchlist} /></td>
 		{(showInstitutional || showMargin || showRevenue || showValuation || showDividends || showFinancials || showBalance || showCashflow) && <ScreenerAdvancedCell
-			security={security} showInstitutional={showInstitutional} showMargin={showMargin}
+			security={security} applied={applied} showInstitutional={showInstitutional} showMargin={showMargin}
 			showRevenue={showRevenue} showValuation={showValuation} showDividends={showDividends}
 			showFinancials={showFinancials} showBalance={showBalance} showCashflow={showCashflow}
 		/>}
@@ -531,59 +542,66 @@ export function ScreenerRow({ security, onOpen, membershipState, saved, busy, mu
 // currently active (per applied filters/sort), never all nine fields permanently. Missing values
 // render "—"; a genuine zero renders "0"; signed net/change values carry an explicit + only when
 // positive (never "+0").
-export function ScreenerAdvancedCell({ security, showInstitutional, showMargin, showRevenue, showValuation, showDividends, showFinancials, showBalance, showCashflow }: {
-	security: TaiwanScreenerSecurity; showInstitutional: boolean; showMargin: boolean;
+// M8F — `applied` is additive and optional (inert default: undefined, meaning no annotations —
+// byte-identical to pre-M8F output). When present, taiwanScreenerMatchReasonSuffix appends a compact
+// "(≥ X)"/"(≤ X)"/"(X–Y)" threshold annotation directly after a field's already-rendered value, but
+// only for fields that actually have an active min/max filter in `applied` — every other field in
+// the same block renders exactly as before. financial_period/balance_period/cashflow_period are pure
+// context (no corresponding filter), so they never receive an annotation.
+export function ScreenerAdvancedCell({ security, applied, showInstitutional, showMargin, showRevenue, showValuation, showDividends, showFinancials, showBalance, showCashflow }: {
+	security: TaiwanScreenerSecurity; applied?: TaiwanScreenerFilters; showInstitutional: boolean; showMargin: boolean;
 	showRevenue: boolean; showValuation: boolean; showDividends: boolean; showFinancials: boolean;
 	showBalance: boolean; showCashflow: boolean;
 }) {
+	const reason = (rowKey: keyof TaiwanScreenerSecurity) => applied ? taiwanScreenerMatchReasonSuffix(rowKey, applied, security) : '';
 	return <td className="taiwan-screener-advanced-cell">
 		{showInstitutional && <div className="taiwan-screener-advanced-block">
-			<span>外資 {formatTaiwanSignedShares(security.foreign_net)}</span>
-			<span>投信 {formatTaiwanSignedShares(security.trust_net)}</span>
-			<span>自營商 {formatTaiwanSignedShares(security.dealer_net)}</span>
-			<span>三大法人 {formatTaiwanSignedShares(security.institutional_net)}</span>
+			<span>外資 {formatTaiwanSignedShares(security.foreign_net)}{reason('foreign_net')}</span>
+			<span>投信 {formatTaiwanSignedShares(security.trust_net)}{reason('trust_net')}</span>
+			<span>自營商 {formatTaiwanSignedShares(security.dealer_net)}{reason('dealer_net')}</span>
+			<span>三大法人 {formatTaiwanSignedShares(security.institutional_net)}{reason('institutional_net')}</span>
 		</div>}
 		{showMargin && <div className="taiwan-screener-advanced-block">
-			<span>融資 {security.margin_balance == null ? '—' : security.margin_balance.toLocaleString('zh-TW')}</span>
-			<span>融資增減 {formatTaiwanSignedShares(security.margin_change)}</span>
-			<span>融券 {security.short_balance == null ? '—' : security.short_balance.toLocaleString('zh-TW')}</span>
-			<span>融券增減 {formatTaiwanSignedShares(security.short_change)}</span>
-			<span>券資比 {formatTaiwanRatioPercent(security.short_margin_ratio)}</span>
+			<span>融資 {security.margin_balance == null ? '—' : security.margin_balance.toLocaleString('zh-TW')}{reason('margin_balance')}</span>
+			<span>融資增減 {formatTaiwanSignedShares(security.margin_change)}{reason('margin_change')}</span>
+			<span>融券 {security.short_balance == null ? '—' : security.short_balance.toLocaleString('zh-TW')}{reason('short_balance')}</span>
+			<span>融券增減 {formatTaiwanSignedShares(security.short_change)}{reason('short_change')}</span>
+			<span>券資比 {formatTaiwanRatioPercent(security.short_margin_ratio)}{reason('short_margin_ratio')}</span>
 		</div>}
 		{showRevenue && <div className="taiwan-screener-advanced-block">
-			<span>月營收 {formatTaiwanRevenueTWD(security.monthly_revenue)}</span>
-			<span>年增 {formatTaiwanPercent(security.revenue_yoy, true)}</span>
-			<span>月增率 {formatTaiwanPercent(security.revenue_mom, true)}</span>
-			<span>累計年增率 {formatTaiwanPercent(security.cumulative_revenue_yoy, true)}</span>
+			<span>月營收 {formatTaiwanRevenueTWD(security.monthly_revenue)}{reason('monthly_revenue')}</span>
+			<span>年增 {formatTaiwanPercent(security.revenue_yoy, true)}{reason('revenue_yoy')}</span>
+			<span>月增率 {formatTaiwanPercent(security.revenue_mom, true)}{reason('revenue_mom')}</span>
+			<span>累計年增率 {formatTaiwanPercent(security.cumulative_revenue_yoy, true)}{reason('cumulative_revenue_yoy')}</span>
 		</div>}
 		{showValuation && <div className="taiwan-screener-advanced-block">
-			<span>PE {formatTaiwanPlainNumber(security.pe)}</span>
-			<span>PB {formatTaiwanPlainNumber(security.pb)}</span>
-			<span>殖利率 {formatTaiwanPercent(security.dividend_yield)}</span>
+			<span>PE {formatTaiwanPlainNumber(security.pe)}{reason('pe')}</span>
+			<span>PB {formatTaiwanPlainNumber(security.pb)}{reason('pb')}</span>
+			<span>殖利率 {formatTaiwanPercent(security.dividend_yield)}{reason('dividend_yield')}</span>
 		</div>}
 		{showDividends && <div className="taiwan-screener-advanced-block">
-			<span>現金 {formatTaiwanPlainNumber(security.cash_dividend)}</span>
-			<span>股票 {formatTaiwanPlainNumber(security.stock_dividend)}</span>
-			<span>合計 {formatTaiwanPlainNumber(security.total_dividend)}</span>
+			<span>現金 {formatTaiwanPlainNumber(security.cash_dividend)}{reason('cash_dividend')}</span>
+			<span>股票 {formatTaiwanPlainNumber(security.stock_dividend)}{reason('stock_dividend')}</span>
+			<span>合計 {formatTaiwanPlainNumber(security.total_dividend)}{reason('total_dividend')}</span>
 		</div>}
 		{showFinancials && <div className="taiwan-screener-advanced-block">
 			<span>期間 {security.financial_period || '—'}</span>
-			<span>累計 EPS {formatTaiwanPlainNumber(security.cumulative_eps)}</span>
-			<span>毛利率 {formatTaiwanPercent(security.gross_margin)}</span>
-			<span>營業利益率 {formatTaiwanPercent(security.operating_margin)}</span>
-			<span>淨利率 {formatTaiwanPercent(security.net_margin)}</span>
-			<span>每股參考淨值 {formatTaiwanBookValuePerShare(security.book_value_per_share)}</span>
+			<span>累計 EPS {formatTaiwanPlainNumber(security.cumulative_eps)}{reason('cumulative_eps')}</span>
+			<span>毛利率 {formatTaiwanPercent(security.gross_margin)}{reason('gross_margin')}</span>
+			<span>營業利益率 {formatTaiwanPercent(security.operating_margin)}{reason('operating_margin')}</span>
+			<span>淨利率 {formatTaiwanPercent(security.net_margin)}{reason('net_margin')}</span>
+			<span>每股參考淨值 {formatTaiwanBookValuePerShare(security.book_value_per_share)}{reason('book_value_per_share')}</span>
 		</div>}
 		{showBalance && <div className="taiwan-screener-advanced-block">
 			<span>資產負債表期間 {security.balance_period || '—'}</span>
-			<span>負債比 {formatTaiwanPercent(security.debt_ratio)}</span>
-			<span>負債權益比 {formatTaiwanPercent(security.debt_to_equity)}</span>
-			<span>流動比 {formatTaiwanPercent(security.current_ratio)}</span>
+			<span>負債比 {formatTaiwanPercent(security.debt_ratio)}{reason('debt_ratio')}</span>
+			<span>負債權益比 {formatTaiwanPercent(security.debt_to_equity)}{reason('debt_to_equity')}</span>
+			<span>流動比 {formatTaiwanPercent(security.current_ratio)}{reason('current_ratio')}</span>
 		</div>}
 		{showCashflow && <div className="taiwan-screener-advanced-block">
 			<span>現金流量期間 {security.cashflow_period || '—'}</span>
-			<span>營業活動現金流量 {formatTaiwanCashFlowTWD(security.operating_cash_flow)}</span>
-			<span>營業現金流／淨利 {formatTaiwanPercent(security.cash_flow_to_net_income)}</span>
+			<span>營業活動現金流量 {formatTaiwanCashFlowTWD(security.operating_cash_flow)}{reason('operating_cash_flow')}</span>
+			<span>營業現金流／淨利 {formatTaiwanPercent(security.cash_flow_to_net_income)}{reason('cash_flow_to_net_income')}</span>
 		</div>}
 	</td>;
 }

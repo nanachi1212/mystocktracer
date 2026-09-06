@@ -2,11 +2,30 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-	buildTaiwanScreenerContext, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
+	buildTaiwanScreenerContext, buildTaiwanScreenerMatchReason, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
 	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath,
 	taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasCashflowCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
-	taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters,
+	taiwanScreenerMatchReasonSuffix, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters, type TaiwanScreenerSecurity,
 } from './taiwan-product';
+
+// M8F -- minimal TaiwanScreenerSecurity fixture (only the fields a given test actually needs are
+// overridden; every other numeric field defaults to null so a test never accidentally exercises an
+// unrelated field).
+function screenerSecurityFixture(overrides: Partial<TaiwanScreenerSecurity> = {}): TaiwanScreenerSecurity {
+	return {
+		canonical: '2330.TWSE', code: '2330', name: '台積電', exchange: 'TWSE', security_type: 'stock', trade_date: '2026-09-04',
+		price: null, change: null, change_percent: null, volume: null, amount: null,
+		foreign_net: null, trust_net: null, dealer_net: null, institutional_net: null,
+		margin_balance: null, margin_change: null, short_balance: null, short_change: null, short_margin_ratio: null,
+		monthly_revenue: null, revenue_yoy: null, revenue_mom: null, cumulative_revenue_yoy: null, pe: null, pb: null, dividend_yield: null,
+		cash_dividend: null, stock_dividend: null, total_dividend: null,
+		financial_period: null, cumulative_eps: null, gross_margin: null, operating_margin: null,
+		net_margin: null, book_value_per_share: null,
+		debt_ratio: null, debt_to_equity: null, current_ratio: null, balance_period: null,
+		operating_cash_flow: null, cash_flow_to_net_income: null, cashflow_period: null,
+		...overrides,
+	};
+}
 
 /** A promise plus its resolve/reject, so a test can control settlement order explicitly. */
 function deferred<T>() {
@@ -1273,5 +1292,155 @@ describe('M8B — buildTaiwanScreenerContext (Screener → Research navigation p
 	it('scope alone (no numeric filter) is not surfaced as a criterion', () => {
 		const context = buildTaiwanScreenerContext({ ...taiwanScreenerDefaultFilters(), scope: 'twse' });
 		expect(context.filterLabels).toEqual([]);
+	});
+});
+
+describe('M8F — buildTaiwanScreenerMatchReason / taiwanScreenerMatchReasonSuffix ("why did this stock match?")', () => {
+	it('no active filter for the field -> null (no reason)', () => {
+		const applied = taiwanScreenerDefaultFilters();
+		const row = screenerSecurityFixture({ revenue_yoy: 28.4 });
+		expect(buildTaiwanScreenerMatchReason('revenue_yoy', applied, row)).toBeNull();
+		expect(taiwanScreenerMatchReasonSuffix('revenue_yoy', applied, row)).toBe('');
+	});
+
+	it('min-only formatting: "≥ threshold"', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '15' };
+		const row = screenerSecurityFixture({ revenue_yoy: 28.4 });
+		const reason = buildTaiwanScreenerMatchReason('revenue_yoy', applied, row);
+		expect(reason).toEqual({ label: '月營收年增率', actual: '28.4%', condition: '≥ 15%' });
+		expect(taiwanScreenerMatchReasonSuffix('revenue_yoy', applied, row)).toBe('（≥ 15%）');
+	});
+
+	it('max-only formatting: "≤ threshold"', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), maxDebtRatio: '50' };
+		const row = screenerSecurityFixture({ debt_ratio: 42.1 });
+		const reason = buildTaiwanScreenerMatchReason('debt_ratio', applied, row);
+		expect(reason).toEqual({ label: '負債比率', actual: '42.1%', condition: '≤ 50%' });
+	});
+
+	it('min + max formatting: "X–Y" range', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minPE: '0.01', maxPE: '20' };
+		const row = screenerSecurityFixture({ pe: 12.4 });
+		const reason = buildTaiwanScreenerMatchReason('pe', applied, row);
+		expect(reason).toEqual({ label: '本益比（PE）', actual: '12.4', condition: '0.01–20' });
+	});
+
+	it('an explicit zero threshold is still active and rendered (not treated as unset)', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '0' };
+		const row = screenerSecurityFixture({ operating_cash_flow: 1122637757 });
+		const reason = buildTaiwanScreenerMatchReason('operating_cash_flow', applied, row);
+		expect(reason?.condition).toBe(`≥ ${(0).toLocaleString('zh-TW')} 億元`);
+	});
+
+	it('a negative threshold is still active and rendered', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minChangePercent: '-5' };
+		const row = screenerSecurityFixture({ change_percent: -2 });
+		const reason = buildTaiwanScreenerMatchReason('change_percent', applied, row);
+		expect(reason?.condition).toContain('-5');
+	});
+
+	it('null row actual value -> reason omitted even though the filter is active', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '15' };
+		const row = screenerSecurityFixture({ revenue_yoy: null });
+		expect(buildTaiwanScreenerMatchReason('revenue_yoy', applied, row)).toBeNull();
+	});
+
+	it('non-finite row actual value (NaN/Infinity) -> reason omitted, never rendered', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '15' };
+		expect(buildTaiwanScreenerMatchReason('revenue_yoy', applied, screenerSecurityFixture({ revenue_yoy: NaN }))).toBeNull();
+		expect(buildTaiwanScreenerMatchReason('revenue_yoy', applied, screenerSecurityFixture({ revenue_yoy: Infinity }))).toBeNull();
+	});
+
+	it('cash-flow threshold and actual value share the SAME 億元 unit -- never raw 仟元 beside a converted actual value', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '1122637757' };
+		const row = screenerSecurityFixture({ operating_cash_flow: 1122637757 });
+		const reason = buildTaiwanScreenerMatchReason('operating_cash_flow', applied, row);
+		expect(reason?.actual).toContain('億元');
+		expect(reason?.condition).toContain('億元');
+		expect(reason?.condition).not.toMatch(/仟元/);
+	});
+
+	it('低估值觀察-style PE/PB ranges render consistently with the M8E preset contract (0.01 boundary, not 0)', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minPE: '0.01', maxPE: '20', minPB: '0.01', maxPB: '2' };
+		const peRow = screenerSecurityFixture({ pe: 18.5, pb: 1.6 });
+		expect(buildTaiwanScreenerMatchReason('pe', applied, peRow)?.condition).toBe('0.01–20');
+		expect(buildTaiwanScreenerMatchReason('pb', applied, peRow)?.condition).toBe('0.01–2');
+	});
+
+	it('財務穩健-style preset produces two independent reasons (debt_ratio + current_ratio)', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), maxDebtRatio: '50', minCurrentRatio: '100' };
+		const row = screenerSecurityFixture({ debt_ratio: 30.94, current_ratio: 245.76 });
+		expect(buildTaiwanScreenerMatchReason('debt_ratio', applied, row)?.condition).toBe('≤ 50%');
+		expect(buildTaiwanScreenerMatchReason('current_ratio', applied, row)?.condition).toBe('≥ 100%');
+	});
+
+	it('現金流健康-style preset produces two independent reasons (operating_cash_flow + cash_flow_to_net_income)', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minOperatingCashFlow: '1', minCashFlowToNetIncome: '80' };
+		const row = screenerSecurityFixture({ operating_cash_flow: 1122637757, cash_flow_to_net_income: 148.06 });
+		expect(buildTaiwanScreenerMatchReason('operating_cash_flow', applied, row)).not.toBeNull();
+		expect(buildTaiwanScreenerMatchReason('cash_flow_to_net_income', applied, row)?.condition).toBe('≥ 80%');
+	});
+
+	it('法人偏多-style preset produces one reason (institutional_net) using the same signed-shares formatter for both sides', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minInstitutionalNet: '1' };
+		const row = screenerSecurityFixture({ institutional_net: 2300000 });
+		const reason = buildTaiwanScreenerMatchReason('institutional_net', applied, row);
+		expect(reason?.label).toBe('三大法人合計');
+		expect(reason?.actual).toContain('+');
+	});
+
+	it('manual filters (no preset involved) produce identical reason quality -- the source of truth is `applied`, never activePresetId', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minPE: '8', maxPE: '15' };
+		const row = screenerSecurityFixture({ pe: 12.1 });
+		expect(buildTaiwanScreenerMatchReason('pe', applied, row)).toEqual({ label: '本益比（PE）', actual: '12.1', condition: '8–15' });
+	});
+
+	it('uses `applied`, not `draft` -- a stale-applied threshold must keep showing until Apply is pressed (verified by only ever accepting one filters argument, the caller\'s job to pass applied)', () => {
+		const appliedAtQueryTime = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '15' };
+		const laterDraftEdit = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '30' };
+		const row = screenerSecurityFixture({ revenue_yoy: 20 });
+		// The row was produced by appliedAtQueryTime (revenue_yoy >= 15); its own reason must reflect
+		// that threshold, never the newer unapplied draft edit.
+		expect(buildTaiwanScreenerMatchReason('revenue_yoy', appliedAtQueryTime, row)?.condition).toBe('≥ 15%');
+		expect(buildTaiwanScreenerMatchReason('revenue_yoy', laterDraftEdit, row)?.condition).not.toBe('≥ 15%');
+	});
+
+	it('base-column price annotation (no unit suffix, matching how ScreenerRow itself displays price — plain toLocaleString)', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minPrice: '50' };
+		const row = screenerSecurityFixture({ price: 65 });
+		expect(buildTaiwanScreenerMatchReason('price', applied, row)?.condition).toBe('≥ 50');
+	});
+
+	it('base-column change_percent annotation', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minChangePercent: '5' };
+		const row = screenerSecurityFixture({ change_percent: 8.2 });
+		expect(buildTaiwanScreenerMatchReason('change_percent', applied, row)?.condition).toBe('≥ 5%');
+	});
+
+	it('base-column volume annotation (no unit suffix, matching how ScreenerRow itself displays volume — plain toLocaleString)', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minVolume: '1000000' };
+		const row = screenerSecurityFixture({ volume: 14102018 });
+		expect(buildTaiwanScreenerMatchReason('volume', applied, row)?.condition).toBe(`≥ ${(1000000).toLocaleString('zh-TW')}`);
+	});
+
+	it('base-column amount annotation', () => {
+		const applied = { ...taiwanScreenerDefaultFilters(), minAmount: '10000000000' };
+		const row = screenerSecurityFixture({ amount: 33917316870 });
+		const reason = buildTaiwanScreenerMatchReason('amount', applied, row);
+		expect(reason?.actual).toContain('億元');
+		expect(reason?.condition).toContain('億元');
+	});
+
+	it('labels reuse the existing descriptor source -- match the exact same Chinese text as buildTaiwanScreenerContext (M8B)', () => {
+		const filters = { ...taiwanScreenerDefaultFilters(), minRevenueYoY: '15' };
+		const context = buildTaiwanScreenerContext(filters);
+		const reason = buildTaiwanScreenerMatchReason('revenue_yoy', filters, screenerSecurityFixture({ revenue_yoy: 28.4 }));
+		expect(context.filterLabels[0]).toContain(reason?.label as string);
+	});
+
+	it('unknown rowKey (no descriptor) -> null, never throws', () => {
+		const applied = taiwanScreenerDefaultFilters();
+		expect(buildTaiwanScreenerMatchReason('canonical', applied, screenerSecurityFixture())).toBeNull();
+		expect(buildTaiwanScreenerMatchReason('trade_date', applied, screenerSecurityFixture())).toBeNull();
 	});
 });

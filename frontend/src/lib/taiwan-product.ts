@@ -396,46 +396,56 @@ export type TaiwanResearchEntryContext = {
 	sortLabel: string;
 };
 
-type TaiwanScreenerCriterionDescriptor = { minKey: keyof TaiwanScreenerFilters; maxKey: keyof TaiwanScreenerFilters; label: string; unit: string };
+// M8F — rowKey/format are additive: they let this SAME descriptor table (already used by M8B's
+// buildTaiwanScreenerContext for threshold-only provenance text) also drive Match Reasons (M8F),
+// which need the row's own actual value alongside the threshold. `format` is always one of the
+// existing exported formatTaiwan* functions — applied to BOTH the threshold and (by the caller, at
+// the existing display site) the actual value, so the two numbers are always shown in the same unit
+// (e.g. operating_cash_flow's threshold is shown in 億元 exactly like the already-displayed actual
+// value, never left in raw 仟元 beside a converted actual value).
+type TaiwanScreenerCriterionDescriptor = {
+	minKey: keyof TaiwanScreenerFilters; maxKey: keyof TaiwanScreenerFilters; label: string; unit: string;
+	rowKey: keyof TaiwanScreenerSecurity; format: (value: number) => string;
+};
 
 // Base label + unit exactly mirror the Screener's own advanced-filter field labels (see
 // TaiwanScreenerWorkspace.tsx) — this is deliberately not a second, independently-worded dictionary.
 // Units are never rescaled here: operating cash flow keeps its raw 仟元 (thousand-TWD) semantics
 // (the same units the filter input itself is entered in), percentages stay percentages.
 const taiwanScreenerCriteriaDescriptors: TaiwanScreenerCriterionDescriptor[] = [
-	{ minKey: 'minPrice', maxKey: 'maxPrice', label: '股價', unit: '元' },
-	{ minKey: 'minChangePercent', maxKey: 'maxChangePercent', label: '漲跌幅', unit: '%' },
-	{ minKey: 'minVolume', maxKey: 'maxVolume', label: '成交量', unit: '股' },
-	{ minKey: 'minAmount', maxKey: 'maxAmount', label: '成交金額', unit: '元' },
-	{ minKey: 'minForeignNet', maxKey: 'maxForeignNet', label: '外資買賣超', unit: '股' },
-	{ minKey: 'minTrustNet', maxKey: 'maxTrustNet', label: '投信買賣超', unit: '股' },
-	{ minKey: 'minDealerNet', maxKey: 'maxDealerNet', label: '自營商買賣超', unit: '股' },
-	{ minKey: 'minInstitutionalNet', maxKey: 'maxInstitutionalNet', label: '三大法人合計', unit: '股' },
-	{ minKey: 'minMarginBalance', maxKey: 'maxMarginBalance', label: '融資餘額', unit: '股' },
-	{ minKey: 'minMarginChange', maxKey: 'maxMarginChange', label: '融資增減', unit: '股' },
-	{ minKey: 'minShortBalance', maxKey: 'maxShortBalance', label: '融券餘額', unit: '股' },
-	{ minKey: 'minShortChange', maxKey: 'maxShortChange', label: '融券增減', unit: '股' },
-	{ minKey: 'minShortMarginRatio', maxKey: 'maxShortMarginRatio', label: '券資比', unit: '%' },
-	{ minKey: 'minMonthlyRevenue', maxKey: 'maxMonthlyRevenue', label: '月營收', unit: '元' },
-	{ minKey: 'minRevenueYoY', maxKey: 'maxRevenueYoY', label: '月營收年增率', unit: '%' },
-	{ minKey: 'minRevenueMoM', maxKey: 'maxRevenueMoM', label: '月營收月增率', unit: '%' },
-	{ minKey: 'minCumulativeRevenueYoY', maxKey: 'maxCumulativeRevenueYoY', label: '累計營收年增率', unit: '%' },
-	{ minKey: 'minPE', maxKey: 'maxPE', label: '本益比（PE）', unit: '' },
-	{ minKey: 'minPB', maxKey: 'maxPB', label: '股價淨值比（PB）', unit: '' },
-	{ minKey: 'minDividendYield', maxKey: 'maxDividendYield', label: '殖利率', unit: '%' },
-	{ minKey: 'minCashDividend', maxKey: 'maxCashDividend', label: '現金股利', unit: '' },
-	{ minKey: 'minStockDividend', maxKey: 'maxStockDividend', label: '股票股利', unit: '' },
-	{ minKey: 'minTotalDividend', maxKey: 'maxTotalDividend', label: '合計股利', unit: '' },
-	{ minKey: 'minCumulativeEPS', maxKey: 'maxCumulativeEPS', label: '累計 EPS', unit: '' },
-	{ minKey: 'minGrossMargin', maxKey: 'maxGrossMargin', label: '毛利率', unit: '%' },
-	{ minKey: 'minOperatingMargin', maxKey: 'maxOperatingMargin', label: '營業利益率', unit: '%' },
-	{ minKey: 'minNetMargin', maxKey: 'maxNetMargin', label: '淨利率', unit: '%' },
-	{ minKey: 'minBookValuePerShare', maxKey: 'maxBookValuePerShare', label: '每股參考淨值', unit: '' },
-	{ minKey: 'minDebtRatio', maxKey: 'maxDebtRatio', label: '負債比率', unit: '%' },
-	{ minKey: 'minDebtToEquity', maxKey: 'maxDebtToEquity', label: '負債權益比', unit: '%' },
-	{ minKey: 'minCurrentRatio', maxKey: 'maxCurrentRatio', label: '流動比率', unit: '%' },
-	{ minKey: 'minOperatingCashFlow', maxKey: 'maxOperatingCashFlow', label: '營業活動現金流量', unit: '仟元' },
-	{ minKey: 'minCashFlowToNetIncome', maxKey: 'maxCashFlowToNetIncome', label: '營業現金流／淨利', unit: '%' },
+	{ minKey: 'minPrice', maxKey: 'maxPrice', label: '股價', unit: '元', rowKey: 'price', format: (v) => v.toLocaleString('zh-TW') },
+	{ minKey: 'minChangePercent', maxKey: 'maxChangePercent', label: '漲跌幅', unit: '%', rowKey: 'change_percent', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minVolume', maxKey: 'maxVolume', label: '成交量', unit: '股', rowKey: 'volume', format: (v) => v.toLocaleString('zh-TW') },
+	{ minKey: 'minAmount', maxKey: 'maxAmount', label: '成交金額', unit: '元', rowKey: 'amount', format: (v) => formatTaiwanTWD(v) },
+	{ minKey: 'minForeignNet', maxKey: 'maxForeignNet', label: '外資買賣超', unit: '股', rowKey: 'foreign_net', format: (v) => formatTaiwanSignedShares(v) },
+	{ minKey: 'minTrustNet', maxKey: 'maxTrustNet', label: '投信買賣超', unit: '股', rowKey: 'trust_net', format: (v) => formatTaiwanSignedShares(v) },
+	{ minKey: 'minDealerNet', maxKey: 'maxDealerNet', label: '自營商買賣超', unit: '股', rowKey: 'dealer_net', format: (v) => formatTaiwanSignedShares(v) },
+	{ minKey: 'minInstitutionalNet', maxKey: 'maxInstitutionalNet', label: '三大法人合計', unit: '股', rowKey: 'institutional_net', format: (v) => formatTaiwanSignedShares(v) },
+	{ minKey: 'minMarginBalance', maxKey: 'maxMarginBalance', label: '融資餘額', unit: '股', rowKey: 'margin_balance', format: (v) => v.toLocaleString('zh-TW') },
+	{ minKey: 'minMarginChange', maxKey: 'maxMarginChange', label: '融資增減', unit: '股', rowKey: 'margin_change', format: (v) => formatTaiwanSignedShares(v) },
+	{ minKey: 'minShortBalance', maxKey: 'maxShortBalance', label: '融券餘額', unit: '股', rowKey: 'short_balance', format: (v) => v.toLocaleString('zh-TW') },
+	{ minKey: 'minShortChange', maxKey: 'maxShortChange', label: '融券增減', unit: '股', rowKey: 'short_change', format: (v) => formatTaiwanSignedShares(v) },
+	{ minKey: 'minShortMarginRatio', maxKey: 'maxShortMarginRatio', label: '券資比', unit: '%', rowKey: 'short_margin_ratio', format: (v) => formatTaiwanRatioPercent(v) },
+	{ minKey: 'minMonthlyRevenue', maxKey: 'maxMonthlyRevenue', label: '月營收', unit: '元', rowKey: 'monthly_revenue', format: (v) => formatTaiwanRevenueTWD(v) },
+	{ minKey: 'minRevenueYoY', maxKey: 'maxRevenueYoY', label: '月營收年增率', unit: '%', rowKey: 'revenue_yoy', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minRevenueMoM', maxKey: 'maxRevenueMoM', label: '月營收月增率', unit: '%', rowKey: 'revenue_mom', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minCumulativeRevenueYoY', maxKey: 'maxCumulativeRevenueYoY', label: '累計營收年增率', unit: '%', rowKey: 'cumulative_revenue_yoy', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minPE', maxKey: 'maxPE', label: '本益比（PE）', unit: '', rowKey: 'pe', format: (v) => formatTaiwanPlainNumber(v) },
+	{ minKey: 'minPB', maxKey: 'maxPB', label: '股價淨值比（PB）', unit: '', rowKey: 'pb', format: (v) => formatTaiwanPlainNumber(v) },
+	{ minKey: 'minDividendYield', maxKey: 'maxDividendYield', label: '殖利率', unit: '%', rowKey: 'dividend_yield', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minCashDividend', maxKey: 'maxCashDividend', label: '現金股利', unit: '', rowKey: 'cash_dividend', format: (v) => formatTaiwanPlainNumber(v) },
+	{ minKey: 'minStockDividend', maxKey: 'maxStockDividend', label: '股票股利', unit: '', rowKey: 'stock_dividend', format: (v) => formatTaiwanPlainNumber(v) },
+	{ minKey: 'minTotalDividend', maxKey: 'maxTotalDividend', label: '合計股利', unit: '', rowKey: 'total_dividend', format: (v) => formatTaiwanPlainNumber(v) },
+	{ minKey: 'minCumulativeEPS', maxKey: 'maxCumulativeEPS', label: '累計 EPS', unit: '', rowKey: 'cumulative_eps', format: (v) => formatTaiwanPlainNumber(v) },
+	{ minKey: 'minGrossMargin', maxKey: 'maxGrossMargin', label: '毛利率', unit: '%', rowKey: 'gross_margin', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minOperatingMargin', maxKey: 'maxOperatingMargin', label: '營業利益率', unit: '%', rowKey: 'operating_margin', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minNetMargin', maxKey: 'maxNetMargin', label: '淨利率', unit: '%', rowKey: 'net_margin', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minBookValuePerShare', maxKey: 'maxBookValuePerShare', label: '每股參考淨值', unit: '', rowKey: 'book_value_per_share', format: (v) => formatTaiwanBookValuePerShare(v) },
+	{ minKey: 'minDebtRatio', maxKey: 'maxDebtRatio', label: '負債比率', unit: '%', rowKey: 'debt_ratio', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minDebtToEquity', maxKey: 'maxDebtToEquity', label: '負債權益比', unit: '%', rowKey: 'debt_to_equity', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minCurrentRatio', maxKey: 'maxCurrentRatio', label: '流動比率', unit: '%', rowKey: 'current_ratio', format: (v) => formatTaiwanPercent(v) },
+	{ minKey: 'minOperatingCashFlow', maxKey: 'maxOperatingCashFlow', label: '營業活動現金流量', unit: '仟元', rowKey: 'operating_cash_flow', format: (v) => formatTaiwanCashFlowTWD(v) },
+	{ minKey: 'minCashFlowToNetIncome', maxKey: 'maxCashFlowToNetIncome', label: '營業現金流／淨利', unit: '%', rowKey: 'cash_flow_to_net_income', format: (v) => formatTaiwanPercent(v) },
 ];
 
 function formatTaiwanCriterionValue(value: number, unit: string): string {
@@ -464,6 +474,40 @@ export function buildTaiwanScreenerContext(filters: TaiwanScreenerFilters): Taiw
 	const orderOption = taiwanScreenerOrderOptions.find((item) => item.id === filters.order);
 	const sortLabel = `${sortOption?.label || filters.sort}（${orderOption?.label || filters.order}）`;
 	return { source: 'screener', filterLabels, sortLabel };
+}
+
+// M8F — "Why did this stock match?" One field's structured Match Reason: the applied threshold that
+// is currently active for this field, plus this row's own actual value — both formatted with the
+// SAME descriptor.format function (see taiwanScreenerCriteriaDescriptors above), so a cash-flow
+// threshold is never left in raw 仟元 next to an actual value already converted to 億元, and so on
+// for every other field. Deterministic only: derived purely from `applied` (never `draft`) and the
+// row's own returned value — no AI, no score, no "match strength".
+export type TaiwanScreenerMatchReason = { label: string; actual: string; condition: string };
+
+// Returns null (never a fabricated reason) when: this rowKey has no descriptor, no min/max filter is
+// currently active for it in `applied`, or the row's own value for it is null/non-finite (NaN/
+// Infinity never render). Uses `applied` exclusively — callers must never pass `draft`, so a result
+// row always keeps showing the threshold that actually produced it until the user presses Apply.
+export function buildTaiwanScreenerMatchReason(rowKey: keyof TaiwanScreenerSecurity, applied: TaiwanScreenerFilters, row: TaiwanScreenerSecurity): TaiwanScreenerMatchReason | null {
+	const descriptor = taiwanScreenerCriteriaDescriptors.find((item) => item.rowKey === rowKey);
+	if (!descriptor) return null;
+	const min = taiwanScreenerRangeValue(applied[descriptor.minKey] as string);
+	const max = taiwanScreenerRangeValue(applied[descriptor.maxKey] as string);
+	if (min == null && max == null) return null;
+	const actual = row[rowKey] as number | null;
+	if (actual == null || !Number.isFinite(actual)) return null;
+	const condition = min != null && max != null
+		? `${descriptor.format(min)}–${descriptor.format(max)}`
+		: min != null ? `≥ ${descriptor.format(min)}` : `≤ ${descriptor.format(max as number)}`;
+	return { label: descriptor.label, actual: descriptor.format(actual), condition };
+}
+
+// Compact inline suffix to append directly after an already-rendered actual-value span (e.g.
+// `${formatTaiwanPercent(security.revenue_yoy, true)}${taiwanScreenerMatchReasonSuffix('revenue_yoy', applied, security)}`).
+// Returns '' — never a placeholder string — when buildTaiwanScreenerMatchReason itself returns null.
+export function taiwanScreenerMatchReasonSuffix(rowKey: keyof TaiwanScreenerSecurity, applied: TaiwanScreenerFilters, row: TaiwanScreenerSecurity): string {
+	const reason = buildTaiwanScreenerMatchReason(rowKey, applied, row);
+	return reason ? `（${reason.condition}）` : '';
 }
 
 // Builds the exact M7A query contract. Blank optional fields are omitted; an explicitly entered 0
