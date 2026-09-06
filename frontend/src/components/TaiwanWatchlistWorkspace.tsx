@@ -135,6 +135,15 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 		setRemovingSymbol(canonical);
 		try {
 			await removeTaiwanWatchlistSecurity(config, canonical);
+			// M8D.1 — securitiesRef is normally kept in sync by the effect below reacting to
+			// `securities`, but that effect only runs on the NEXT render after setSecurities is
+			// dispatched — a real window in which an in-flight loadSummary() response could still
+			// observe the (stale) old ref and write a removed security's summary back into the cache.
+			// Invalidate the ref synchronously, right here, the instant backend removal actually
+			// succeeds — never earlier (a failed removal below never reaches this line, so the item
+			// correctly remains "present" for any still-valid in-flight request) and never only via
+			// the later effect (which still runs afterward and simply reconfirms the same state).
+			securitiesRef.current.delete(canonical);
 			setSecurities((current) => current.filter((item) => item.canonical !== canonical));
 			setQuotes((current) => { const next = { ...current }; delete next[canonical]; return next; });
 			// M8D — a removed security's cached/in-flight summary state must not linger indefinitely.

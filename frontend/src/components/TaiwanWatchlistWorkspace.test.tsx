@@ -431,6 +431,51 @@ describe('M8D — removal clears summary state and guards against a stale async 
 		expect(fn).toContain('setExpanded((current) => { const next = new Set(current); next.delete(canonical); return next; });');
 	});
 
+	// M8D.1 — the useEffect that keeps securitiesRef in sync with `securities` only runs on the
+	// render AFTER setSecurities is dispatched, leaving a real window in which an in-flight
+	// loadSummary() response could still observe the stale ref and resurrect a removed security's
+	// summary. remove() must therefore invalidate securitiesRef SYNCHRONOUSLY, in the same
+	// synchronous continuation as the successful backend removal — not merely rely on the effect.
+	// These assertions lock the actual statement ORDER inside remove(), not just that the lines
+	// exist somewhere in the file.
+	it('a successful remove synchronously deletes the canonical from securitiesRef immediately after the backend call succeeds, before any other state update', () => {
+		const source = workspaceSource();
+		const removeStart = source.indexOf('const remove = async');
+		const tryStart = source.indexOf('try {', removeStart);
+		const catchStart = source.indexOf('} catch (reason) {', removeStart);
+		const successBlock = source.slice(tryStart, catchStart);
+		const awaitIndex = successBlock.indexOf('await removeTaiwanWatchlistSecurity(config, canonical);');
+		const refDeleteIndex = successBlock.indexOf('securitiesRef.current.delete(canonical);');
+		const setSecuritiesIndex = successBlock.indexOf('setSecurities((current) => current.filter((item) => item.canonical !== canonical));');
+		expect(awaitIndex).toBeGreaterThan(-1);
+		expect(refDeleteIndex).toBeGreaterThan(-1);
+		expect(setSecuritiesIndex).toBeGreaterThan(-1);
+		// The ref invalidation must happen after the network call resolves successfully, and before
+		// (or at latest, not after) any of remove()'s own React state updates -- closing the window
+		// synchronously rather than waiting for the securities -> securitiesRef effect to catch up.
+		expect(refDeleteIndex).toBeGreaterThan(awaitIndex);
+		expect(refDeleteIndex).toBeLessThan(setSecuritiesIndex);
+	});
+
+	it('a failed remove never invalidates securitiesRef -- the ref-delete line lives only in the success path, never in the catch block', () => {
+		const source = workspaceSource();
+		const removeStart = source.indexOf('const remove = async');
+		const catchStart = source.indexOf('} catch (reason) {', removeStart);
+		const finallyStart = source.indexOf('} finally {', removeStart);
+		const catchBlock = source.slice(catchStart, finallyStart);
+		expect(catchBlock).not.toContain('securitiesRef.current.delete');
+		// Confirms the delete call is guarded by the same try block as the network call itself: an
+		// exception thrown by removeTaiwanWatchlistSecurity jumps straight to catch and never reaches
+		// the ref-delete line, so a still-listed (removal-failed) security remains "present" for any
+		// in-flight intelligence request to validly populate.
+	});
+
+	it('the in-flight request guard (summaryRequestsRef) is never touched by remove() -- an in-flight request is left to finish and discard itself naturally via the stale-response check', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const remove = async'), source.indexOf('return <div className="taiwan-product-workspace'));
+		expect(fn).not.toContain('summaryRequestsRef');
+	});
+
 	it('loadSummary drops a stale response for a security no longer on the watchlist (checked before every state update)', () => {
 		const source = workspaceSource();
 		const fn = source.slice(source.indexOf('const loadSummary = '), source.indexOf('const toggleSummary = '));
