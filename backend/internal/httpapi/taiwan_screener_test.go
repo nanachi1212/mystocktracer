@@ -209,12 +209,65 @@ func (f fixedTaiwanScreenerFinancials) ScreenerFinancials(context.Context, time.
 // security still on an OLDER period (2026-Q1): the provider has already nulled its metric fields per
 // the mixed-period gate, but it still carries its own true financial_period. 9999.TWSE (from
 // screenerFixtureRows) deliberately has NO financials row at all.
+// NetMargin (M7E-C) is populated here exactly as the real provider would leave it: present for the two
+// "ci" rows on the target period (2330.TWSE/6488.TPEX), nil for 1101.TWSE (mixed-period gate already
+// applied by the provider, same as its other three metric fields).
 func screenerFinancialsFixtureRows() []foundation.FinancialStatementPeriod {
 	return []foundation.FinancialStatementPeriod{
-		{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", CumulativeEPS: floatPtr(49.33), GrossMargin: floatPtr(67.03), OperatingMargin: floatPtr(59.29)},
-		{Canonical: "6488.TPEX", Code: "6488", Exchange: "TPEX", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", CumulativeEPS: floatPtr(11.87), GrossMargin: floatPtr(0), OperatingMargin: floatPtr(9.93)},
-		{Canonical: "1101.TWSE", Code: "1101", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 1, AccountingCategory: "ci", CumulativeEPS: nil, GrossMargin: nil, OperatingMargin: nil},
+		{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", CumulativeEPS: floatPtr(49.33), GrossMargin: floatPtr(67.03), OperatingMargin: floatPtr(59.29), NetMargin: floatPtr(53.22)},
+		{Canonical: "6488.TPEX", Code: "6488", Exchange: "TPEX", FiscalYear: 2026, FiscalQuarter: 2, AccountingCategory: "ci", CumulativeEPS: floatPtr(11.87), GrossMargin: floatPtr(0), OperatingMargin: floatPtr(9.93), NetMargin: floatPtr(8.5)},
+		{Canonical: "1101.TWSE", Code: "1101", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 1, AccountingCategory: "ci", CumulativeEPS: nil, GrossMargin: nil, OperatingMargin: nil, NetMargin: nil},
 	}
+}
+
+// fixedTaiwanScreenerBalance is the M7E-C balance-sheet test double, mirroring
+// fixedTaiwanScreenerFinancials.
+type fixedTaiwanScreenerBalance struct {
+	rows      []foundation.FinancialStatementPeriod
+	freshness foundation.TaiwanFundamentalsDomainFreshness
+	err       error
+	calls     *int
+}
+
+func (f fixedTaiwanScreenerBalance) ScreenerBalance(context.Context, time.Time) ([]foundation.FinancialStatementPeriod, foundation.TaiwanFundamentalsDomainFreshness, error) {
+	if f.calls != nil {
+		*f.calls++
+	}
+	return f.rows, f.freshness, f.err
+}
+
+// screenerBalanceFixtureRows exercises all three M7E-C.0 period-alignment cases using the same four
+// securities as screenerFixtureRows/screenerFinancialsFixtureRows (Case A: 2330.TWSE, balance period
+// equals its own income period 2026-Q2, which equals the domain target -- BVPS visible. Case B:
+// 6488.TPEX, balance period 2026-Q1 does NOT equal its own income period 2026-Q2 -- BVPS null even
+// though its income row is on target. Case C: 1101.TWSE, balance period 2026-Q1 equals its own income
+// period 2026-Q1, but that income period is NOT the domain target 2026-Q2 -- BVPS null. 9999.TWSE has
+// no income row at all, so it never reaches the balance join -- BVPS null.
+func screenerBalanceFixtureRows() []foundation.FinancialStatementPeriod {
+	return []foundation.FinancialStatementPeriod{
+		{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 2, BookValuePerShare: floatPtr(28.5)},
+		{Canonical: "6488.TPEX", Code: "6488", Exchange: "TPEX", FiscalYear: 2026, FiscalQuarter: 1, BookValuePerShare: floatPtr(45.2)},
+		{Canonical: "1101.TWSE", Code: "1101", Exchange: "TWSE", FiscalYear: 2026, FiscalQuarter: 1, BookValuePerShare: floatPtr(12.3)},
+	}
+}
+
+func screenerBalanceFixtureFreshness() foundation.TaiwanFundamentalsDomainFreshness {
+	period := "2026-Q2"
+	return foundation.TaiwanFundamentalsDomainFreshness{AsOf: &period, Status: "available"}
+}
+
+// newScreenerServerWithFinancialsAndBalanceDomain wires daily + both M7E-B financials and M7E-C
+// balance providers with independent call counters, so request-bound tests can prove exactly which
+// domain(s) a given query engages.
+func newScreenerServerWithFinancialsAndBalanceDomain(t *testing.T) (server *Server, dailyCalls, financialsCalls, balanceCalls *int) {
+	t.Helper()
+	d, f, b := 0, 0, 0
+	server = NewServer(Config{
+		TaiwanScreener:           fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &d},
+		TaiwanScreenerFinancials: fixedTaiwanScreenerFinancials{rows: screenerFinancialsFixtureRows(), freshness: screenerFinancialsFixtureFreshness(), calls: &f},
+		TaiwanScreenerBalance:    fixedTaiwanScreenerBalance{rows: screenerBalanceFixtureRows(), freshness: screenerBalanceFixtureFreshness(), calls: &b},
+	})
+	return server, &d, &f, &b
 }
 
 func screenerFinancialsFixtureFreshness() foundation.TaiwanFundamentalsDomainFreshness {
@@ -329,10 +382,12 @@ type screenerTestResponse struct {
 			CashDividend     *float64 `json:"cash_dividend"`
 			StockDividend    *float64 `json:"stock_dividend"`
 			TotalDividend    *float64 `json:"total_dividend"`
-			FinancialPeriod  *string  `json:"financial_period"`
-			CumulativeEPS    *float64 `json:"cumulative_eps"`
-			GrossMargin      *float64 `json:"gross_margin"`
-			OperatingMargin  *float64 `json:"operating_margin"`
+			FinancialPeriod   *string  `json:"financial_period"`
+			CumulativeEPS     *float64 `json:"cumulative_eps"`
+			GrossMargin       *float64 `json:"gross_margin"`
+			OperatingMargin   *float64 `json:"operating_margin"`
+			NetMargin         *float64 `json:"net_margin"`
+			BookValuePerShare *float64 `json:"book_value_per_share"`
 		} `json:"securities"`
 	} `json:"data"`
 }
@@ -1785,5 +1840,260 @@ func TestTaiwanScreenerM7BNoFabricatedPublicationTimestampOrFakeDate(t *testing.
 	}
 	if !strings.Contains(body, `"financial_period":"2026-Q2"`) {
 		t.Fatalf("expected the plain period identifier 2026-Q2 in the response, got body=%s", body)
+	}
+}
+
+// ==================================================
+// M7E-C -- Book value per share + ci-only net margin Screener filters
+// ==================================================
+
+// legacy no-advanced-param request remains valid/unchanged; lazy loading: neither the financials nor
+// the balance provider is ever called for a plain request, and the M7E-C fields never appear.
+func TestTaiwanScreenerM7CLegacyRequestUnchangedAndLazy(t *testing.T) {
+	server, dailyCalls, financialsCalls, balanceCalls := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	code, payload, _ := requestScreener(t, server, "")
+	if code != http.StatusOK || payload.Data.Total != 4 {
+		t.Fatalf("legacy request should behave exactly as before: code=%d total=%d", code, payload.Data.Total)
+	}
+	if *dailyCalls != 1 {
+		t.Fatalf("expected exactly 1 daily call, got %d", *dailyCalls)
+	}
+	if *financialsCalls != 0 || *balanceCalls != 0 {
+		t.Fatalf("legacy request must not call financials or balance providers, got financials=%d balance=%d", *financialsCalls, *balanceCalls)
+	}
+	if payload.Data.FinancialsPeriod != nil || payload.Data.FinancialsStatus != "" {
+		t.Fatalf("legacy request must not expose financials freshness fields, got %+v", payload.Data)
+	}
+}
+
+// malformed number / min > max -> 400 for the four new M7E-C range params; negative numbers accepted.
+func TestTaiwanScreenerM7CInvalidNumberAndMinGreaterThanMax400(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	badCases := []string{
+		"?min_net_margin=abc",
+		"?min_book_value_per_share=abc",
+		"?min_net_margin=Infinity",
+		"?max_book_value_per_share=NaN",
+		"?min_net_margin=50&max_net_margin=10",
+		"?min_book_value_per_share=50&max_book_value_per_share=10",
+	}
+	for _, query := range badCases {
+		code, _, _ := requestScreener(t, server, query)
+		if code != http.StatusBadRequest {
+			t.Fatalf("query %q: expected 400, got %d", query, code)
+		}
+	}
+	for _, query := range []string{"?min_net_margin=-50", "?min_book_value_per_share=-50"} {
+		code, _, _ := requestScreener(t, server, query)
+		if code != http.StatusOK {
+			t.Fatalf("query %q: negative filter values must be valid, got %d", query, code)
+		}
+	}
+}
+
+// Request-bound matrix (task section 25 A-D): proves exactly which domain(s) each query combination
+// engages -- net_margin reuses income only (financials=1, balance=0); book_value_per_share requires
+// both (financials=1, balance=1); neither is ever called together with the other domain unnecessarily.
+func TestTaiwanScreenerM7CRequestBoundMatrix(t *testing.T) {
+	server, _, financialsCalls, balanceCalls := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	reset := func() { *financialsCalls, *balanceCalls = 0, 0 }
+
+	reset()
+	requestScreener(t, server, "?min_cumulative_eps=0")
+	if *financialsCalls != 1 || *balanceCalls != 0 {
+		t.Fatalf("A. existing M7E-B financial filter: expected financials=1 balance=0, got financials=%d balance=%d", *financialsCalls, *balanceCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "?min_net_margin=0")
+	if *financialsCalls != 1 || *balanceCalls != 0 {
+		t.Fatalf("B. net_margin only: expected financials=1 balance=0 (reuses existing income data, never 24), got financials=%d balance=%d", *financialsCalls, *balanceCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "?min_book_value_per_share=0")
+	if *financialsCalls != 1 || *balanceCalls != 1 {
+		t.Fatalf("C. book_value_per_share only: expected financials=1 balance=1 (income needed for period gating), got financials=%d balance=%d", *financialsCalls, *balanceCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "?min_book_value_per_share=0&min_net_margin=0")
+	if *financialsCalls != 1 || *balanceCalls != 1 {
+		t.Fatalf("D. book_value_per_share + net_margin: expected financials=1 balance=1, got financials=%d balance=%d", *financialsCalls, *balanceCalls)
+	}
+
+	reset()
+	requestScreener(t, server, "")
+	if *financialsCalls != 0 || *balanceCalls != 0 {
+		t.Fatalf("vanilla request must not call either provider, got financials=%d balance=%d", *financialsCalls, *balanceCalls)
+	}
+}
+
+// net_margin filter/sort renders end-to-end (the httpapi layer trusts the provider's ci-only gate
+// verbatim -- category enforcement itself is proven at the provider level).
+func TestTaiwanScreenerM7CNetMarginFilterAndSort(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	_, filtered, _ := requestScreener(t, server, "?min_net_margin=10")
+	if len(canonicalsOf(filtered)) != 1 || canonicalsOf(filtered)[0] != "2330.TWSE" {
+		t.Fatalf("min_net_margin=10 expected only 2330.TWSE (53.22), got %v", canonicalsOf(filtered))
+	}
+	_, sorted, _ := requestScreener(t, server, "?sort=net_margin&order=desc")
+	if sorted.Data.Securities[0].Canonical != "2330.TWSE" {
+		t.Fatalf("sort=net_margin desc: expected 2330.TWSE first, got %v", canonicalsOf(sorted))
+	}
+}
+
+// book_value_per_share period-alignment gate, proven end-to-end for all three M7E-C.0 cases using the
+// screenerBalanceFixtureRows fixture documented above.
+func TestTaiwanScreenerM7CBookValuePerSharePeriodAlignment(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	// sort=book_value_per_share engages both domains without excluding any row (sort never filters).
+	_, payload, _ := requestScreener(t, server, "?sort=book_value_per_share")
+	byCanonical := map[string]*float64{}
+	for _, item := range payload.Data.Securities {
+		byCanonical[item.Canonical] = item.BookValuePerShare
+	}
+	if v := byCanonical["2330.TWSE"]; v == nil || *v != 28.5 {
+		t.Fatalf("Case A (2330.TWSE): balance period equals income period equals target -- expected book_value_per_share=28.5, got %v", v)
+	}
+	if v := byCanonical["6488.TPEX"]; v != nil {
+		t.Fatalf("Case B (6488.TPEX): balance period (2026-Q1) does not equal its own income period (2026-Q2) -- expected nil, got %v", v)
+	}
+	if v := byCanonical["1101.TWSE"]; v != nil {
+		t.Fatalf("Case C (1101.TWSE): balance period equals income period (2026-Q1), but that period is not the domain target (2026-Q2) -- expected nil, got %v", v)
+	}
+	if v := byCanonical["9999.TWSE"]; v != nil {
+		t.Fatalf("9999.TWSE has no income row at all -- expected nil, got %v", v)
+	}
+	// financial_period itself must never be overwritten by the balance row's period.
+	for _, item := range payload.Data.Securities {
+		if item.Canonical == "6488.TPEX" && (item.FinancialPeriod == nil || *item.FinancialPeriod != "2026-Q2") {
+			t.Fatalf("6488.TPEX financial_period must remain its own income period 2026-Q2, never the mismatched balance period 2026-Q1, got %+v", item)
+		}
+	}
+	// An active book_value_per_share filter must exclude every row whose BVPS is nil.
+	_, filtered, _ := requestScreener(t, server, "?min_book_value_per_share=-999999")
+	if len(canonicalsOf(filtered)) != 1 || canonicalsOf(filtered)[0] != "2330.TWSE" {
+		t.Fatalf("an active book_value_per_share filter must match only the period-aligned row, got %v", canonicalsOf(filtered))
+	}
+}
+
+// financials_status combination (task sections 14-18): available only when both required subdomains
+// fully succeed; partial when balance is degraded/unavailable but income remains usable; unavailable
+// when income itself is unavailable (BVPS can never be verified without a known income period).
+func TestTaiwanScreenerM7CFinancialsStatusCombination(t *testing.T) {
+	period := "2026-Q2"
+	available := foundation.TaiwanFundamentalsDomainFreshness{AsOf: &period, Status: "available"}
+	partial := foundation.TaiwanFundamentalsDomainFreshness{AsOf: &period, Status: "partial"}
+	unavailable := foundation.TaiwanFundamentalsDomainFreshness{Status: "unavailable"}
+
+	newServer := func(income, balance foundation.TaiwanFundamentalsDomainFreshness, incomeErr, balanceErr error) *Server {
+		d := 0
+		return NewServer(Config{
+			TaiwanScreener:           fixedTaiwanScreener{rows: screenerFixtureRows(), freshness: screenerFixtureFreshness(), calls: &d},
+			TaiwanScreenerFinancials: fixedTaiwanScreenerFinancials{rows: screenerFinancialsFixtureRows(), freshness: income, err: incomeErr},
+			TaiwanScreenerBalance:    fixedTaiwanScreenerBalance{rows: screenerBalanceFixtureRows(), freshness: balance, err: balanceErr},
+		})
+	}
+
+	// income available + balance available -> available.
+	_, both, _ := requestScreener(t, newServer(available, available, nil, nil), "?min_book_value_per_share=0")
+	if both.Data.FinancialsStatus != "available" {
+		t.Fatalf("both subdomains fully succeeded: expected available, got %q", both.Data.FinancialsStatus)
+	}
+
+	// income available + balance totally fails (task section 16) -> partial, income metrics preserved.
+	// Uses sort= (not an active BVPS filter) so a universally-nil BVPS never excludes every row itself.
+	_, balanceDown, _ := requestScreener(t, newServer(available, foundation.TaiwanFundamentalsDomainFreshness{}, nil, fmt.Errorf("balance upstream down")), "?sort=book_value_per_share")
+	if balanceDown.Data.FinancialsStatus != "partial" {
+		t.Fatalf("total balance failure with usable income: expected partial (not unavailable), got %q", balanceDown.Data.FinancialsStatus)
+	}
+	found2330 := false
+	for _, item := range balanceDown.Data.Securities {
+		if item.Canonical == "2330.TWSE" {
+			found2330 = true
+			if item.CumulativeEPS == nil || *item.CumulativeEPS != 49.33 {
+				t.Fatalf("income financial metrics must be preserved despite balance failure, got %+v", item)
+			}
+			if item.BookValuePerShare != nil {
+				t.Fatalf("book_value_per_share must be null when balance is unavailable, got %+v", item)
+			}
+		}
+	}
+	if !found2330 {
+		t.Fatalf("2330.TWSE must remain in results despite balance failure")
+	}
+
+	// income available + balance partial (task section 15) -> partial, successful BVPS rows preserved.
+	_, balancePartial, _ := requestScreener(t, newServer(available, partial, nil, nil), "?min_book_value_per_share=-999999")
+	if balancePartial.Data.FinancialsStatus != "partial" {
+		t.Fatalf("partial balance coverage: expected partial, got %q", balancePartial.Data.FinancialsStatus)
+	}
+	for _, item := range balancePartial.Data.Securities {
+		if item.Canonical == "2330.TWSE" && (item.BookValuePerShare == nil || *item.BookValuePerShare != 28.5) {
+			t.Fatalf("successful BVPS rows must be preserved under partial balance coverage, got %+v", item)
+		}
+	}
+
+	// income unavailable (task section 17) -> unavailable regardless of balance, BVPS never exposed
+	// with an unverifiable public financial_period. incomeErr forces the financials map to stay nil,
+	// matching how a real "unavailable" status actually arises.
+	_, incomeDown, _ := requestScreener(t, newServer(unavailable, available, fmt.Errorf("income upstream down"), nil), "?min_book_value_per_share=-999999")
+	if incomeDown.Data.FinancialsStatus != "unavailable" {
+		t.Fatalf("income unavailable: expected unavailable regardless of balance, got %q", incomeDown.Data.FinancialsStatus)
+	}
+	if incomeDown.Data.Total != 0 {
+		t.Fatalf("with income unavailable, an active book_value_per_share filter must match zero rows, got total=%d", incomeDown.Data.Total)
+	}
+}
+
+// no unrelated side effects: this server is configured ONLY with the daily + financials + balance
+// providers -- a 200 response proves Watchlist/fundamentals-per-security/research/AI were never touched.
+func TestTaiwanScreenerM7CNoUnrelatedSideEffects(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	code, _, _ := requestScreener(t, server, "?min_book_value_per_share=0&min_net_margin=0&sort=book_value_per_share")
+	if code != http.StatusOK {
+		t.Fatalf("expected 200 with no unrelated dependencies configured, got %d", code)
+	}
+}
+
+// no fabricated public period contract: book_value_period/balance_period/balance_sheet_period must
+// never appear in the response, and published_at/available_at remain absent (M7E-C.0 PIT policy).
+func TestTaiwanScreenerM7CNoFabricatedPeriodFieldsOrTimestamps(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/screener?min_book_value_per_share=0", nil))
+	body := response.Body.String()
+	for _, forbidden := range []string{"published_at", "available_at", "book_value_period", "balance_period", "balance_sheet_period"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("Screener response must never contain %q, got body=%s", forbidden, body)
+		}
+	}
+}
+
+// regression: existing M7E-B fields (cumulative_eps/gross_margin/operating_margin/financial_period/
+// financials_period/financials_status) remain unaffected by the presence of net_margin/BVPS in the
+// same request.
+func TestTaiwanScreenerM7CRegressionExistingFinancialFieldsUnaffected(t *testing.T) {
+	server, _, _, _ := newScreenerServerWithFinancialsAndBalanceDomain(t)
+	_, payload, _ := requestScreener(t, server, "?min_cumulative_eps=-999999&min_net_margin=-999999&min_book_value_per_share=-999999")
+	for _, item := range payload.Data.Securities {
+		if item.Canonical == "2330.TWSE" {
+			if item.CumulativeEPS == nil || *item.CumulativeEPS != 49.33 {
+				t.Fatalf("cumulative_eps regression: got %+v", item)
+			}
+			if item.GrossMargin == nil || *item.GrossMargin != 67.03 {
+				t.Fatalf("gross_margin regression: got %+v", item)
+			}
+			if item.OperatingMargin == nil || *item.OperatingMargin != 59.29 {
+				t.Fatalf("operating_margin regression: got %+v", item)
+			}
+			if item.FinancialPeriod == nil || *item.FinancialPeriod != "2026-Q2" {
+				t.Fatalf("financial_period regression: got %+v", item)
+			}
+		}
+	}
+	if payload.Data.FinancialsPeriod == nil || *payload.Data.FinancialsPeriod != "2026-Q2" {
+		t.Fatalf("financials_period regression: got %+v", payload.Data)
 	}
 }

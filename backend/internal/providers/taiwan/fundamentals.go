@@ -305,14 +305,25 @@ func (c *Client) statement(ctx context.Context, s foundation.SecurityIdentity) (
 // categories — M7E-B deliberately does not fix that here, since net_margin is out of scope for this
 // phase); the M7E-B Screener layer applies its own additive "ci only" policy on top of this result for
 // gross_margin/operating_margin, it does not change how this function computes them.
+// parseFiscalPeriod parses the 年度/季別 (or Year/Season) fields shared by both official income-statement
+// and balance-sheet rows into a (FiscalYear, FiscalQuarter) pair — extracted so parseIncomeStatementRow
+// and the M7E-C parseBalanceSheetRow below apply the exact same ROC-year/quarter parsing rules.
+func parseFiscalPeriod(row map[string]string) (int, int, error) {
+	year, err := rocYear(firstMap(row, "年度", "Year"))
+	if err != nil {
+		return 0, 0, err
+	}
+	quarter, err := strconv.Atoi(firstMap(row, "季別", "Season"))
+	if err != nil || quarter < 1 || quarter > 4 {
+		return 0, 0, fmt.Errorf("invalid fiscal quarter")
+	}
+	return year, quarter, nil
+}
+
 func parseIncomeStatementRow(s foundation.SecurityIdentity, category, sourceURL string, income map[string]string) (foundation.FinancialStatementPeriod, error) {
-	year, err := rocYear(firstMap(income, "年度", "Year"))
+	year, quarter, err := parseFiscalPeriod(income)
 	if err != nil {
 		return foundation.FinancialStatementPeriod{}, err
-	}
-	quarter, err := strconv.Atoi(firstMap(income, "季別", "Season"))
-	if err != nil || quarter < 1 || quarter > 4 {
-		return foundation.FinancialStatementPeriod{}, fmt.Errorf("invalid fiscal quarter")
 	}
 	periodEnd := time.Date(year, time.Month(quarter*3)+1, 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 	item := foundation.FinancialStatementPeriod{Canonical: s.Canonical, Code: s.Code, Exchange: s.Exchange, FiscalYear: year, FiscalQuarter: quarter, PeriodStart: fmt.Sprintf("%04d-01-01", year), PeriodEnd: periodEnd, StatementType: "unknown", AccountingCategory: category, Revision: firstMap(income, "出表日期", "Date"), IsCumulative: true, Currency: "TWD", Unit: "TWD", RawUnit: "thousand_TWD", RawValues: map[string]string{}, Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":financial_statement", SourceURL: sourceURL, RetrievedAt: time.Now(), Status: "official"}
@@ -648,14 +659,15 @@ func (c *Client) valuationDomainFreshness(now time.Time, rows []foundation.Valua
 }
 
 // ==================================================
-// M7E-B — Screener bulk financial-statement reader (cumulative EPS / gross margin / operating margin)
+// M7E-B — Screener bulk financial-statement reader (cumulative EPS / gross margin / operating margin /
+// M7E-C's net_margin)
 // ==================================================
 //
 // ScreenerFinancials reuses the exact same official income-statement bulk endpoints (6 categories ×
 // 2 exchanges = 12 requests total, bounded regardless of security count), the exact same
 // fundamentalsRows 7-day URL cache, and the exact same parseIncomeStatementRow parser used by the
 // existing single-security statement() path — it never calls the balance sheet (book_value_per_share
-// and net_margin are out of scope for M7E-B), never calls FinMind, and never loops per security.
+// is a separate M7E-C reader, ScreenerBalance, below), never calls FinMind, and never loops per security.
 //
 // PIT note: no PublishedAt/AvailableAt is assigned or exposed — see M7E-B.0/M7E-B.1 for the evidence
 // that no official income-statement payload carries a publication timestamp.
@@ -717,19 +729,101 @@ func (c *Client) ScreenerFinancials(ctx context.Context, now time.Time) ([]found
 	target := targetFinancialPeriod(rows)
 	for i := range rows {
 		if rows[i].FiscalYear != target.year || rows[i].FiscalQuarter != target.quarter {
-			rows[i].CumulativeEPS, rows[i].GrossMargin, rows[i].OperatingMargin = nil, nil, nil
+			rows[i].CumulativeEPS, rows[i].GrossMargin, rows[i].OperatingMargin, rows[i].NetMargin = nil, nil, nil, nil
 			continue
 		}
-		// Margins remain additionally scoped to the "ci" (general industry) category only — a
-		// non-ci row on the target period still keeps its cumulative EPS, but never exposes
-		// gross/operating margin, even when the underlying payload happens to carry compatible
-		// fields (e.g. `ins`/insurance), because cross-industry accounting semantics are not
-		// comparable enough for a whole-market Screener (M7E-B.1).
+		// Margins (including M7E-C's net_margin) remain additionally scoped to the "ci" (general
+		// industry) category only — a non-ci row on the target period still keeps its cumulative
+		// EPS, but never exposes gross/operating/net margin, even when the underlying payload
+		// happens to carry compatible-looking fields (e.g. `ins`/insurance, or `fh`/financial
+		// holding's misleading `淨收益` line — see M7E-C.0), because cross-industry accounting
+		// semantics are not comparable enough for a whole-market Screener (M7E-B.1). This is an
+		// explicit category-policy enforcement, not reliance on the revenue-key fallback
+		// accidentally returning nil for non-ci categories.
 		if rows[i].AccountingCategory != "ci" {
-			rows[i].GrossMargin, rows[i].OperatingMargin = nil, nil
+			rows[i].GrossMargin, rows[i].OperatingMargin, rows[i].NetMargin = nil, nil, nil
 		}
 	}
 
+	return rows, financialsDomainFreshness(target, attempted, succeeded), nil
+}
+
+// parseBalanceSheetRow parses one official balance-sheet row (any of the six categories) into just
+// what the M7E-C Screener needs: canonical identity, the row's own (FiscalYear, FiscalQuarter), and the
+// official book-value-per-share figure. It deliberately does not parse TotalAssets/TotalLiabilities/
+// Equity/EquityParent here (out of scope for M7E-C) even though FinancialStatementPeriod has room for
+// them — statement()'s existing single-security path remains the only reader of those fields.
+func parseBalanceSheetRow(s foundation.SecurityIdentity, category, sourceURL string, balance map[string]string) (foundation.FinancialStatementPeriod, error) {
+	year, quarter, err := parseFiscalPeriod(balance)
+	if err != nil {
+		return foundation.FinancialStatementPeriod{}, err
+	}
+	bvps, err := optionalFloat(firstMap(balance, "每股參考淨值"))
+	if err != nil {
+		return foundation.FinancialStatementPeriod{}, fmt.Errorf("book value per share: %w", err)
+	}
+	return foundation.FinancialStatementPeriod{Canonical: s.Canonical, Code: s.Code, Exchange: s.Exchange, FiscalYear: year, FiscalQuarter: quarter, AccountingCategory: category, BookValuePerShare: bvps, Provider: officialProvider(s), Source: strings.ToLower(s.Exchange) + ":balance_sheet", SourceURL: sourceURL, RetrievedAt: time.Now(), Status: "official"}, nil
+}
+
+// ==================================================
+// M7E-C — Screener bulk balance-sheet reader (book value per share)
+// ==================================================
+//
+// ScreenerBalance reads the official balance-sheet bulk endpoints (6 categories × 2 exchanges = 12
+// requests total, bounded regardless of security count) — completely independent of
+// ScreenerFinancials' income-statement endpoints: different URLs (t187ap07_L_*/mopsfin_t187ap07_O_*
+// vs t187ap06_L_*/mopsfin_t187ap06_O_*), so fundamentalsRows caches them under separate keys. It is
+// lazy-loaded by the httpapi layer only when a book_value_per_share filter/sort is actually requested
+// (see taiwanScreenerNeedsBalance) — a net_margin-only request must never trigger this reader, and a
+// book_value_per_share request always also triggers ScreenerFinancials (income), since the httpapi
+// layer needs the income row's own period to decide whether a security's BVPS is safe to expose (see
+// M7E-C.0's period-alignment requirement) — never calls FinMind, never loops per security.
+//
+// PIT note: same as ScreenerFinancials, no PublishedAt/AvailableAt is assigned or exposed.
+func (c *Client) ScreenerBalance(ctx context.Context, now time.Time) ([]foundation.FinancialStatementPeriod, foundation.TaiwanFundamentalsDomainFreshness, error) {
+	identities, err := c.Directory(ctx)
+	if err != nil {
+		return nil, foundation.TaiwanFundamentalsDomainFreshness{}, err
+	}
+	allow := identityAllowlist(identities)
+
+	var rows []foundation.FinancialStatementPeriod
+	attempted, succeeded := 0, 0
+	for _, exchange := range []string{"TWSE", "TPEX"} {
+		prefix, base := "/opendata/t187ap07_L_", c.twseBaseURL
+		if exchange == "TPEX" {
+			prefix, base = "/mopsfin_t187ap07_O_", c.tpexBaseURL
+		}
+		for _, category := range statementCategories {
+			attempted++
+			u := base + prefix + category
+			raw, fetchErr := c.fundamentalsRows(ctx, u, 7*24*time.Hour)
+			if fetchErr != nil {
+				continue
+			}
+			succeeded++
+			for _, row := range raw {
+				code := companyCode(row)
+				if code == "" {
+					// Same TPEx empty-placeholder-row quirk as ScreenerFinancials (basi/fh/ins/mim
+					// currently have no real TPEx companies).
+					continue
+				}
+				identity, ok := allow[exchange][code]
+				if !ok {
+					continue
+				}
+				item, parseErr := parseBalanceSheetRow(identity, category, u, row)
+				if parseErr != nil {
+					// A single malformed row never fails the whole category/domain.
+					continue
+				}
+				rows = append(rows, item)
+			}
+		}
+	}
+
+	target := targetFinancialPeriod(rows)
 	return rows, financialsDomainFreshness(target, attempted, succeeded), nil
 }
 

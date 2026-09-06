@@ -66,6 +66,17 @@ type taiwanScreenerRow struct {
 	CumulativeEPS   *float64 `json:"cumulative_eps"`
 	GrossMargin     *float64 `json:"gross_margin"`
 	OperatingMargin *float64 `json:"operating_margin"`
+	// M7E-C — net_margin (income-statement, ci-only, reuses the same financial_period gate as
+	// gross_margin/operating_margin above — see ScreenerFinancials) and book_value_per_share
+	// (balance-sheet, all categories, requires its own balance row's period to equal
+	// financial_period AND financial_period to equal the domain target — see toTaiwanScreenerRow).
+	// net_margin is deliberately scoped to "ci" only: the "fh" (financial holding) category's income
+	// payload carries a small, unrelated `淨收益` line that the shared revenue-fallback parser can
+	// otherwise mistake for total revenue, producing an economically meaningless net margin (see
+	// M7E-C.0) — this field is never populated for non-ci rows, regardless of what the underlying
+	// payload happens to contain.
+	NetMargin         *float64 `json:"net_margin"`
+	BookValuePerShare *float64 `json:"book_value_per_share"`
 }
 
 type taiwanScreenerResponse struct {
@@ -143,8 +154,11 @@ type taiwanScreenerQuery struct {
 	minCumulativeEPS, maxCumulativeEPS     *float64
 	minGrossMargin, maxGrossMargin         *float64
 	minOperatingMargin, maxOperatingMargin *float64
-	sort                                   string
-	order                                  string // "asc" | "desc"
+	// M7E-C financial statement filters (ci-only net margin + all-category book value per share).
+	minNetMargin, maxNetMargin                 *float64
+	minBookValuePerShare, maxBookValuePerShare *float64
+	sort                                       string
+	order                                      string // "asc" | "desc"
 }
 
 var taiwanScreenerSortKeys = map[string]bool{
@@ -154,6 +168,7 @@ var taiwanScreenerSortKeys = map[string]bool{
 	"monthly_revenue": true, "revenue_yoy": true, "pe": true, "pb": true, "dividend_yield": true,
 	"cash_dividend": true, "stock_dividend": true, "total_dividend": true,
 	"cumulative_eps": true, "gross_margin": true, "operating_margin": true,
+	"net_margin": true, "book_value_per_share": true,
 }
 
 // taiwanScreenerNeedsInstitutional/taiwanScreenerNeedsMargin decide whether this specific request
@@ -217,15 +232,58 @@ func taiwanScreenerNeedsDividends(q taiwanScreenerQuery) bool {
 
 // taiwanScreenerNeedsFinancials is the M7E-B analogue — the sole gate for fetching the income-statement
 // financials domain (12 bounded requests). A vanilla request, and one that only engages M7A/M7D/
-// M7E-A fields, must never trigger it.
+// M7E-A fields, must never trigger it. M7E-C's net_margin reuses this exact same income-statement data
+// (no new endpoint), so it is included here rather than in taiwanScreenerNeedsBalance below.
 func taiwanScreenerNeedsFinancials(q taiwanScreenerQuery) bool {
 	switch q.sort {
-	case "cumulative_eps", "gross_margin", "operating_margin":
+	case "cumulative_eps", "gross_margin", "operating_margin", "net_margin":
 		return true
 	}
 	return q.minCumulativeEPS != nil || q.maxCumulativeEPS != nil ||
 		q.minGrossMargin != nil || q.maxGrossMargin != nil ||
-		q.minOperatingMargin != nil || q.maxOperatingMargin != nil
+		q.minOperatingMargin != nil || q.maxOperatingMargin != nil ||
+		q.minNetMargin != nil || q.maxNetMargin != nil
+}
+
+// taiwanScreenerNeedsBalance is the M7E-C analogue — the sole gate for fetching the balance-sheet
+// domain (12 bounded requests, independent of and additional to the 12 income-statement requests
+// above). A vanilla request, and one that only engages net_margin (or any earlier domain), must never
+// trigger it — only an active book_value_per_share filter or sort key does.
+func taiwanScreenerNeedsBalance(q taiwanScreenerQuery) bool {
+	if q.sort == "book_value_per_share" {
+		return true
+	}
+	return q.minBookValuePerShare != nil || q.maxBookValuePerShare != nil
+}
+
+// combineFinancialsStatus reports one truthful financials_status across the income-statement domain
+// and (when actually requested) the M7E-C balance-sheet domain. When balance was never requested, this
+// is byte-for-byte the existing M7E-B income-only semantics. When balance was requested: "unavailable"
+// is reported whenever income itself is unavailable — book_value_per_share can never be verified
+// against an unknown income period, so no usable financial data exists at all in that case (M7E-C.0);
+// "available" requires both subdomains to have fully succeeded; every other combination (income healthy
+// but balance degraded/unavailable, or income itself merely partial) reports "partial" — some usable
+// financial data remains, so the whole domain is never marked unavailable just because the optional
+// balance subdomain under-delivered.
+func combineFinancialsStatus(income foundation.TaiwanFundamentalsDomainFreshness, balanceRequested bool, balance foundation.TaiwanFundamentalsDomainFreshness) string {
+	incomeStatus := income.Status
+	if incomeStatus == "" {
+		incomeStatus = "unavailable"
+	}
+	if !balanceRequested {
+		return incomeStatus
+	}
+	if incomeStatus == "unavailable" {
+		return "unavailable"
+	}
+	balanceStatus := balance.Status
+	if balanceStatus == "" {
+		balanceStatus = "unavailable"
+	}
+	if incomeStatus == "available" && balanceStatus == "available" {
+		return "available"
+	}
+	return "partial"
 }
 
 func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
@@ -328,10 +386,14 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 
 	// M7E-B lazy domain loading: financials (income statement only) is fetched ONLY when this request
 	// actually engages it, following the exact same pattern as revenue/valuation/dividends above.
+	// M7E-C's book_value_per_share additionally requires income data (it needs each row's own income
+	// period to decide whether that security's BVPS is period-aligned — see the balance join below),
+	// so a BVPS-only request also triggers this fetch even though it engages no income-only field.
 	var financials map[string]foundation.FinancialStatementPeriod
 	var financialsFreshness foundation.TaiwanFundamentalsDomainFreshness
 	financialsRequested := taiwanScreenerNeedsFinancials(query)
-	if financialsRequested && s.taiwanScreenerFinancials != nil {
+	balanceRequested := taiwanScreenerNeedsBalance(query)
+	if (financialsRequested || balanceRequested) && s.taiwanScreenerFinancials != nil {
 		finRows, finFreshness, finErr := s.taiwanScreenerFinancials.ScreenerFinancials(ctx, time.Now())
 		financialsFreshness = finFreshness
 		if finErr == nil {
@@ -342,7 +404,22 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	filtered := filterAndSortTaiwanScreener(rows, institutional, margin, revenue, valuation, dividends, financials, query)
+	// M7E-C lazy domain loading: the balance-sheet domain (book_value_per_share) is fetched ONLY when
+	// this request actually engages it — a net_margin-only request must never trigger this.
+	var balance map[string]foundation.FinancialStatementPeriod
+	var balanceFreshness foundation.TaiwanFundamentalsDomainFreshness
+	if balanceRequested && s.taiwanScreenerBalance != nil {
+		balRows, balFreshness, balErr := s.taiwanScreenerBalance.ScreenerBalance(ctx, time.Now())
+		balanceFreshness = balFreshness
+		if balErr == nil {
+			balance = make(map[string]foundation.FinancialStatementPeriod, len(balRows))
+			for _, row := range balRows {
+				balance[row.Canonical] = row
+			}
+		}
+	}
+
+	filtered := filterAndSortTaiwanScreener(rows, institutional, margin, revenue, valuation, dividends, financials, balance, financialsFreshness.AsOf, query)
 	total := len(filtered)
 	page := paginateTaiwanScreener(filtered, offset, limit)
 
@@ -392,12 +469,9 @@ func (s *Server) taiwanScreenerHandler(w http.ResponseWriter, r *http.Request) {
 			response.DividendsStatus = "unavailable"
 		}
 	}
-	if financialsRequested {
+	if financialsRequested || balanceRequested {
 		response.FinancialsPeriod = financialsFreshness.AsOf
-		response.FinancialsStatus = financialsFreshness.Status
-		if response.FinancialsStatus == "" {
-			response.FinancialsStatus = "unavailable"
-		}
+		response.FinancialsStatus = combineFinancialsStatus(financialsFreshness, balanceRequested, balanceFreshness)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": response})
 }
@@ -417,7 +491,7 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		query.sort = "amount"
 	}
 	if !taiwanScreenerSortKeys[query.sort] {
-		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend, cumulative_eps, gross_margin, operating_margin"
+		return query, 0, 0, "sort must be one of price, change_percent, volume, amount, foreign_net, trust_net, dealer_net, institutional_net, margin_balance, margin_change, short_balance, short_change, short_margin_ratio, monthly_revenue, revenue_yoy, pe, pb, dividend_yield, cash_dividend, stock_dividend, total_dividend, cumulative_eps, gross_margin, operating_margin, net_margin, book_value_per_share"
 	}
 
 	query.order = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order")))
@@ -566,6 +640,27 @@ func parseTaiwanScreenerQuery(r *http.Request) (taiwanScreenerQuery, int, int, s
 		}
 	}
 
+	// M7E-C financial-statement range params (net margin + book value per share) — same pattern.
+	m7ecRanges := []struct {
+		minKey, maxKey string
+		min, max       **float64
+		label          string
+	}{
+		{"min_net_margin", "max_net_margin", &query.minNetMargin, &query.maxNetMargin, "min_net_margin must not be greater than max_net_margin"},
+		{"min_book_value_per_share", "max_book_value_per_share", &query.minBookValuePerShare, &query.maxBookValuePerShare, "min_book_value_per_share must not be greater than max_book_value_per_share"},
+	}
+	for _, item := range m7ecRanges {
+		if *item.min, err = parseOptionalScreenerFloat(r, item.minKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if *item.max, err = parseOptionalScreenerFloat(r, item.maxKey); err != nil {
+			return query, 0, 0, err.Error()
+		}
+		if rangeInvalid(*item.min, *item.max) {
+			return query, 0, 0, item.label
+		}
+	}
+
 	limit, err := marketLimitQuery(r, 50, 200)
 	if err != nil {
 		return query, 0, 0, err.Error()
@@ -606,13 +701,13 @@ func rangeInvalid(min, max *float64) bool {
 // requested (min/max present) AND the row's value for that field is unavailable (nil) — a filter
 // that was never requested never excludes a row for that field, and an unavailable value is never
 // treated as 0.
-func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod, query taiwanScreenerQuery) []taiwanScreenerRow {
+func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod, balance map[string]foundation.FinancialStatementPeriod, financialsTargetPeriod *string, query taiwanScreenerQuery) []taiwanScreenerRow {
 	filtered := make([]taiwanScreenerRow, 0, len(rows))
 	for _, raw := range rows {
 		if query.scope != "" && query.scope != "combined" && !strings.EqualFold(raw.Exchange, query.scope) {
 			continue
 		}
-		row := toTaiwanScreenerRow(raw, institutional, margin, revenue, valuation, dividends, financials)
+		row := toTaiwanScreenerRow(raw, institutional, margin, revenue, valuation, dividends, financials, balance, financialsTargetPeriod)
 		if !passesRange(row.Price, query.minPrice, query.maxPrice) {
 			continue
 		}
@@ -685,6 +780,12 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 		if !passesRange(row.OperatingMargin, query.minOperatingMargin, query.maxOperatingMargin) {
 			continue
 		}
+		if !passesRange(row.NetMargin, query.minNetMargin, query.maxNetMargin) {
+			continue
+		}
+		if !passesRange(row.BookValuePerShare, query.minBookValuePerShare, query.maxBookValuePerShare) {
+			continue
+		}
 		filtered = append(filtered, row)
 	}
 
@@ -714,7 +815,7 @@ func filterAndSortTaiwanScreener(rows []foundation.TaiwanDailySnapshot, institut
 	return filtered
 }
 
-func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod) taiwanScreenerRow {
+func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[string]foundation.InstitutionalFlow, margin map[string]foundation.MarginTrading, revenue map[string]foundation.MonthlyRevenue, valuation map[string]foundation.ValuationSnapshot, dividends map[string]foundation.DividendRecord, financials map[string]foundation.FinancialStatementPeriod, balance map[string]foundation.FinancialStatementPeriod, financialsTargetPeriod *string) taiwanScreenerRow {
 	out := taiwanScreenerRow{
 		Canonical: row.Canonical, Code: row.Code, Name: row.Name, Exchange: row.Exchange, SecurityType: string(row.Type),
 		TradeDate: row.TradeDate, Price: row.Close, Change: row.Change,
@@ -755,7 +856,19 @@ func toTaiwanScreenerRow(row foundation.TaiwanDailySnapshot, institutional map[s
 	if fin, ok := financials[row.Canonical]; ok {
 		period := fmt.Sprintf("%d-Q%d", fin.FiscalYear, fin.FiscalQuarter)
 		out.FinancialPeriod = &period
-		out.CumulativeEPS, out.GrossMargin, out.OperatingMargin = fin.CumulativeEPS, fin.GrossMargin, fin.OperatingMargin
+		out.CumulativeEPS, out.GrossMargin, out.OperatingMargin, out.NetMargin = fin.CumulativeEPS, fin.GrossMargin, fin.OperatingMargin, fin.NetMargin
+		// M7E-C — book_value_per_share is exposed only when the security's own balance-sheet row
+		// period exactly equals its own income-statement row period (financial_period), AND that
+		// period equals the domain's common target period (financialsTargetPeriod, computed the
+		// same "YYYY-QN" way by ScreenerFinancials) — never a balance-sheet period alone, and never
+		// a mismatched/older balance period substituted in. financial_period itself is always the
+		// income row's period; it is never overwritten by the balance row's period.
+		if bal, ok := balance[row.Canonical]; ok {
+			balancePeriod := fmt.Sprintf("%d-Q%d", bal.FiscalYear, bal.FiscalQuarter)
+			if balancePeriod == period && financialsTargetPeriod != nil && period == *financialsTargetPeriod {
+				out.BookValuePerShare = bal.BookValuePerShare
+			}
+		}
 	}
 	return out
 }
@@ -829,6 +942,10 @@ func taiwanScreenerSortValue(row taiwanScreenerRow, field string) *float64 {
 		return row.GrossMargin
 	case "operating_margin":
 		return row.OperatingMargin
+	case "net_margin":
+		return row.NetMargin
+	case "book_value_per_share":
+		return row.BookValuePerShare
 	}
 	return nil
 }
