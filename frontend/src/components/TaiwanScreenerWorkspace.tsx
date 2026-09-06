@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { BackendConfig } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
 import {
-	addTaiwanWatchlistSecurity, fetchTaiwanWatchlist, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatioPercent, formatTaiwanRevenueTWD, formatTaiwanSignedShares, formatTaiwanTWD,
+	addTaiwanWatchlistSecurity, fetchTaiwanWatchlist, formatTaiwanBookValuePerShare, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatioPercent, formatTaiwanRevenueTWD, formatTaiwanSignedShares, formatTaiwanTWD,
 	removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanFinancialsStatusLabel, taiwanScopes, taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasInstitutionalCriteria,
 	taiwanScreenerHasMarginCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria, taiwanScreenerOrderOptions, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanSecurityTypeLabel, taiwanStatusLabel,
 	validateTaiwanScreenerFilters, type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
@@ -306,8 +306,12 @@ export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localEr
 					<label><span>毛利率最大（%）</span><input type="number" inputMode="decimal" value={draft.maxGrossMargin} onChange={(event) => set('maxGrossMargin', event.target.value)} placeholder="不限" /></label>
 					<label><span>營業利益率最小（%）</span><input type="number" inputMode="decimal" value={draft.minOperatingMargin} onChange={(event) => set('minOperatingMargin', event.target.value)} placeholder="不限" /></label>
 					<label><span>營業利益率最大（%）</span><input type="number" inputMode="decimal" value={draft.maxOperatingMargin} onChange={(event) => set('maxOperatingMargin', event.target.value)} placeholder="不限" /></label>
+					<label><span>淨利率最小（%）</span><input type="number" inputMode="decimal" value={draft.minNetMargin} onChange={(event) => set('minNetMargin', event.target.value)} placeholder="不限" /></label>
+					<label><span>淨利率最大（%）</span><input type="number" inputMode="decimal" value={draft.maxNetMargin} onChange={(event) => set('maxNetMargin', event.target.value)} placeholder="不限" /></label>
+					<label><span>每股參考淨值最小</span><input type="number" inputMode="decimal" value={draft.minBookValuePerShare} onChange={(event) => set('minBookValuePerShare', event.target.value)} placeholder="不限" /></label>
+					<label><span>每股參考淨值最大</span><input type="number" inputMode="decimal" value={draft.maxBookValuePerShare} onChange={(event) => set('maxBookValuePerShare', event.target.value)} placeholder="不限" /></label>
 				</div>
-				<p className="taiwan-screener-advanced-note">部分金融相關產業不提供毛利率／營業利益率。</p>
+				<p className="taiwan-screener-advanced-note">部分金融相關產業不提供毛利率／營業利益率／淨利率。</p>
 			</>}
 		</div>
 
@@ -434,6 +438,8 @@ export function ScreenerAdvancedCell({ security, showInstitutional, showMargin, 
 			<span>累計 EPS {formatTaiwanPlainNumber(security.cumulative_eps)}</span>
 			<span>毛利率 {formatTaiwanPercent(security.gross_margin)}</span>
 			<span>營業利益率 {formatTaiwanPercent(security.operating_margin)}</span>
+			<span>淨利率 {formatTaiwanPercent(security.net_margin)}</span>
+			<span>每股參考淨值 {formatTaiwanBookValuePerShare(security.book_value_per_share)}</span>
 		</div>}
 	</td>;
 }

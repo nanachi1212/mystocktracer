@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-	formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
+	formatTaiwanBookValuePerShare, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
 	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath,
 	taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
 	taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters,
@@ -435,8 +435,8 @@ describe('M7B — Taiwan Screener local range validation', () => {
 });
 
 describe('M7E-A — Taiwan Screener fundamentals query builder', () => {
-	it('16. sort dropdown offers exactly 24 options (M7A 4 + M7D 9 + M7E-A 8 + M7E-B 3)', () => {
-		expect(taiwanScreenerSortOptions.length).toBe(24);
+	it('16. sort dropdown offers exactly 26 options (M7A 4 + M7D 9 + M7E-A 8 + M7E-B 3 + M7E-C 2)', () => {
+		expect(taiwanScreenerSortOptions.length).toBe(26);
 	});
 
 	it('preserves every M7A/M7D sort id and adds the 8 new M7E-A sort ids', () => {
@@ -683,5 +683,128 @@ describe('M7E-B — financials status label', () => {
 
 	it('returns empty for an absent status (domain not requested)', () => {
 		expect(taiwanFinancialsStatusLabel(undefined)).toBe('');
+	});
+});
+
+describe('M7E-C — BVPS + net margin query builder', () => {
+	it('default filters include the 4 new fields, all blank', () => {
+		const defaults = taiwanScreenerDefaultFilters();
+		for (const key of ['minNetMargin', 'maxNetMargin', 'minBookValuePerShare', 'maxBookValuePerShare'] as const) {
+			expect(defaults[key]).toBe('');
+		}
+	});
+
+	it('A. blank fields are omitted from the query', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		expect(path).not.toMatch(/min_net_margin|max_net_margin|min_book_value_per_share|max_book_value_per_share/);
+	});
+
+	it('B. each exact key is emitted correctly', () => {
+		const withValue = (overrides: Partial<TaiwanScreenerFilters>) => taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), ...overrides });
+		expect(withValue({ minNetMargin: '10' })).toContain('min_net_margin=10');
+		expect(withValue({ maxNetMargin: '20' })).toContain('max_net_margin=20');
+		expect(withValue({ minBookValuePerShare: '30' })).toContain('min_book_value_per_share=30');
+		expect(withValue({ maxBookValuePerShare: '40' })).toContain('max_book_value_per_share=40');
+	});
+
+	it('C. all four combined correctly in one query', () => {
+		const path = taiwanScreenerPath({
+			...taiwanScreenerDefaultFilters(),
+			minNetMargin: '1', maxNetMargin: '2', minBookValuePerShare: '3', maxBookValuePerShare: '4',
+		});
+		expect(path).toContain('min_net_margin=1');
+		expect(path).toContain('max_net_margin=2');
+		expect(path).toContain('min_book_value_per_share=3');
+		expect(path).toContain('max_book_value_per_share=4');
+	});
+
+	it('D. negative values are preserved', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minNetMargin: '-12.3', minBookValuePerShare: '-4.5' });
+		expect(path).toContain('min_net_margin=-12.3');
+		expect(path).toContain('min_book_value_per_share=-4.5');
+	});
+
+	it('D2. an explicit zero is serialized, never dropped as if blank', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minNetMargin: '0', minBookValuePerShare: '0' });
+		expect(path).toContain('min_net_margin=0');
+		expect(path).toContain('min_book_value_per_share=0');
+	});
+
+	it('E. malformed draft can never produce NaN/Infinity in the query output', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minNetMargin: 'abc', maxBookValuePerShare: 'Infinity' });
+		expect(path).not.toMatch(/min_net_margin=|max_book_value_per_share=/);
+		expect(path).not.toMatch(/NaN|Infinity/);
+	});
+
+	it('F. existing M7D/M7E-A/M7E-B query params remain unchanged when the new fields are set', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minForeignNet: '100', minPE: '10', minCumulativeEPS: '1', minNetMargin: '2' });
+		expect(path).toContain('min_foreign_net=100');
+		expect(path).toContain('min_pe=10');
+		expect(path).toContain('min_cumulative_eps=1');
+		expect(path).toContain('min_net_margin=2');
+	});
+
+	it('rejects inverted ranges', () => {
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minNetMargin: '10', maxNetMargin: '5' })).toBe('最低淨利率不可高於最高淨利率');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minBookValuePerShare: '10', maxBookValuePerShare: '5' })).toBe('最低每股參考淨值不可高於最高每股參考淨值');
+	});
+});
+
+describe('M7E-C — sort options', () => {
+	it('exposes net_margin/book_value_per_share without removing or duplicating existing options', () => {
+		const ids = taiwanScreenerSortOptions.map((item) => item.id);
+		expect(ids).toContain('net_margin');
+		expect(ids).toContain('book_value_per_share');
+		expect(new Set(ids).size).toBe(ids.length); // no duplicate values
+		for (const id of ['price', 'cumulative_eps', 'gross_margin', 'operating_margin', 'pe', 'cash_dividend']) {
+			expect(ids).toContain(id);
+		}
+	});
+
+	it('sort=net_margin/book_value_per_share query construction', () => {
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'net_margin' })).toContain('sort=net_margin');
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'book_value_per_share' })).toContain('sort=book_value_per_share');
+	});
+});
+
+describe('M7E-C — applied-domain detection (net margin / BVPS join the existing financials criteria)', () => {
+	it('taiwanScreenerHasFinancialsCriteria is true for an active net_margin/BVPS filter or sort key', () => {
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), minNetMargin: '0' })).toBe(true);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), maxBookValuePerShare: '0' })).toBe(true);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'net_margin' })).toBe(true);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'book_value_per_share' })).toBe(true);
+	});
+
+	it('Clear (taiwanScreenerDefaultFilters()) resets it to false', () => {
+		expect(taiwanScreenerHasFinancialsCriteria(taiwanScreenerDefaultFilters())).toBe(false);
+	});
+});
+
+describe('M7E-C — book value per share formatter', () => {
+	it('appends 元／股 without rescaling', () => {
+		expect(formatTaiwanBookValuePerShare(248.05)).toBe('248.05 元／股');
+	});
+
+	it('null renders as —, never 0', () => {
+		expect(formatTaiwanBookValuePerShare(null)).toBe('—');
+		expect(formatTaiwanBookValuePerShare(undefined)).toBe('—');
+	});
+
+	it('real zero is preserved, never treated as missing', () => {
+		expect(formatTaiwanBookValuePerShare(0)).toBe('0 元／股');
+	});
+
+	it('negative value is preserved with its sign', () => {
+		expect(formatTaiwanBookValuePerShare(-3.2)).toBe('-3.2 元／股');
+	});
+});
+
+describe('M7E-C — net margin uses the existing percent formatter (no ×100 rescale)', () => {
+	it('53.19 renders as 53.19%, not 5319%', () => {
+		expect(formatTaiwanPercent(53.19)).toBe('53.19%');
+	});
+
+	it('null renders as — (financial-holding categories like 2882.TWSE)', () => {
+		expect(formatTaiwanPercent(null)).toBe('—');
 	});
 });

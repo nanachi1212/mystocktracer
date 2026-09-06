@@ -57,6 +57,12 @@ export type TaiwanScreenerSecurity = {
 	// to the "ci" (general industry) category only; every other category is nil, never fabricated.
 	financial_period: string | null;
 	cumulative_eps: number | null; gross_margin: number | null; operating_margin: number | null;
+	// M7E-C — net_margin (income-statement, backend-scoped to the "ci" category only — every other
+	// category, e.g. a financial holding, is nil, never fabricated) and book_value_per_share
+	// (balance-sheet, all categories where a real row exists). Both are gated by the exact same
+	// financial_period/financials_period rule as cumulative_eps/gross_margin/operating_margin above —
+	// the frontend never re-derives or second-guesses that gate, it only renders what the backend sent.
+	net_margin: number | null; book_value_per_share: number | null;
 };
 
 export type TaiwanScreenerResponse = {
@@ -90,7 +96,7 @@ export type TaiwanScreenerSort =
 	| 'foreign_net' | 'trust_net' | 'dealer_net' | 'institutional_net'
 	| 'margin_balance' | 'margin_change' | 'short_balance' | 'short_change' | 'short_margin_ratio'
 	| 'monthly_revenue' | 'revenue_yoy' | 'pe' | 'pb' | 'dividend_yield' | 'cash_dividend' | 'stock_dividend' | 'total_dividend'
-	| 'cumulative_eps' | 'gross_margin' | 'operating_margin';
+	| 'cumulative_eps' | 'gross_margin' | 'operating_margin' | 'net_margin' | 'book_value_per_share';
 export type TaiwanScreenerOrder = 'asc' | 'desc';
 
 export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string }[] = [
@@ -118,6 +124,8 @@ export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string 
 	{ id: 'cumulative_eps', label: '累計 EPS' },
 	{ id: 'gross_margin', label: '毛利率' },
 	{ id: 'operating_margin', label: '營業利益率' },
+	{ id: 'net_margin', label: '淨利率' },
+	{ id: 'book_value_per_share', label: '每股參考淨值' },
 ];
 
 const taiwanScreenerInstitutionalSortKeys = new Set<TaiwanScreenerSort>(['foreign_net', 'trust_net', 'dealer_net', 'institutional_net']);
@@ -125,7 +133,12 @@ const taiwanScreenerMarginSortKeys = new Set<TaiwanScreenerSort>(['margin_balanc
 const taiwanScreenerRevenueSortKeys = new Set<TaiwanScreenerSort>(['monthly_revenue', 'revenue_yoy']);
 const taiwanScreenerValuationSortKeys = new Set<TaiwanScreenerSort>(['pe', 'pb', 'dividend_yield']);
 const taiwanScreenerDividendSortKeys = new Set<TaiwanScreenerSort>(['cash_dividend', 'stock_dividend', 'total_dividend']);
-const taiwanScreenerFinancialsSortKeys = new Set<TaiwanScreenerSort>(['cumulative_eps', 'gross_margin', 'operating_margin']);
+// M7E-C's net_margin/book_value_per_share join the same financials-criteria detection as the M7E-B
+// metrics: the backend's financials_status now truthfully covers both the income-statement and (when
+// engaged) balance-sheet subdomains as one combined status (see combineFinancialsStatus on the
+// backend) — the frontend does not need a second "showBalance" concept, it reuses the single existing
+// showFinancials/ScreenerFinancialsFreshness contract for all five metrics.
+const taiwanScreenerFinancialsSortKeys = new Set<TaiwanScreenerSort>(['cumulative_eps', 'gross_margin', 'operating_margin', 'net_margin', 'book_value_per_share']);
 
 export const taiwanScreenerOrderOptions: { id: TaiwanScreenerOrder; label: string }[] = [
 	{ id: 'desc', label: '高到低' },
@@ -167,6 +180,9 @@ export type TaiwanScreenerFilters = {
 	minCumulativeEPS: string; maxCumulativeEPS: string;
 	minGrossMargin: string; maxGrossMargin: string;
 	minOperatingMargin: string; maxOperatingMargin: string;
+	// M7E-C financial statement: ci-only net margin + all-category book value per share.
+	minNetMargin: string; maxNetMargin: string;
+	minBookValuePerShare: string; maxBookValuePerShare: string;
 	sort: TaiwanScreenerSort;
 	order: TaiwanScreenerOrder;
 	limit: number;
@@ -202,6 +218,8 @@ export function taiwanScreenerDefaultFilters(): TaiwanScreenerFilters {
 		minCumulativeEPS: '', maxCumulativeEPS: '',
 		minGrossMargin: '', maxGrossMargin: '',
 		minOperatingMargin: '', maxOperatingMargin: '',
+		minNetMargin: '', maxNetMargin: '',
+		minBookValuePerShare: '', maxBookValuePerShare: '',
 		sort: 'amount', order: 'desc',
 		limit: TAIWAN_SCREENER_PAGE_SIZE, offset: 0,
 	};
@@ -247,8 +265,10 @@ export function taiwanScreenerHasDividendCriteria(filters: TaiwanScreenerFilters
 // with `applied`, never `draft`.
 export function taiwanScreenerHasFinancialsCriteria(filters: TaiwanScreenerFilters): boolean {
 	if (taiwanScreenerFinancialsSortKeys.has(filters.sort)) return true;
-	return [filters.minCumulativeEPS, filters.maxCumulativeEPS, filters.minGrossMargin, filters.maxGrossMargin, filters.minOperatingMargin, filters.maxOperatingMargin]
-		.some((raw) => taiwanScreenerRangeValue(raw) != null);
+	return [
+		filters.minCumulativeEPS, filters.maxCumulativeEPS, filters.minGrossMargin, filters.maxGrossMargin, filters.minOperatingMargin, filters.maxOperatingMargin,
+		filters.minNetMargin, filters.maxNetMargin, filters.minBookValuePerShare, filters.maxBookValuePerShare,
+	].some((raw) => taiwanScreenerRangeValue(raw) != null);
 }
 
 function taiwanScreenerRangeValue(raw: string): number | null {
@@ -320,6 +340,10 @@ export function taiwanScreenerPath(filters: TaiwanScreenerFilters): string {
 	setRange('max_gross_margin', filters.maxGrossMargin);
 	setRange('min_operating_margin', filters.minOperatingMargin);
 	setRange('max_operating_margin', filters.maxOperatingMargin);
+	setRange('min_net_margin', filters.minNetMargin);
+	setRange('max_net_margin', filters.maxNetMargin);
+	setRange('min_book_value_per_share', filters.minBookValuePerShare);
+	setRange('max_book_value_per_share', filters.maxBookValuePerShare);
 	return `/api/v1/tw/screener?${params.toString()}`;
 }
 
@@ -351,6 +375,8 @@ export function validateTaiwanScreenerFilters(filters: TaiwanScreenerFilters): s
 		['minCumulativeEPS', 'maxCumulativeEPS', '最低累計 EPS 不可高於最高累計 EPS'],
 		['minGrossMargin', 'maxGrossMargin', '最低毛利率不可高於最高毛利率'],
 		['minOperatingMargin', 'maxOperatingMargin', '最低營業利益率不可高於最高營業利益率'],
+		['minNetMargin', 'maxNetMargin', '最低淨利率不可高於最高淨利率'],
+		['minBookValuePerShare', 'maxBookValuePerShare', '最低每股參考淨值不可高於最高每股參考淨值'],
 	];
 	for (const [minKey, maxKey, message] of pairs) {
 		const min = taiwanScreenerRangeValue(filters[minKey as keyof TaiwanScreenerFilters] as string);
@@ -464,6 +490,13 @@ export function formatTaiwanRevenueTWD(value?: number | null) {
 // stays "—"; a genuine 0 (e.g. no stock dividend this year) stays "0", never fabricated or hidden.
 export function formatTaiwanPlainNumber(value?: number | null) {
 	return value == null ? '—' : value.toLocaleString('zh-TW', { maximumFractionDigits: 2 });
+}
+
+// M7E-C — book_value_per_share is already a plain TWD-per-share decimal as reported by the backend's
+// official 每股參考淨值 field — this never converts currency, never rescales, it only appends the
+// unit label for display. Missing stays "—"; a genuine 0 or negative value is preserved untouched.
+export function formatTaiwanBookValuePerShare(value?: number | null) {
+	return value == null ? '—' : `${value.toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 元／股`;
 }
 
 // Runs an async task as the latest "generation" of a scoped request (e.g. a market scope tab or
