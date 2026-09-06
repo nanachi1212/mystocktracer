@@ -364,3 +364,92 @@ describe('M8G Overview layout — summary renders above the individual-stock sea
 		expect(source.indexOf('<OverviewSummary')).toBeLessThan(source.indexOf('<CoreIndexView'));
 	});
 });
+
+describe('M8G.1 — Overview Index summary contract repair', () => {
+	const otherIndexSnapshot: MarketIndexSnapshot = { ...indexSnapshotFixture, id: 'otc', secid: 'OTC', code: 'OTC', name: '櫃買指數', price: 234.5, change_percent: -0.2 };
+
+	it('uses `taiex` when present', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={idleDomain<Emotion>()} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={indexSnapshotFixture} />);
+		expect(html).toContain('17,850.32');
+	});
+
+	it('taiex missing + another index present → does NOT render the other index as 加權指數 (the caller passes null, not a substitute)', () => {
+		const source = overviewSource();
+		// The fix itself: primaryIndexSnapshot only ever resolves to the taiex match or null.
+		expect(source).toContain("const primaryIndexSnapshot = indexSnapshots.find((item) => item.id === PRIMARY_INDEX_ID) ?? null;");
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={idleDomain<Emotion>()} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={null} />);
+		expect(html).not.toContain('234.5');
+		expect(html).not.toContain('櫃買指數');
+	});
+
+	it('no `indexSnapshots[0]` fallback remains in source', () => {
+		const source = overviewSource();
+		expect(source).not.toContain('indexSnapshots[0]');
+	});
+
+	it('index loading renders a local loading UI in the Index card, independent of the other cards', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={{ data: breadthData, loading: false, error: '' }} emotion={{ data: emotionData, loading: false, error: '' }} topIndustries={[industryFixture('a', '半導體', 0.62)]} industryLoading={false} industryError="" indexSnapshot={null} indexLoading={true} />);
+		expect(html).toContain('spin');
+		expect(html).not.toContain('暫無資料');
+	});
+
+	it('index failure renders a local Index-card error/unavailable state', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={idleDomain<Emotion>()} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={null} indexError="台股指數載入失敗" />);
+		expect(html).toContain('台股指數載入失敗');
+	});
+
+	it('index failure does not hide the Breadth card', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={{ data: breadthData, loading: false, error: '' }} emotion={idleDomain<Emotion>()} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={null} indexError="台股指數載入失敗" />);
+		expect(html).toContain('812');
+	});
+
+	it('index failure does not hide the Emotion card', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={{ data: emotionData, loading: false, error: '' }} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={null} indexError="台股指數載入失敗" />);
+		expect(html).toContain('偏多');
+	});
+
+	it('index failure does not hide the Industry card', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={idleDomain<Emotion>()} topIndustries={[industryFixture('a', '半導體', 0.62)]} industryLoading={false} industryError="" indexSnapshot={null} indexError="台股指數載入失敗" />);
+		expect(html).toContain('半導體');
+	});
+
+	it('a successful /indexes response with no taiex renders the neutral 暫無資料 state (not an error, not a substitute index)', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={idleDomain<Emotion>()} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={null} indexLoading={false} indexError="" />);
+		expect(html).toContain('暫無資料');
+	});
+
+	it('CoreIndexView still receives the same `indexSnapshots` derived from the single `indexes` state (not a second/duplicated fetch)', () => {
+		const source = overviewSource();
+		expect(source).toContain('<CoreIndexView indexes={indexSnapshots}');
+		expect(source).toContain('const indexSnapshots = indexes.map((item) => item.index);');
+	});
+
+	it('`/api/v1/tw/indexes` occurs exactly once in TaiwanMarketView.tsx', () => {
+		const source = overviewSource();
+		expect(source.match(/\/api\/v1\/tw\/indexes/g)?.length).toBe(1);
+	});
+
+	it('total Overview domain request contract remains 4 (indexes + market-breadth + market-emotion + industry-radar)', () => {
+		const source = overviewSource();
+		expect(source.match(/\/api\/v1\/tw\/indexes/g)?.length).toBe(1);
+		expect(source).toContain("taiwanMarketPath('market-breadth', 'combined')");
+		expect(source).toContain("taiwanMarketPath('market-emotion', 'combined')");
+		expect(source).toContain("taiwanMarketPath('industry-radar', 'combined')");
+	});
+
+	it('existing stock search behavior is unchanged (search body untouched by the index-state repair)', () => {
+		const source = overviewSource();
+		const searchBody = source.slice(source.indexOf('const search = async'), source.indexOf('const select = async'));
+		expect(searchBody).toContain("setLoading(true); errorOwnerRef.current = 'search'; setError('');");
+		expect(searchBody).not.toContain('setIndexLoading');
+		expect(searchBody).not.toContain('setIndexError');
+	});
+
+	it('existing selected-stock behavior is unchanged (select body untouched by the index-state repair)', () => {
+		const source = overviewSource();
+		const selectBody = source.slice(source.indexOf('const select = async'), source.indexOf('const toggleWatchlist = async'));
+		expect(selectBody).toContain("errorOwnerRef.current = 'stock'; setError('');");
+		expect(selectBody).not.toContain('setIndexLoading');
+		expect(selectBody).not.toContain('setIndexError');
+	});
+});

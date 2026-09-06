@@ -44,6 +44,12 @@ export function TaiwanMarketView({ config, refreshKey, onNavigate }: { config: B
 	const [breadth, setBreadth] = useState<DomainState<Breadth>>(emptyDomainState);
 	const [emotion, setEmotion] = useState<DomainState<Emotion>>(emptyDomainState);
 	const [industry, setIndustry] = useState<DomainState<IndustryScope>>(emptyDomainState);
+	// M8G.1: the Index summary card's own truthful loading/error state. Deliberately separate from
+	// the legacy shared `error`/`errorOwnerRef` banner below (untouched, still owned by
+	// search/select/indexes) — the Index card must be able to show its own loading/failure without
+	// depending on whether that banner currently belongs to "indexes".
+	const [indexLoading, setIndexLoading] = useState(false);
+	const [indexError, setIndexError] = useState('');
 	const [query, setQuery] = useState('');
 	const [matches, setMatches] = useState<SecurityIdentity[]>([]);
 	const [selected, setSelected] = useState<SecurityIdentity | null>(null);
@@ -136,6 +142,7 @@ export function TaiwanMarketView({ config, refreshKey, onNavigate }: { config: B
 
 	useEffect(() => {
 		if (!config) return;
+		setIndexLoading(true); setIndexError('');
 		requestJSON<{ data: MarketIndexSeries[] }>(config, '/api/v1/tw/indexes')
 			.then((payload) => {
 				setIndexes(payload.data);
@@ -143,7 +150,8 @@ export function TaiwanMarketView({ config, refreshKey, onNavigate }: { config: B
 				// took ownership while this request was in flight must survive indexes recovering.
 				if (errorOwnerRef.current === 'indexes') { errorOwnerRef.current = ''; setError(''); }
 			})
-			.catch((reason) => { errorOwnerRef.current = 'indexes'; setError(taiwanErrorMessage(reason, '台股指數載入失敗')); });
+			.catch((reason) => { errorOwnerRef.current = 'indexes'; setError(taiwanErrorMessage(reason, '台股指數載入失敗')); setIndexError(taiwanErrorMessage(reason, '台股指數載入失敗')); })
+			.finally(() => setIndexLoading(false));
 	}, [config, refreshKey]);
 
 	// M8G: Overview summary domains. Deliberately independent of the `error`/`errorOwnerRef`
@@ -188,10 +196,13 @@ export function TaiwanMarketView({ config, refreshKey, onNavigate }: { config: B
 	const submit = (event: FormEvent) => { event.preventDefault(); void search(); };
 	const indexSnapshots = indexes.map((item) => item.index);
 	const indexSeries = indexes.find((item) => item.index.id === selectedIndex) || null;
-	// M8G: the summary card's index snapshot is independent of the `selectedIndex` the user may
+	// M8G.1: the summary card's index snapshot is independent of the `selectedIndex` the user may
 	// click lower on the page in `CoreIndexView` — it always shows the primary weighted index, and
-	// reuses `indexSnapshots` already fetched above (no second /indexes request).
-	const primaryIndexSnapshot = indexSnapshots.find((item) => item.id === PRIMARY_INDEX_ID) || indexSnapshots[0] || null;
+	// reuses `indexSnapshots` already fetched above (no second /indexes request). No fallback to
+	// the first array entry, `selectedIndex`, or any other index: the card is explicitly labeled
+	// 加權指數, so if `taiex` itself is absent it must render unavailable rather than mislabel
+	// another index.
+	const primaryIndexSnapshot = indexSnapshots.find((item) => item.id === PRIMARY_INDEX_ID) ?? null;
 	const topIndustries = industry.data ? topIndustriesByBreadth(industry.data.industries) : [];
 	return <div className="market-data-view taiwan-market-view">
 		<OverviewSummary
@@ -201,6 +212,8 @@ export function TaiwanMarketView({ config, refreshKey, onNavigate }: { config: B
 			industryLoading={industry.loading}
 			industryError={industry.error}
 			indexSnapshot={primaryIndexSnapshot}
+			indexLoading={indexLoading}
+			indexError={indexError}
 			onNavigate={onNavigate}
 		/>
 		<form className="market-filter" onSubmit={submit}><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 2330、台積電、2330.TWSE 或 6488.TPEX" /></label><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : '搜尋'}</button></form>
@@ -221,13 +234,15 @@ export function TaiwanMarketView({ config, refreshKey, onNavigate }: { config: B
 // existing `relative_breadth`; the primary index's name/price/change_percent), plus a Screener
 // navigation action. Each card fails/loads independently; a missing `onNavigate` (e.g. in tests
 // that don't wire navigation) simply renders no detail/Screener links rather than erroring.
-export function OverviewSummary({ breadth, emotion, topIndustries, industryLoading, industryError, indexSnapshot, onNavigate }: {
+export function OverviewSummary({ breadth, emotion, topIndustries, industryLoading, industryError, indexSnapshot, indexLoading, indexError, onNavigate }: {
 	breadth: { data: Breadth | null; loading: boolean; error: string };
 	emotion: { data: Emotion | null; loading: boolean; error: string };
 	topIndustries: Industry[];
 	industryLoading: boolean;
 	industryError: string;
 	indexSnapshot: MarketIndexSnapshot | null;
+	indexLoading?: boolean;
+	indexError?: string;
 	onNavigate?: (target: 'taiwan-screener' | 'taiwan-breadth' | 'taiwan-emotion' | 'taiwan-industry') => void;
 }) {
 	return <section className="taiwan-overview-summary">
@@ -249,7 +264,7 @@ export function OverviewSummary({ breadth, emotion, topIndustries, industryLoadi
 			</article>
 			<article className="taiwan-overview-card">
 				<header><span>加權指數</span></header>
-				{indexSnapshot ? <><strong>{indexSnapshot.price.toLocaleString('zh-TW')}</strong><span className={indexSnapshot.change_percent > 0 ? 'up' : indexSnapshot.change_percent < 0 ? 'down' : 'flat'}>{indexSnapshot.change_percent > 0 ? '+' : ''}{indexSnapshot.change_percent.toFixed(2)}%</span></> : <p>暫無資料</p>}
+				{indexLoading ? <LoaderCircle className="spin" size={16} /> : indexError ? <p>{indexError}</p> : indexSnapshot ? <><strong>{indexSnapshot.price.toLocaleString('zh-TW')}</strong><span className={indexSnapshot.change_percent > 0 ? 'up' : indexSnapshot.change_percent < 0 ? 'down' : 'flat'}>{indexSnapshot.change_percent > 0 ? '+' : ''}{indexSnapshot.change_percent.toFixed(2)}%</span></> : <p>暫無資料</p>}
 			</article>
 		</div>
 		{onNavigate && <button type="button" className="taiwan-overview-screener-action" onClick={() => onNavigate('taiwan-screener')}>查看台股選股器</button>}
