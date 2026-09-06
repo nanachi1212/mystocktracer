@@ -117,7 +117,7 @@ func m8cStatement(category string) *foundation.FinancialStatementPeriod {
 		AccountingCategory: category, FiscalYear: 2026, FiscalQuarter: 2,
 		CumulativeEPS: f64(9.55), GrossMargin: f64(67.03), OperatingMargin: f64(59.29), NetMargin: f64(53.22),
 		BalanceFiscalYear: 2026, BalanceFiscalQuarter: 1, BookValuePerShare: f64(28.5), DebtRatio: f64(30.94), DebtToEquity: f64(44.81), CurrentRatio: f64(245.76),
-		CashflowFiscalYear: 2025, CashflowFiscalQuarter: 4, OperatingCashFlow: i64ptr(1122637757), CashFlowToNetIncome: f64(148.06),
+		CashflowFiscalYear: 2025, CashflowFiscalQuarter: 4, CashflowStatus: "available", OperatingCashFlow: i64ptr(1122637757), CashFlowToNetIncome: f64(148.06),
 		// Raw ingredients that must never reach the AI payload even though they exist on this struct.
 		Revenue: i64ptr(999000000), GrossProfit: i64ptr(1), OperatingIncome: i64ptr(1), NetIncome: i64ptr(888000000),
 		TotalAssets: i64ptr(1), TotalLiabilities: i64ptr(1), Equity: i64ptr(1), CurrentAssets: i64ptr(1), CurrentLiabilities: i64ptr(1),
@@ -131,9 +131,16 @@ func m8cValuation() *foundation.ValuationSnapshot {
 // fundamentalsInput builds a researchInput() with Fundamentals.Data populated for M8C payload
 // testing; valuation/statement may each be nil to exercise the unavailable/not_applicable paths.
 func fundamentalsInput(valuation *foundation.ValuationSnapshot, statement *foundation.FinancialStatementPeriod) TaiwanStockIntelligence {
+	return fundamentalsInputWithCapabilities(valuation, statement, nil)
+}
+
+// M8C.2 — same as fundamentalsInput but also sets TaiwanFundamentals.Capabilities, so a valuation/
+// financial_statement provider failure can carry its authoritative data_insufficient reason (see
+// providers/taiwan/fundamentals.go's Fundamentals(), which always populates these two keys).
+func fundamentalsInputWithCapabilities(valuation *foundation.ValuationSnapshot, statement *foundation.FinancialStatementPeriod, capabilities map[string]foundation.FundamentalCapability) TaiwanStockIntelligence {
 	i := researchInput()
 	i.Fundamentals = TaiwanFundamentalsEvidence{TaiwanEvidenceStatus: TaiwanEvidenceStatus{Status: "available"}, Data: &foundation.TaiwanFundamentals{
-		Revenue: []foundation.MonthlyRevenue{{Period: "2026-08", OfficialYoY: f64(12.16)}}, Valuation: valuation, Statement: statement,
+		Revenue: []foundation.MonthlyRevenue{{Period: "2026-08", OfficialYoY: f64(12.16)}}, Valuation: valuation, Statement: statement, Capabilities: capabilities,
 	}}
 	v := CalculateTaiwanStockInterpretation(i)
 	i.Interpretation = &v
@@ -221,14 +228,19 @@ func TestM8CCashflowStatusReflectsAuthoritativeSnapshotNotMetricPresence(t *test
 		t.Fatalf("explicit available status must be preserved as available: %+v", payloadAvailable.Fundamentals)
 	}
 
-	// Defensive fallback: an unexpected empty CashflowStatus (should never happen in practice, since
-	// statement() always sets it alongside the period) still resolves to "available" rather than a
-	// zero-value string reaching the AI payload.
+	// M8C.2 — defensive fallback: an unexpected empty CashflowStatus (should never happen in
+	// practice, since statement() always sets it alongside the period) must resolve to the
+	// conservative "unavailable", never a fabricated "available" that overstates confidence beyond
+	// what the missing metadata actually supports.
 	fallback := m8cStatement("ci")
 	fallback.CashflowStatus = ""
 	payloadFallback := BuildTaiwanResearchPayload(fundamentalsInput(m8cValuation(), fallback))
-	if payloadFallback.Fundamentals["cashflow_status"] != "available" {
-		t.Fatalf("empty CashflowStatus should fall back to available, not leak an empty string: %+v", payloadFallback.Fundamentals)
+	if payloadFallback.Fundamentals["cashflow_status"] != "unavailable" {
+		t.Fatalf("empty CashflowStatus must fall back to unavailable (conservative), not available: %+v", payloadFallback.Fundamentals)
+	}
+	availableKeys := availableTaiwanResearchEvidenceKeys(payloadFallback)
+	if availableKeys["fundamentals.data.cashflow.operating_cash_flow"] {
+		t.Fatal("cashflow metrics must not be citeable when the fallback status is unavailable, even though the metric value is present")
 	}
 }
 
@@ -409,5 +421,102 @@ func TestM8CPredictiveCausalAndDerivedMetricLanguageRejected(t *testing.T) {
 				t.Fatalf("forbidden language accepted: %+v", got)
 			}
 		})
+	}
+}
+
+// ==================================================
+// M8C.2 -- Capability Status Fidelity Finalization: preserve authoritative data_insufficient from
+// TaiwanFundamentals.Capabilities, and never let internally-inconsistent state make an
+// unavailable/data_insufficient/not_applicable domain's metrics citeable.
+// ==================================================
+
+func dataInsufficientCapability(reason string) foundation.FundamentalCapability {
+	return foundation.FundamentalCapability{Status: "data_insufficient", Reason: reason}
+}
+
+func TestM8CValuationAuthoritativeDataInsufficientPreserved(t *testing.T) {
+	// data.Valuation == nil (the provider's c.valuation() call itself failed), but Capabilities
+	// carries the authoritative reason -- exactly what providers/taiwan's Fundamentals() produces.
+	input := fundamentalsInputWithCapabilities(nil, m8cStatement("ci"), map[string]foundation.FundamentalCapability{
+		"valuation": dataInsufficientCapability("official valuation row unavailable"),
+	})
+	payload := BuildTaiwanResearchPayload(input)
+	if payload.Fundamentals["valuation_status"] != "data_insufficient" {
+		t.Fatalf("authoritative data_insufficient must be preserved, not collapsed to unavailable: %+v", payload.Fundamentals)
+	}
+	if _, ok := payload.Fundamentals["valuation"]; ok {
+		t.Fatal("no valuation metrics should be present when the domain itself failed")
+	}
+	available := availableTaiwanResearchEvidenceKeys(payload)
+	for _, key := range []string{"fundamentals.data.valuation.pe", "fundamentals.data.valuation.pb", "fundamentals.data.valuation.dividend_yield_percent"} {
+		if available[key] {
+			t.Fatalf("valuation keys must not be citeable when the domain is data_insufficient: %s", key)
+		}
+	}
+}
+
+func TestM8CFinancialStatementAuthoritativeDataInsufficientPreserved(t *testing.T) {
+	// data.Statement == nil (statement() itself failed), but Capabilities carries the reason.
+	// financial_statement and balance share the same underlying failure (existing coupling, not
+	// solved here) -- both must inherit data_insufficient together, never split or downgraded.
+	input := fundamentalsInputWithCapabilities(m8cValuation(), nil, map[string]foundation.FundamentalCapability{
+		"financial_statement": dataInsufficientCapability("financial category unsupported"),
+	})
+	payload := BuildTaiwanResearchPayload(input)
+	if payload.Fundamentals["financial_statement_status"] != "data_insufficient" || payload.Fundamentals["balance_status"] != "data_insufficient" {
+		t.Fatalf("authoritative data_insufficient must be preserved for both coupled domains: %+v", payload.Fundamentals)
+	}
+	available := availableTaiwanResearchEvidenceKeys(payload)
+	for _, key := range []string{
+		"fundamentals.data.financial_statement.cumulative_eps", "fundamentals.data.financial_statement.gross_margin_percent",
+		"fundamentals.data.balance.book_value_per_share", "fundamentals.data.balance.debt_ratio_percent",
+	} {
+		if available[key] {
+			t.Fatalf("keys must not be citeable when the domain is data_insufficient: %s", key)
+		}
+	}
+}
+
+func TestM8CValuationWithoutCapabilityEntryStaysUnavailable(t *testing.T) {
+	// No Capabilities entry at all (e.g. an older/incomplete fixture) must not fabricate
+	// data_insufficient out of nothing -- the existing conservative "unavailable" default applies.
+	input := fundamentalsInputWithCapabilities(nil, m8cStatement("ci"), nil)
+	payload := BuildTaiwanResearchPayload(input)
+	if payload.Fundamentals["valuation_status"] != "unavailable" {
+		t.Fatalf("missing capability metadata must stay unavailable, not invent data_insufficient: %+v", payload.Fundamentals)
+	}
+}
+
+func TestM8CCashflowPartialMetricsRemainCiteable(t *testing.T) {
+	partial := m8cStatement("ci")
+	partial.CashflowStatus = "partial"
+	payload := BuildTaiwanResearchPayload(fundamentalsInput(m8cValuation(), partial))
+	available := availableTaiwanResearchEvidenceKeys(payload)
+	if !available["fundamentals.data.cashflow.operating_cash_flow"] || !available["fundamentals.data.cashflow.cash_flow_to_net_income"] {
+		t.Fatal("partial means lower-confidence batch evidence, not absence -- actual metrics must remain citeable")
+	}
+}
+
+func TestM8CInconsistentDomainStateNeverMakesMetricsCiteable(t *testing.T) {
+	// Directly constructs an internally-inconsistent TaiwanResearchPayload (a shape that
+	// addTaiwanM8CEvidence itself never produces, since the metric map and *_status are always set
+	// together) to prove availableTaiwanResearchEvidenceKeys()'s status gate is a real, independent
+	// safety net -- not merely an artifact of BuildTaiwanResearchPayload's own consistency.
+	payload := TaiwanResearchPayload{
+		Fundamentals: map[string]any{
+			"valuation_status": "data_insufficient", "valuation": map[string]any{"pe": f64(18.5)},
+			"financial_statement_status": "unavailable", "financial_statement": map[string]any{"cumulative_eps": f64(9.55), "margin_applicability": "applicable"},
+			"balance_status": "not_applicable", "balance": map[string]any{"book_value_per_share": f64(28.5), "ratio_applicability": "applicable"},
+			"cashflow_status": "unavailable", "cashflow": map[string]any{"operating_cash_flow": i64ptr(1000), "cash_flow_to_net_income": f64(10)},
+		},
+	}
+	available := availableTaiwanResearchEvidenceKeys(payload)
+	for _, key := range []string{
+		"fundamentals.data.valuation.pe", "fundamentals.data.financial_statement.cumulative_eps",
+		"fundamentals.data.balance.book_value_per_share", "fundamentals.data.cashflow.operating_cash_flow", "fundamentals.data.cashflow.cash_flow_to_net_income",
+	} {
+		if available[key] {
+			t.Fatalf("a numeric value present alongside a non-available status must never become citeable: %s", key)
+		}
 	}
 }

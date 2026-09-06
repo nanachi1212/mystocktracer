@@ -145,6 +145,12 @@ func addTaiwanM8CEvidence(fundamentals map[string]any, fundamentalsStatus string
 			fundamentals["valuation"] = map[string]any{
 				"data_date": data.Valuation.DataDate, "pe": data.Valuation.PE, "pb": data.Valuation.PB, "dividend_yield_percent": data.Valuation.DividendYield,
 			}
+		} else if cap, ok := data.Capabilities["valuation"]; ok && cap.Status == "data_insufficient" {
+			// M8C.2 — TaiwanFundamentals.Capabilities already carries the provider's authoritative
+			// reason valuation is absent (set in Fundamentals() when c.valuation() itself returned an
+			// error). "unavailable" would understate this: the provider actually tried and failed,
+			// which is a stronger, more specific claim than "not attempted"/"unknown".
+			valuationStatus = "data_insufficient"
 		}
 		if st := data.Statement; st != nil {
 			if st.FiscalYear > 0 {
@@ -173,19 +179,27 @@ func addTaiwanM8CEvidence(fundamentals map[string]any, fundamentalsStatus string
 				// M8C.1 — cashflowStatus reflects the archive's own authoritative quality signal
 				// (st.CashflowStatus, copied verbatim from cashflowSnapshot.Status by statement()),
 				// never inferred from period presence alone: a "partial" archive stays "partial"
-				// here even though THIS security's own row parsed successfully. st.CashflowStatus
-				// should always be non-empty whenever CashflowFiscalYear > 0 (both are set together
-				// in the same statement() block) — the "available" fallback only guards against an
-				// unexpected empty value rather than fabricating a stronger claim.
+				// here even though THIS security's own row parsed successfully.
 				cashflowStatus = st.CashflowStatus
 				if cashflowStatus == "" {
-					cashflowStatus = "available"
+					// M8C.2 — st.CashflowStatus should always be non-empty whenever CashflowFiscalYear
+					// > 0 (both are set together in the same statement() block), so this branch is not
+					// expected to run in practice. If it ever did, defaulting to "available" would be a
+					// STRONGER claim than the missing metadata supports; "unavailable" is the
+					// conservative, already-existing status that never overstates confidence.
+					cashflowStatus = "unavailable"
 				}
 				fundamentals["cashflow"] = map[string]any{
 					"cashflow_fiscal_year": st.CashflowFiscalYear, "cashflow_fiscal_quarter": st.CashflowFiscalQuarter,
 					"operating_cash_flow": st.OperatingCashFlow, "cash_flow_to_net_income": st.CashFlowToNetIncome,
 				}
 			}
+		} else if cap, ok := data.Capabilities["financial_statement"]; ok && cap.Status == "data_insufficient" {
+			// M8C.2 — financial_statement and balance share the exact same underlying statement()
+			// success/failure (a known, pre-existing coupling — see M8A/M8C.1 notes; not solved here).
+			// When Capabilities explicitly says the provider attempted and failed, both inherit that
+			// same authoritative reason rather than the weaker default "unavailable".
+			statementStatus, balanceStatus = "data_insufficient", "data_insufficient"
 		}
 	}
 	fundamentals["valuation_status"], fundamentals["financial_statement_status"], fundamentals["balance_status"], fundamentals["cashflow_status"] = valuationStatus, statementStatus, balanceStatus, cashflowStatus
@@ -373,19 +387,26 @@ func availableTaiwanResearchEvidenceKeys(p TaiwanResearchPayload) map[string]boo
 	// non-nil; for the ci-only ratios, additionally require the category-applicability marker
 	// (never merely because the key exists in the schema — see BuildTaiwanResearchPayload/
 	// addTaiwanM8CEvidence, which sets this marker from the security's own accounting category).
-	if v, ok := p.Fundamentals["valuation"].(map[string]any); ok {
+	// M8C.2 — additionally gated on the sub-domain's own *_status: a key must never be citeable
+	// when its domain's authoritative status is data_insufficient/unavailable/not_applicable, even
+	// if the nested map happens to still contain a numeric value (an internally inconsistent state
+	// that should never arise from real statement() output, but must not become citeable if it
+	// somehow did — see M8C.2 gate §9-10). valuation/financial_statement/balance have no "partial"
+	// concept (see M8C.1 investigation), so only "available" qualifies; cashflow genuinely does have
+	// partial (lower-confidence batch evidence, not absence), so both qualify there.
+	if v, ok := p.Fundamentals["valuation"].(map[string]any); ok && p.Fundamentals["valuation_status"] == "available" {
 		add("fundamentals.data.valuation.pe", v["pe"])
 		add("fundamentals.data.valuation.pb", v["pb"])
 		add("fundamentals.data.valuation.dividend_yield_percent", v["dividend_yield_percent"])
 	}
-	if v, ok := p.Fundamentals["financial_statement"].(map[string]any); ok {
+	if v, ok := p.Fundamentals["financial_statement"].(map[string]any); ok && p.Fundamentals["financial_statement_status"] == "available" {
 		add("fundamentals.data.financial_statement.cumulative_eps", v["cumulative_eps"])
 		if v["margin_applicability"] == "applicable" {
 			add("fundamentals.data.financial_statement.gross_margin_percent", v["gross_margin_percent"])
 			add("fundamentals.data.financial_statement.operating_margin_percent", v["operating_margin_percent"])
 		}
 	}
-	if v, ok := p.Fundamentals["balance"].(map[string]any); ok {
+	if v, ok := p.Fundamentals["balance"].(map[string]any); ok && p.Fundamentals["balance_status"] == "available" {
 		add("fundamentals.data.balance.book_value_per_share", v["book_value_per_share"])
 		if v["ratio_applicability"] == "applicable" {
 			add("fundamentals.data.balance.debt_ratio_percent", v["debt_ratio_percent"])
@@ -394,8 +415,11 @@ func availableTaiwanResearchEvidenceKeys(p TaiwanResearchPayload) map[string]boo
 		}
 	}
 	if v, ok := p.Fundamentals["cashflow"].(map[string]any); ok {
-		add("fundamentals.data.cashflow.operating_cash_flow", v["operating_cash_flow"])
-		add("fundamentals.data.cashflow.cash_flow_to_net_income", v["cash_flow_to_net_income"])
+		status := p.Fundamentals["cashflow_status"]
+		if status == "available" || status == "partial" {
+			add("fundamentals.data.cashflow.operating_cash_flow", v["operating_cash_flow"])
+			add("fundamentals.data.cashflow.cash_flow_to_net_income", v["cash_flow_to_net_income"])
+		}
 	}
 	return available
 }
