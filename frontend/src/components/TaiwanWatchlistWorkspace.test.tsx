@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { Quote, SourceMeta } from '../lib/backend';
 import { chunkTaiwanSymbols, type TaiwanWatchlistSecurity } from '../lib/taiwan-product';
-import { TaiwanWatchlistWorkspace, WatchlistRow } from './TaiwanWatchlistWorkspace';
+import { TaiwanWatchlistWorkspace, WatchlistRow, WatchlistSummaryPanel } from './TaiwanWatchlistWorkspace';
 
 const root = path.resolve(__dirname, '../../..');
 const workspaceSource = () => fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanWatchlistWorkspace.tsx'), 'utf8');
@@ -227,5 +227,251 @@ describe('M6B — add/remove toggle in the two existing Taiwan stock views', () 
 	it('membership checks in both views use their own scoped ref, independent of the main data-fetch race guard', () => {
 		expect(overviewSource()).toContain('const watchlistCheckID = useRef(0);');
 		expect(researchSource()).toContain('const watchlistCheckID = useRef(0);');
+	});
+});
+
+// ==================================================
+// M8D -- Watchlist Intelligence Summary: lazy, on-demand, per-row expandable summary.
+// ==================================================
+
+const summaryValuation = (overrides: Partial<{ data_date?: string; pe: number | null; pb: number | null }> = {}) => ({
+	data_date: '2026-09-04', pe: 18.5, pb: 6.2,
+	...overrides,
+});
+const summaryStatement = (overrides: Partial<{ balance_fiscal_year?: number; balance_fiscal_quarter?: number; debt_ratio_percent: number | null; cashflow_fiscal_year?: number; cashflow_fiscal_quarter?: number; cashflow_status?: string; operating_cash_flow: number | null }> = {}) => ({
+	balance_fiscal_year: 2026, balance_fiscal_quarter: 1, debt_ratio_percent: 30.94,
+	cashflow_fiscal_year: 2026, cashflow_fiscal_quarter: 2, cashflow_status: 'available', operating_cash_flow: 1122637757,
+	...overrides,
+});
+
+describe('M8D — WatchlistSummaryPanel rendering (real values, no accidental rescale)', () => {
+	it('renders the four approved facts with correct Traditional Chinese labels and independent periods', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement() }} onRetry={() => {}} />);
+		expect(html).toContain('本益比 18.5');
+		expect(html).toContain('股價淨值比 6.2');
+		expect(html).toContain('負債比 30.94%');
+		expect(html).not.toContain('3094%');
+		expect(html).toContain('億元');
+		expect(html).toContain('資料日期 2026-09-04');
+		expect(html).toContain('資產負債表期間 2026-Q1');
+		expect(html).toContain('現金流量期間 2026-Q2');
+	});
+
+	it('loading (or absent) summary renders the loading indicator, not an empty/broken panel', () => {
+		const loading = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'loading' }} onRetry={() => {}} />);
+		expect(loading).toContain('正在讀取個股摘要');
+		const absent = renderToStaticMarkup(<WatchlistSummaryPanel summary={undefined} onRetry={() => {}} />);
+		expect(absent).toContain('正在讀取個股摘要');
+	});
+
+	it('error state renders the error message and a 重試 button wired to onRetry', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'error', error: '個股摘要載入失敗' }} onRetry={() => {}} />);
+		expect(html).toContain('個股摘要載入失敗');
+		expect(html).toContain('重試');
+		expect(html).toMatch(/<button[^>]*>重試<\/button>/);
+	});
+
+	it('never contains financial-scoring language', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement() }} onRetry={() => {}} />);
+		for (const forbidden of ['便宜', '昂貴', '健康', '危險', '值得買', '值得賣']) {
+			expect(html).not.toContain(forbidden);
+		}
+	});
+});
+
+describe('M8D — null / zero / negative preservation', () => {
+	it('missing valuation/statement renders — for every field, never a fabricated value', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: null, statement: null }} onRetry={() => {}} />);
+		expect(html).toContain('本益比 —');
+		expect(html).toContain('股價淨值比 —');
+		expect(html).toContain('負債比 —');
+		expect(html).toContain('營業活動現金流量 —');
+		expect(html).toContain('資產負債表期間 —');
+		expect(html).toContain('現金流量期間 —');
+	});
+
+	it('PE = 0 renders a real zero, never — (not falsy-checked)', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation({ pe: 0 }), statement: summaryStatement() }} onRetry={() => {}} />);
+		expect(html).toContain('本益比 0');
+		expect(html).not.toContain('本益比 —');
+	});
+
+	it('debt_ratio = 0 renders a real zero percent', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement({ debt_ratio_percent: 0 }) }} onRetry={() => {}} />);
+		expect(html).toContain('負債比 0%');
+	});
+
+	it('operating_cash_flow = 0 renders the existing zero cash-flow representation, never —', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement({ operating_cash_flow: 0 }) }} onRetry={() => {}} />);
+		expect(html).toContain('0 億元');
+	});
+
+	it('operating_cash_flow < 0 retains the negative sign', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement({ operating_cash_flow: -150005 }) }} onRetry={() => {}} />);
+		expect(html).toMatch(/-[\d.,]+\s*億元/);
+	});
+});
+
+describe('M8D — domain period/status truthfulness', () => {
+	it('cashflow partial + a present value: the value remains displayed alongside a truthful partial indication', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement({ cashflow_status: 'partial' }) }} onRetry={() => {}} />);
+		expect(html).toContain('億元');
+		expect(html).toContain('部分資料');
+	});
+
+	it('cashflow unavailable (no cashflow fields at all) renders — without a stray partial marker', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement({ cashflow_fiscal_year: undefined, cashflow_fiscal_quarter: undefined, cashflow_status: undefined, operating_cash_flow: null }) }} onRetry={() => {}} />);
+		expect(html).toContain('營業活動現金流量 —');
+		expect(html).not.toContain('部分資料');
+		expect(html).toContain('現金流量期間 —');
+	});
+
+	it('balance and cashflow periods are shown independently, never collapsed into one generic label', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement({ balance_fiscal_year: 2025, balance_fiscal_quarter: 4, cashflow_fiscal_year: 2026, cashflow_fiscal_quarter: 2 }) }} onRetry={() => {}} />);
+		expect(html).toContain('資產負債表期間 2025-Q4');
+		expect(html).toContain('現金流量期間 2026-Q2');
+		expect(html).not.toContain('資料期間');
+	});
+});
+
+describe('M8D — WatchlistRow toggle wiring (plain-function call, no React lifecycle)', () => {
+	it('renders 展開摘要 and aria-expanded=false by default (backward compatible with existing call sites)', () => {
+		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={quote()} busy={false} onOpen={() => {}} onRemove={() => {}} />);
+		expect(html).toContain('展開摘要');
+		expect(html).toMatch(/aria-expanded="false"/);
+	});
+
+	it('renders 收合摘要 and aria-expanded=true, and the summary panel, when expanded', () => {
+		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={quote()} busy={false} onOpen={() => {}} onRemove={() => {}} expanded summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement() }} />);
+		expect(html).toContain('收合摘要');
+		expect(html).toMatch(/aria-expanded="true"/);
+		expect(html).toContain('本益比');
+	});
+
+	it('no summary panel renders when collapsed, even if a summary happens to be cached', () => {
+		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={quote()} busy={false} onOpen={() => {}} onRemove={() => {}} expanded={false} summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement() }} />);
+		expect(html).not.toContain('本益比');
+	});
+
+	it('the toggle button is its own sibling button, wired to onToggleSummary, distinct from onOpen and onRemove', () => {
+		const onOpen = () => {};
+		const onRemove = () => {};
+		const onToggleSummary = () => {};
+		const element = WatchlistRow({ security: security(), quote: quote(), busy: false, onOpen, onRemove, onToggleSummary });
+		const children = (element.props.children as unknown[]).filter(Boolean) as { type: string; props: { onClick?: () => void } }[];
+		const toggleButton = children[2];
+		expect(toggleButton.type).toBe('button');
+		expect(toggleButton.props.onClick).toBe(onToggleSummary);
+		expect(toggleButton.props.onClick).not.toBe(onOpen);
+		expect(toggleButton.props.onClick).not.toBe(onRemove);
+	});
+
+	it('existing identity-first / remove-last child ordering is preserved (M6C regression)', () => {
+		const onOpen = () => {};
+		const onRemove = () => {};
+		const element = WatchlistRow({ security: security(), quote: quote(), busy: false, onOpen, onRemove });
+		const children = (element.props.children as unknown[]).filter(Boolean) as { type: string; props: { onClick?: () => void } }[];
+		expect(children[0].type).toBe('button');
+		expect(children[0].props.onClick).toBe(onOpen);
+		expect(children[children.length - 1].type).toBe('button');
+		expect(children[children.length - 1].props.onClick).toBe(onRemove);
+	});
+});
+
+describe('M8D — lazy loading / request-cost contract (source-verified, matching this codebase\'s existing convention for hook-driven logic)', () => {
+	it('the initial mount/refresh effect never calls the intelligence endpoint (0 calls on Watchlist open)', () => {
+		const source = workspaceSource();
+		const effectBody = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('}, [config, refreshKey]);'));
+		expect(effectBody).toContain('fetchTaiwanWatchlist');
+		expect(effectBody).toContain('fetchWatchlistQuotes');
+		expect(effectBody).not.toContain('fetchWatchlistSummary');
+		expect(effectBody).not.toContain('taiwanIntelligencePath');
+	});
+
+	it('expanding calls loadSummary only on the transition into expanded AND only when no summary is already cached', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const toggleSummary = '), source.indexOf('const retrySummary = '));
+		expect(fn).toContain('if (!wasExpanded && !summaries[canonical]) void loadSummary(canonical);');
+	});
+
+	it('collapsing never clears the cached summary (only expanded visibility changes)', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const toggleSummary = '), source.indexOf('const retrySummary = '));
+		expect(fn).not.toMatch(/setSummaries/);
+	});
+
+	it('loadSummary guards against a duplicate in-flight request for the same canonical', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const loadSummary = '), source.indexOf('const toggleSummary = '));
+		expect(fn).toContain('if (!config || summaryRequestsRef.current.has(canonical)) return;');
+		expect(fn).toContain('summaryRequestsRef.current.add(canonical);');
+	});
+
+	it('retrySummary issues exactly one new loadSummary call, reusing the same guarded function', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const retrySummary = '), source.indexOf('const remove = '));
+		expect(fn).toContain('const retrySummary = (canonical: string) => { void loadSummary(canonical); };');
+	});
+
+	it('global refresh invalidates the summary cache but never automatically refetches any row', () => {
+		const source = workspaceSource();
+		const effectBody = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('}, [config, refreshKey]);'));
+		expect(effectBody).toContain('setSummaries({});');
+		expect(effectBody).toContain('setExpanded(new Set());');
+		expect(effectBody).not.toContain('loadSummary');
+		expect(effectBody).not.toContain('fetchWatchlistSummary');
+	});
+});
+
+describe('M8D — removal clears summary state and guards against a stale async response', () => {
+	it('remove() clears both the cached summary and expanded state for the removed canonical', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const remove = async'), source.indexOf('return <div className="taiwan-product-workspace'));
+		expect(fn).toContain('setSummaries((current) => { const next = { ...current }; delete next[canonical]; return next; });');
+		expect(fn).toContain('setExpanded((current) => { const next = new Set(current); next.delete(canonical); return next; });');
+	});
+
+	it('loadSummary drops a stale response for a security no longer on the watchlist (checked before every state update)', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const loadSummary = '), source.indexOf('const toggleSummary = '));
+		expect((fn.match(/if \(!securitiesRef\.current\.has\(canonical\)\) return;/g) || []).length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('securitiesRef is kept in sync with the current securities list', () => {
+		expect(workspaceSource()).toContain('useEffect(() => { securitiesRef.current = new Set(securities.map((item) => item.canonical)); }, [securities]);');
+	});
+});
+
+describe('M8D — AI boundary: expanding a summary never calls Research/AI', () => {
+	it('the Watchlist workspace never imports the research path helper or AI research type', () => {
+		const source = workspaceSource();
+		const imports = source.slice(0, source.indexOf('type QuoteLookup'));
+		expect(imports).not.toContain('taiwanResearchPath');
+		expect(imports).not.toContain('TaiwanAIResearch');
+	});
+
+	it('fetchWatchlistSummary calls only the existing intelligence endpoint', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('async function fetchWatchlistSummary'), source.indexOf('export function TaiwanWatchlistWorkspace'));
+		expect(fn).toContain('taiwanIntelligencePath(canonical)');
+	});
+
+	it('Research navigation (onOpenResearch) remains wired to the identity button only, distinct from the summary toggle', () => {
+		const source = workspaceSource();
+		expect(source).toContain('onOpen={() => onOpenResearch(item.canonical)}');
+		expect(source).toContain('onToggleSummary={() => toggleSummary(item.canonical)}');
+	});
+});
+
+describe('M8D — no new dependency, no polling, no CSS beyond the documented minimum', () => {
+	it('still introduces no polling/timer', () => {
+		expect(workspaceSource()).not.toMatch(/setInterval|setTimeout/);
+	});
+
+	it('reuses existing formatters rather than duplicating their logic', () => {
+		const source = workspaceSource();
+		expect(source).toContain('formatTaiwanPlainNumber');
+		expect(source).toContain('formatTaiwanPercent');
+		expect(source).toContain('formatTaiwanCashFlowTWD');
 	});
 });

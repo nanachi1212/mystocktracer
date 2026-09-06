@@ -6708,7 +6708,11 @@ a:focus-visible {
 .taiwan-search-results button { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; text-align: left; cursor: pointer; }
 .taiwan-search-results span { color: #7b8797; font-size: 9px; }
 .taiwan-watchlist-list { display: grid; gap: 8px; }
-.taiwan-watchlist-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.taiwan-watchlist-row { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+/* M8D — the row's own grid has no mechanism for a full-width sub-panel; this lets the on-demand
+   intelligence summary span the entire row (below the identity/quote/actions line) instead of
+   trying to occupy a 5th column. */
+.taiwan-watchlist-summary { grid-column: 1 / -1; }
 .taiwan-watchlist-identity { display: grid; gap: 3px; justify-items: start; padding: 0; border: none; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .taiwan-watchlist-identity span { color: #7b8797; font-size: 9px; }
 .taiwan-watchlist-identity:hover strong, .taiwan-watchlist-identity:focus-visible strong { text-decoration: underline; }
