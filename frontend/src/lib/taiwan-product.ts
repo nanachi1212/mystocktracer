@@ -44,6 +44,13 @@ export type TaiwanScreenerSecurity = {
 	// TWD (the backend already converted it from the source's thousand-TWD raw value), revenue_yoy/
 	// dividend_yield are the backend's own percentage-scale numbers.
 	monthly_revenue: number | null; revenue_yoy: number | null;
+	// M7F — revenue_mom/cumulative_revenue_yoy come from the exact same official bulk row as
+	// monthly_revenue/revenue_yoy above (never a second lookup). Both are already percentage-scale
+	// numbers, never rescaled here. There is no per-row revenue period field — mixed reporting months
+	// across companies is a normal, expected consequence of staggered legal filing deadlines, not a
+	// safety hazard like M7E-B's quarterly mixed-period case, so this domain intentionally does not
+	// gain a per-row period contract.
+	revenue_mom: number | null; cumulative_revenue_yoy: number | null;
 	pe: number | null; pb: number | null; dividend_yield: number | null;
 	cash_dividend: number | null; stock_dividend: number | null; total_dividend: number | null;
 	// M7E-B — financial statement (income-statement only; live-current, official-bulk-sourced).
@@ -95,7 +102,7 @@ export type TaiwanScreenerSort =
 	| 'price' | 'change_percent' | 'volume' | 'amount'
 	| 'foreign_net' | 'trust_net' | 'dealer_net' | 'institutional_net'
 	| 'margin_balance' | 'margin_change' | 'short_balance' | 'short_change' | 'short_margin_ratio'
-	| 'monthly_revenue' | 'revenue_yoy' | 'pe' | 'pb' | 'dividend_yield' | 'cash_dividend' | 'stock_dividend' | 'total_dividend'
+	| 'monthly_revenue' | 'revenue_yoy' | 'revenue_mom' | 'cumulative_revenue_yoy' | 'pe' | 'pb' | 'dividend_yield' | 'cash_dividend' | 'stock_dividend' | 'total_dividend'
 	| 'cumulative_eps' | 'gross_margin' | 'operating_margin' | 'net_margin' | 'book_value_per_share';
 export type TaiwanScreenerOrder = 'asc' | 'desc';
 
@@ -115,6 +122,8 @@ export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string 
 	{ id: 'short_margin_ratio', label: '券資比' },
 	{ id: 'monthly_revenue', label: '月營收' },
 	{ id: 'revenue_yoy', label: '月營收年增率' },
+	{ id: 'revenue_mom', label: '月營收月增率' },
+	{ id: 'cumulative_revenue_yoy', label: '累計營收年增率' },
 	{ id: 'pe', label: '本益比（PE）' },
 	{ id: 'pb', label: '股價淨值比（PB）' },
 	{ id: 'dividend_yield', label: '殖利率' },
@@ -130,7 +139,7 @@ export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string 
 
 const taiwanScreenerInstitutionalSortKeys = new Set<TaiwanScreenerSort>(['foreign_net', 'trust_net', 'dealer_net', 'institutional_net']);
 const taiwanScreenerMarginSortKeys = new Set<TaiwanScreenerSort>(['margin_balance', 'margin_change', 'short_balance', 'short_change', 'short_margin_ratio']);
-const taiwanScreenerRevenueSortKeys = new Set<TaiwanScreenerSort>(['monthly_revenue', 'revenue_yoy']);
+const taiwanScreenerRevenueSortKeys = new Set<TaiwanScreenerSort>(['monthly_revenue', 'revenue_yoy', 'revenue_mom', 'cumulative_revenue_yoy']);
 const taiwanScreenerValuationSortKeys = new Set<TaiwanScreenerSort>(['pe', 'pb', 'dividend_yield']);
 const taiwanScreenerDividendSortKeys = new Set<TaiwanScreenerSort>(['cash_dividend', 'stock_dividend', 'total_dividend']);
 // M7E-C's net_margin/book_value_per_share join the same financials-criteria detection as the M7E-B
@@ -170,6 +179,9 @@ export type TaiwanScreenerFilters = {
 	// M7E-A fundamentals: revenue, valuation, dividends.
 	minMonthlyRevenue: string; maxMonthlyRevenue: string;
 	minRevenueYoY: string; maxRevenueYoY: string;
+	// M7F revenue growth: official MoM% + cumulative YoY% (same bulk row as above).
+	minRevenueMoM: string; maxRevenueMoM: string;
+	minCumulativeRevenueYoY: string; maxCumulativeRevenueYoY: string;
 	minPE: string; maxPE: string;
 	minPB: string; maxPB: string;
 	minDividendYield: string; maxDividendYield: string;
@@ -209,6 +221,8 @@ export function taiwanScreenerDefaultFilters(): TaiwanScreenerFilters {
 		minShortMarginRatio: '', maxShortMarginRatio: '',
 		minMonthlyRevenue: '', maxMonthlyRevenue: '',
 		minRevenueYoY: '', maxRevenueYoY: '',
+		minRevenueMoM: '', maxRevenueMoM: '',
+		minCumulativeRevenueYoY: '', maxCumulativeRevenueYoY: '',
 		minPE: '', maxPE: '',
 		minPB: '', maxPB: '',
 		minDividendYield: '', maxDividendYield: '',
@@ -244,8 +258,10 @@ export function taiwanScreenerHasMarginCriteria(filters: TaiwanScreenerFilters):
 // domain is set OR the sort key belongs to that domain. Must be called with `applied`, never `draft`.
 export function taiwanScreenerHasRevenueCriteria(filters: TaiwanScreenerFilters): boolean {
 	if (taiwanScreenerRevenueSortKeys.has(filters.sort)) return true;
-	return [filters.minMonthlyRevenue, filters.maxMonthlyRevenue, filters.minRevenueYoY, filters.maxRevenueYoY]
-		.some((raw) => taiwanScreenerRangeValue(raw) != null);
+	return [
+		filters.minMonthlyRevenue, filters.maxMonthlyRevenue, filters.minRevenueYoY, filters.maxRevenueYoY,
+		filters.minRevenueMoM, filters.maxRevenueMoM, filters.minCumulativeRevenueYoY, filters.maxCumulativeRevenueYoY,
+	].some((raw) => taiwanScreenerRangeValue(raw) != null);
 }
 
 export function taiwanScreenerHasValuationCriteria(filters: TaiwanScreenerFilters): boolean {
@@ -322,6 +338,10 @@ export function taiwanScreenerPath(filters: TaiwanScreenerFilters): string {
 	setRange('max_monthly_revenue', filters.maxMonthlyRevenue);
 	setRange('min_revenue_yoy', filters.minRevenueYoY);
 	setRange('max_revenue_yoy', filters.maxRevenueYoY);
+	setRange('min_revenue_mom', filters.minRevenueMoM);
+	setRange('max_revenue_mom', filters.maxRevenueMoM);
+	setRange('min_cumulative_revenue_yoy', filters.minCumulativeRevenueYoY);
+	setRange('max_cumulative_revenue_yoy', filters.maxCumulativeRevenueYoY);
 	setRange('min_pe', filters.minPE);
 	setRange('max_pe', filters.maxPE);
 	setRange('min_pb', filters.minPB);
@@ -366,6 +386,8 @@ export function validateTaiwanScreenerFilters(filters: TaiwanScreenerFilters): s
 		['minShortMarginRatio', 'maxShortMarginRatio', '最低券資比不可高於最高券資比'],
 		['minMonthlyRevenue', 'maxMonthlyRevenue', '最低月營收不可高於最高月營收'],
 		['minRevenueYoY', 'maxRevenueYoY', '最低月營收年增率不可高於最高月營收年增率'],
+		['minRevenueMoM', 'maxRevenueMoM', '最低月營收月增率不可高於最高月營收月增率'],
+		['minCumulativeRevenueYoY', 'maxCumulativeRevenueYoY', '最低累計營收年增率不可高於最高累計營收年增率'],
 		['minPE', 'maxPE', '最低本益比不可高於最高本益比'],
 		['minPB', 'maxPB', '最低股價淨值比不可高於最高股價淨值比'],
 		['minDividendYield', 'maxDividendYield', '最低殖利率不可高於最高殖利率'],

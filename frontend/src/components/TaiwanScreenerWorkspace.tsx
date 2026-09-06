@@ -142,7 +142,7 @@ export function TaiwanScreenerWorkspace({ config, refreshKey, onOpenResearch }: 
 		{watchlistState === 'error' && <div className="market-partial-warning">自選股狀態暫時無法取得</div>}
 		{data && showInstitutional && <ScreenerDomainFreshness label="法人資料" asOf={data.institutional_as_of} status={data.institutional_status} unavailableMessage="法人資料暫時無法取得" />}
 		{data && showMargin && <ScreenerDomainFreshness label="融資融券資料" asOf={data.margin_as_of} status={data.margin_status} unavailableMessage="融資融券資料暫時無法取得" />}
-		{data && showRevenue && <ScreenerDomainFreshness label="營收資料" asOf={data.revenue_as_of} status={data.revenue_status} unavailableMessage="營收資料暫時無法取得" />}
+		{data && showRevenue && <ScreenerDomainFreshness label="營收資料" asOf={data.revenue_as_of} status={data.revenue_status} unavailableMessage="營收資料暫時無法取得" partialMessage="部分月營收資料暫時無法取得，已顯示目前可用資料。" />}
 		{data && showValuation && <ScreenerDomainFreshness label="估值資料" asOf={data.valuation_as_of} status={data.valuation_status} unavailableMessage="估值資料暫時無法取得" />}
 		{data && showDividends && <ScreenerDomainFreshness label="股利資料" asOf={data.dividends_as_of} status={data.dividends_status} unavailableMessage="股利資料暫時無法取得" />}
 		{data && showFinancials && <ScreenerFinancialsFreshness period={data.financials_period} status={data.financials_status} />}
@@ -180,10 +180,18 @@ export function ScreenerPagination({ data, loading, onPrevious, onNext }: { data
 // backend never returned that domain at all (not requested) — renders nothing, never a guess.
 // 'unavailable' renders a safe warning instead of freshness text. Never shows published_at/
 // available_at — only the existing trade-date as_of/status/days-behind the backend already exposes.
-export function ScreenerDomainFreshness({ label, asOf, status, unavailableMessage }: { label: string; asOf?: string | null; status?: string; unavailableMessage: string }) {
+// M7F — `partialMessage` is optional and additive: when provided and `status === 'partial'`, an extra
+// non-blocking warning renders alongside the (already-truthful, via taiwanStatusLabel's existing
+// 'partial' → '部分資料' entry) freshness line — mirroring the financials domain's line+warning
+// pattern. Omitting `partialMessage` (every other existing call site) preserves byte-identical
+// behavior: those domains never pass it, so this never changes their rendering.
+export function ScreenerDomainFreshness({ label, asOf, status, unavailableMessage, partialMessage }: { label: string; asOf?: string | null; status?: string; unavailableMessage: string; partialMessage?: string }) {
 	if (!status) return null;
 	if (status === 'unavailable') return <div className="market-partial-warning">{unavailableMessage}</div>;
-	return <div className="taiwan-screener-domain-freshness"><span>{label}：{asOf || '未提供'}</span><span className={`taiwan-status ${status}`}>{taiwanStatusLabel(status)}</span></div>;
+	return <>
+		<div className="taiwan-screener-domain-freshness"><span>{label}：{asOf || '未提供'}</span><span className={`taiwan-status ${status}`}>{taiwanStatusLabel(status)}</span></div>
+		{status === 'partial' && partialMessage && <div className="market-partial-warning">{partialMessage}</div>}
+	</>;
 }
 
 // M7E-B — dedicated financial-statement domain freshness/status renderer. Distinct from
@@ -279,6 +287,10 @@ export function ScreenerFilterPanel({ draft, onChange, onApply, onClear, localEr
 					<label><span>最高月營收（元）</span><input type="number" inputMode="numeric" value={draft.maxMonthlyRevenue} onChange={(event) => set('maxMonthlyRevenue', event.target.value)} placeholder="不限" /></label>
 					<label><span>最低月營收年增率（%）</span><input type="number" inputMode="decimal" value={draft.minRevenueYoY} onChange={(event) => set('minRevenueYoY', event.target.value)} placeholder="不限" /></label>
 					<label><span>最高月營收年增率（%）</span><input type="number" inputMode="decimal" value={draft.maxRevenueYoY} onChange={(event) => set('maxRevenueYoY', event.target.value)} placeholder="不限" /></label>
+					<label><span>月營收月增率最小（%）</span><input type="number" inputMode="decimal" value={draft.minRevenueMoM} onChange={(event) => set('minRevenueMoM', event.target.value)} placeholder="不限" /></label>
+					<label><span>月營收月增率最大（%）</span><input type="number" inputMode="decimal" value={draft.maxRevenueMoM} onChange={(event) => set('maxRevenueMoM', event.target.value)} placeholder="不限" /></label>
+					<label><span>累計營收年增率最小（%）</span><input type="number" inputMode="decimal" value={draft.minCumulativeRevenueYoY} onChange={(event) => set('minCumulativeRevenueYoY', event.target.value)} placeholder="不限" /></label>
+					<label><span>累計營收年增率最大（%）</span><input type="number" inputMode="decimal" value={draft.maxCumulativeRevenueYoY} onChange={(event) => set('maxCumulativeRevenueYoY', event.target.value)} placeholder="不限" /></label>
 				</div>
 				<h4 className="taiwan-screener-advanced-subheading">估值</h4>
 				<div className="taiwan-screener-filter-grid taiwan-screener-advanced-grid">
@@ -422,6 +434,8 @@ export function ScreenerAdvancedCell({ security, showInstitutional, showMargin, 
 		{showRevenue && <div className="taiwan-screener-advanced-block">
 			<span>月營收 {formatTaiwanRevenueTWD(security.monthly_revenue)}</span>
 			<span>年增 {formatTaiwanPercent(security.revenue_yoy, true)}</span>
+			<span>月增率 {formatTaiwanPercent(security.revenue_mom, true)}</span>
+			<span>累計年增率 {formatTaiwanPercent(security.cumulative_revenue_yoy, true)}</span>
 		</div>}
 		{showValuation && <div className="taiwan-screener-advanced-block">
 			<span>PE {formatTaiwanPlainNumber(security.pe)}</span>

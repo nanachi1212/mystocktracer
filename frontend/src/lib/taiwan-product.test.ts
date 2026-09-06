@@ -435,8 +435,8 @@ describe('M7B — Taiwan Screener local range validation', () => {
 });
 
 describe('M7E-A — Taiwan Screener fundamentals query builder', () => {
-	it('16. sort dropdown offers exactly 26 options (M7A 4 + M7D 9 + M7E-A 8 + M7E-B 3 + M7E-C 2)', () => {
-		expect(taiwanScreenerSortOptions.length).toBe(26);
+	it('16. sort dropdown offers exactly 28 options (M7A 4 + M7D 9 + M7E-A 8 + M7E-B 3 + M7E-C 2 + M7F 2)', () => {
+		expect(taiwanScreenerSortOptions.length).toBe(28);
 	});
 
 	it('preserves every M7A/M7D sort id and adds the 8 new M7E-A sort ids', () => {
@@ -805,6 +805,117 @@ describe('M7E-C — net margin uses the existing percent formatter (no ×100 res
 	});
 
 	it('null renders as — (financial-holding categories like 2882.TWSE)', () => {
+		expect(formatTaiwanPercent(null)).toBe('—');
+	});
+});
+
+describe('M7F — revenue growth query builder', () => {
+	it('default filters include the 4 new fields, all blank', () => {
+		const defaults = taiwanScreenerDefaultFilters();
+		for (const key of ['minRevenueMoM', 'maxRevenueMoM', 'minCumulativeRevenueYoY', 'maxCumulativeRevenueYoY'] as const) {
+			expect(defaults[key]).toBe('');
+		}
+	});
+
+	it('A. blank fields are omitted from the query', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		expect(path).not.toMatch(/min_revenue_mom|max_revenue_mom|min_cumulative_revenue_yoy|max_cumulative_revenue_yoy/);
+	});
+
+	it('B. each exact key is emitted correctly', () => {
+		const withValue = (overrides: Partial<TaiwanScreenerFilters>) => taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), ...overrides });
+		expect(withValue({ minRevenueMoM: '10' })).toContain('min_revenue_mom=10');
+		expect(withValue({ maxRevenueMoM: '20' })).toContain('max_revenue_mom=20');
+		expect(withValue({ minCumulativeRevenueYoY: '30' })).toContain('min_cumulative_revenue_yoy=30');
+		expect(withValue({ maxCumulativeRevenueYoY: '40' })).toContain('max_cumulative_revenue_yoy=40');
+	});
+
+	it('C. all four combined correctly in one query', () => {
+		const path = taiwanScreenerPath({
+			...taiwanScreenerDefaultFilters(),
+			minRevenueMoM: '1', maxRevenueMoM: '2', minCumulativeRevenueYoY: '3', maxCumulativeRevenueYoY: '4',
+		});
+		expect(path).toContain('min_revenue_mom=1');
+		expect(path).toContain('max_revenue_mom=2');
+		expect(path).toContain('min_cumulative_revenue_yoy=3');
+		expect(path).toContain('max_cumulative_revenue_yoy=4');
+	});
+
+	it('D. negative values are preserved', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minRevenueMoM: '-11.5', minCumulativeRevenueYoY: '-4.44' });
+		expect(path).toContain('min_revenue_mom=-11.5');
+		expect(path).toContain('min_cumulative_revenue_yoy=-4.44');
+	});
+
+	it('D2. an explicit zero is serialized, never dropped as if blank', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minRevenueMoM: '0', minCumulativeRevenueYoY: '0' });
+		expect(path).toContain('min_revenue_mom=0');
+		expect(path).toContain('min_cumulative_revenue_yoy=0');
+	});
+
+	it('E. malformed draft can never produce NaN/Infinity in the query output', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minRevenueMoM: 'abc', maxCumulativeRevenueYoY: 'Infinity' });
+		expect(path).not.toMatch(/min_revenue_mom=|max_cumulative_revenue_yoy=/);
+		expect(path).not.toMatch(/NaN|Infinity/);
+	});
+
+	it('F. existing fundamentals params remain unchanged when the new fields are set', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minMonthlyRevenue: '100', minRevenueYoY: '5', minRevenueMoM: '1' });
+		expect(path).toContain('min_monthly_revenue=100');
+		expect(path).toContain('min_revenue_yoy=5');
+		expect(path).toContain('min_revenue_mom=1');
+	});
+
+	it('rejects inverted ranges', () => {
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minRevenueMoM: '10', maxRevenueMoM: '5' })).toBe('最低月營收月增率不可高於最高月營收月增率');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minCumulativeRevenueYoY: '10', maxCumulativeRevenueYoY: '5' })).toBe('最低累計營收年增率不可高於最高累計營收年增率');
+	});
+});
+
+describe('M7F — sort options', () => {
+	it('exposes revenue_mom/cumulative_revenue_yoy without removing or duplicating existing options', () => {
+		const ids = taiwanScreenerSortOptions.map((item) => item.id);
+		expect(ids).toContain('revenue_mom');
+		expect(ids).toContain('cumulative_revenue_yoy');
+		expect(new Set(ids).size).toBe(ids.length);
+		for (const id of ['price', 'monthly_revenue', 'revenue_yoy', 'cumulative_eps', 'net_margin', 'book_value_per_share']) {
+			expect(ids).toContain(id);
+		}
+	});
+
+	it('sort=revenue_mom/cumulative_revenue_yoy query construction', () => {
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'revenue_mom' })).toContain('sort=revenue_mom');
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'cumulative_revenue_yoy' })).toContain('sort=cumulative_revenue_yoy');
+	});
+});
+
+describe('M7F — applied-domain detection (revenue growth joins the existing revenue criteria)', () => {
+	it('taiwanScreenerHasRevenueCriteria is true for an active revenue_mom/cumulative_revenue_yoy filter or sort key', () => {
+		expect(taiwanScreenerHasRevenueCriteria({ ...taiwanScreenerDefaultFilters(), minRevenueMoM: '0' })).toBe(true);
+		expect(taiwanScreenerHasRevenueCriteria({ ...taiwanScreenerDefaultFilters(), maxCumulativeRevenueYoY: '0' })).toBe(true);
+		expect(taiwanScreenerHasRevenueCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'revenue_mom' })).toBe(true);
+		expect(taiwanScreenerHasRevenueCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'cumulative_revenue_yoy' })).toBe(true);
+	});
+
+	it('Clear (taiwanScreenerDefaultFilters()) resets it to false', () => {
+		expect(taiwanScreenerHasRevenueCriteria(taiwanScreenerDefaultFilters())).toBe(false);
+	});
+});
+
+describe('M7F — revenue growth percentage rendering (existing formatter, no rescale)', () => {
+	it('5.62 renders as 5.62%, not 562%', () => {
+		expect(formatTaiwanPercent(5.62)).toBe('5.62%');
+	});
+
+	it('-11.5 renders as -11.5%, sign preserved', () => {
+		expect(formatTaiwanPercent(-11.5)).toBe('-11.5%');
+	});
+
+	it('0 renders as 0%, not missing', () => {
+		expect(formatTaiwanPercent(0)).toBe('0%');
+	});
+
+	it('null renders as —', () => {
 		expect(formatTaiwanPercent(null)).toBe('—');
 	});
 });

@@ -22,7 +22,7 @@ const security = (overrides: Partial<TaiwanScreenerSecurity> = {}): TaiwanScreen
 	price: 2410, change: 20, change_percent: 0.84, volume: 14102018, amount: 33917316870,
 	foreign_net: null, trust_net: null, dealer_net: null, institutional_net: null,
 	margin_balance: null, margin_change: null, short_balance: null, short_change: null, short_margin_ratio: null,
-	monthly_revenue: null, revenue_yoy: null, pe: null, pb: null, dividend_yield: null,
+	monthly_revenue: null, revenue_yoy: null, revenue_mom: null, cumulative_revenue_yoy: null, pe: null, pb: null, dividend_yield: null,
 	cash_dividend: null, stock_dividend: null, total_dividend: null,
 	financial_period: null, cumulative_eps: null, gross_margin: null, operating_margin: null,
 	net_margin: null, book_value_per_share: null,
@@ -1671,6 +1671,222 @@ describe('M7E-C -- research navigation and Watchlist action remain unaffected', 
 });
 
 describe('M7E-C -- race safety and cold-start unchanged', () => {
+	it('still uses the shared runScopedRequest race guard for the Screener fetch', () => {
+		const source = workspaceSource();
+		expect(source).toContain('runScopedRequest(requestID');
+	});
+
+	it('cold overview cold-start still does not preload the Screener or Watchlist', () => {
+		const source = overviewSource();
+		const mountEffect = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('[config, refreshKey]'));
+		expect(mountEffect).not.toMatch(/screener/i);
+		expect(mountEffect).not.toMatch(/watchlist/i);
+	});
+});
+
+describe('M7F -- 營收 subsection gains exactly 4 new inputs (revenue growth), no new top-level group', () => {
+	it('1. renders the 4 new labeled inputs once 基本面 is expanded, alongside the existing 4 M7E-A revenue inputs', () => {
+		const source = workspaceSource();
+		const panel = source.slice(source.indexOf('export function ScreenerFilterPanel'), source.indexOf('export function ScreenerSummary'));
+		expect(panel).toContain('月營收月增率最小（%）');
+		expect(panel).toContain('月營收月增率最大（%）');
+		expect(panel).toContain('累計營收年增率最小（%）');
+		expect(panel).toContain('累計營收年增率最大（%）');
+		expect((panel.match(/最低月營收年增率（%）/g) || []).length).toBe(1);
+	});
+
+	it('2. defaults collapsed: revenue growth inputs are not present in the initial (collapsed) render', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		expect(html).not.toContain('月營收月增率最小');
+		expect(html).not.toContain('累計營收年增率最小');
+	});
+
+	it('3. no second top-level fundamentals group and no new 營收 subheading -- reuses the existing one', () => {
+		const source = workspaceSource();
+		const panel = source.slice(source.indexOf('export function ScreenerFilterPanel'), source.indexOf('export function ScreenerSummary'));
+		expect((panel.match(/<h4 className="taiwan-screener-advanced-subheading">營收<\/h4>/g) || []).length).toBe(1);
+		expect((panel.match(/基本面/g) || []).length).toBe(1);
+	});
+});
+
+describe('M7F -- draft typing sends no request (revenue growth)', () => {
+	it('every new input writes via the same set() helper used by every other field, never a request call', () => {
+		const source = workspaceSource();
+		const panel = source.slice(source.indexOf('export function ScreenerFilterPanel'), source.indexOf('export function ScreenerSummary'));
+		expect(panel).toContain("set('minRevenueMoM'");
+		expect(panel).toContain("set('minCumulativeRevenueYoY'");
+		expect(panel).not.toMatch(/requestJSON|taiwanScreenerPath\(/);
+	});
+});
+
+describe('M7F -- query construction', () => {
+	it('Apply serializes revenue_mom/cumulative_revenue_yoy', () => {
+		const path = taiwanScreenerPath(withFundamentals({ minRevenueMoM: '-20', maxCumulativeRevenueYoY: '50' }));
+		expect(path).toContain('min_revenue_mom=-20');
+		expect(path).toContain('max_cumulative_revenue_yoy=50');
+	});
+
+	it('an explicit zero is serialized, never omitted as if blank', () => {
+		const path = taiwanScreenerPath(withFundamentals({ minRevenueMoM: '0', minCumulativeRevenueYoY: '0' }));
+		expect(path).toContain('min_revenue_mom=0');
+		expect(path).toContain('min_cumulative_revenue_yoy=0');
+	});
+
+	it('blank revenue-growth params are omitted entirely', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		expect(path).not.toContain('revenue_mom');
+		expect(path).not.toContain('cumulative_revenue_yoy');
+	});
+});
+
+describe('M7F -- sort', () => {
+	it('sort=revenue_mom / cumulative_revenue_yoy query', () => {
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'revenue_mom' }))).toContain('sort=revenue_mom');
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'cumulative_revenue_yoy' }))).toContain('sort=cumulative_revenue_yoy');
+	});
+
+	it('sort dropdown includes the 2 new options plus every legacy option (28 total)', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		for (const label of ['月營收月增率', '累計營收年增率', '月營收', '月營收年增率', '股價', '現金股利']) {
+			expect(html).toContain(label);
+		}
+	});
+});
+
+describe('M7F -- Clear/Apply/pagination/refresh preserve revenue growth fields', () => {
+	it('Clear (taiwanScreenerDefaultFilters()) resets the new fields', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const clearFilters = () => {'), source.indexOf('const goPrevious = () => {'));
+		expect(fn).toContain('taiwanScreenerDefaultFilters()');
+	});
+
+	it('Apply resets offset to 0 even with revenue-growth criteria present', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const applyFilters = () => {'), source.indexOf('const clearFilters = () => {'));
+		expect(fn).toContain('setApplied({ ...draft, offset: 0 })');
+	});
+
+	it('pagination/refresh spread the full applied object (including the new fields), never rebuild it field-by-field', () => {
+		const source = workspaceSource();
+		const previous = source.slice(source.indexOf('const goPrevious = () => {'), source.indexOf('const goNext = () => {'));
+		const next = source.slice(source.indexOf('const goNext = () => {'), source.indexOf('// Pessimistic add/remove'));
+		expect(previous).toContain('setApplied((current) => ({ ...current, offset:');
+		expect(next).toContain('setApplied((current) => ({ ...current, offset:');
+		expect(source).toContain('}, [config, refreshKey, applied]);');
+	});
+});
+
+describe('M7F -- result rendering: null/zero/negative for revenue_mom/cumulative_revenue_yoy', () => {
+	it('a full row renders exact user-facing semantics: 月增率/累計年增率, no ×100 rescale', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ revenue_mom: 5.62, cumulative_revenue_yoy: 37.01 }),
+			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false,
+		})}</tr></tbody></table>);
+		expect(html).toContain('月增率');
+		expect(html).toContain('+5.62%');
+		expect(html).not.toContain('562%');
+		expect(html).toContain('累計年增率');
+		expect(html).toContain('+37.01%');
+	});
+
+	it('null values render — (no revenue row at all)', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ revenue_mom: null, cumulative_revenue_yoy: null }),
+			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false,
+		})}</tr></tbody></table>);
+		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('zero renders as 0%, not missing', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ revenue_mom: 0, cumulative_revenue_yoy: 0 }),
+			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false,
+		})}</tr></tbody></table>);
+		expect(html).toContain('月增率 0%');
+		expect(html).toContain('累計年增率 0%');
+	});
+
+	it('negative values render as negative, never clamped', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ revenue_mom: -11.5, cumulative_revenue_yoy: -4.44 }),
+			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false,
+		})}</tr></tbody></table>);
+		expect(html).toContain('-11.5%');
+		expect(html).toContain('-4.44%');
+	});
+});
+
+describe('M7F -- applied-domain detection reuses the existing showRevenue contract', () => {
+	it('an active revenue_mom or cumulative_revenue_yoy filter/sort also activates showRevenue', () => {
+		expect(taiwanScreenerHasRevenueCriteria(withFundamentals({ minRevenueMoM: '0' }))).toBe(true);
+		expect(taiwanScreenerHasRevenueCriteria(withFundamentals({ maxCumulativeRevenueYoY: '0' }))).toBe(true);
+		expect(taiwanScreenerHasRevenueCriteria(withFundamentals({ sort: 'revenue_mom' }))).toBe(true);
+		expect(taiwanScreenerHasRevenueCriteria(withFundamentals({ sort: 'cumulative_revenue_yoy' }))).toBe(true);
+	});
+
+	it('draft-only typing must not alter currently displayed result presentation', () => {
+		const source = workspaceSource();
+		expect(source).toContain('taiwanScreenerHasRevenueCriteria(applied)');
+		expect(source).not.toMatch(/taiwanScreenerHasRevenueCriteria\(draft\)/);
+	});
+});
+
+describe('M7F -- revenue status: available / partial / unavailable', () => {
+	it('available renders the domain period and no partial/unavailable warning', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="營收資料" asOf="2026-07" status="available" unavailableMessage="營收資料暫時無法取得" partialMessage="部分月營收資料暫時無法取得，已顯示目前可用資料。" />);
+		expect(html).toContain('營收資料：2026-07');
+		expect(html).not.toContain('部分月營收資料暫時無法取得');
+		expect(html).not.toContain('營收資料暫時無法取得');
+	});
+
+	it('partial renders the freshness line PLUS a non-blocking warning -- distinguishable from available', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="營收資料" asOf="2026-07" status="partial" unavailableMessage="營收資料暫時無法取得" partialMessage="部分月營收資料暫時無法取得，已顯示目前可用資料。" />);
+		expect(html).toContain('營收資料：2026-07');
+		expect(html).toContain('部分月營收資料暫時無法取得，已顯示目前可用資料。');
+	});
+
+	it('unavailable renders a safe warning, independent of empty-result state, never a fabricated period', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="營收資料" asOf={null} status="unavailable" unavailableMessage="營收資料暫時無法取得" partialMessage="部分月營收資料暫時無法取得，已顯示目前可用資料。" />);
+		expect(html).toContain('營收資料暫時無法取得');
+		expect(html).not.toContain('營收資料：');
+	});
+
+	it('other existing domains (no partialMessage passed) keep byte-identical behavior even if status were partial', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="估值資料" asOf="2026-09-04" status="partial" unavailableMessage="估值資料暫時無法取得" />);
+		expect(html).toContain('估值資料：2026-09-04');
+		expect(html).not.toMatch(/暫時無法取得，已顯示目前可用資料/);
+	});
+});
+
+describe('M7F -- no request fan-out introduced', () => {
+	it('still issues exactly one requestJSON call (Screener) and never a direct revenue/fundamentals/FinMind/TWSE/TPEx endpoint', () => {
+		const source = workspaceSource();
+		const matches = source.match(/requestJSON</g) || [];
+		expect(matches.length).toBe(1);
+		expect(source).not.toMatch(/\/api\/v1\/tw\/financials|\/api\/v1\/tw\/fundamentals|\/api\/v1\/tw\/balance|FinMind|openapi\.twse|tpex\.org/i);
+	});
+});
+
+describe('M7F -- research navigation and Watchlist action remain unaffected', () => {
+	it('exact 2330.TWSE navigation preserved even with revenue_mom/cumulative_revenue_yoy columns rendered', () => {
+		let opened = '';
+		const twse = security({ canonical: '2330.TWSE', revenue_mom: 5.62, cumulative_revenue_yoy: 37.01 });
+		const element = ScreenerRow({ security: twse, onOpen: () => { opened = twse.canonical; }, ...rowWatchlistProps({ showRevenue: true }) });
+		const identityCell = (element.props.children as unknown[])[0] as { props: { children: { props: { onClick: () => void } } } };
+		identityCell.props.children.props.onClick();
+		expect(opened).toBe('2330.TWSE');
+	});
+
+	it('the Watchlist toggle still never triggers onOpen, even with revenue-growth columns present', () => {
+		let toggled = false;
+		const element = ScreenerWatchlistAction({ membershipState: 'ready', saved: false, busy: false, onToggle: () => { toggled = true; } });
+		const button = (element.props.children as unknown[])[0] as { type: string; props: { onClick: () => void } };
+		button.props.onClick();
+		expect(toggled).toBe(true);
+	});
+});
+
+describe('M7F -- race safety and cold-start unchanged', () => {
 	it('still uses the shared runScopedRequest race guard for the Screener fetch', () => {
 		const source = workspaceSource();
 		expect(source).toContain('runScopedRequest(requestID');
