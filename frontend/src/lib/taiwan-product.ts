@@ -70,6 +70,15 @@ export type TaiwanScreenerSecurity = {
 	// financial_period/financials_period rule as cumulative_eps/gross_margin/operating_margin above —
 	// the frontend never re-derives or second-guesses that gate, it only renders what the backend sent.
 	net_margin: number | null; book_value_per_share: number | null;
+	// M7G — debt_ratio/debt_to_equity/current_ratio (balance-sheet, backend-scoped to the "ci" category
+	// only, gated by the backend's own INDEPENDENT balance-target-period — completely decoupled from
+	// financial_period/financials_period/financials_status above, including book_value_per_share's own
+	// separate Model A alignment rule). balance_period is THIS security's own actual balance-sheet
+	// period, populated by the backend only when at least one of the three ratios below is exposed for
+	// it — never a substitute for financial_period, never synthesized from the domain-level
+	// balance_period on TaiwanScreenerResponse.
+	debt_ratio: number | null; debt_to_equity: number | null; current_ratio: number | null;
+	balance_period: string | null;
 };
 
 export type TaiwanScreenerResponse = {
@@ -96,6 +105,11 @@ export type TaiwanScreenerResponse = {
 	// partial/unavailable — never a daily-cadence "最新"/days-behind claim, and never published_at/
 	// available_at.
 	financials_period?: string | null; financials_status?: string;
+	// M7G — additive, present only when the balance-sheet domain was actually requested (via
+	// book_value_per_share or any of the three new ratio filters/sorts below). balance_period is the
+	// backend's own independent balance-target-period (Model B) — a separate domain from financials
+	// entirely, never combined with or substituted for financials_period/financials_status above.
+	balance_period?: string | null; balance_status?: string;
 };
 
 export type TaiwanScreenerSort =
@@ -103,7 +117,8 @@ export type TaiwanScreenerSort =
 	| 'foreign_net' | 'trust_net' | 'dealer_net' | 'institutional_net'
 	| 'margin_balance' | 'margin_change' | 'short_balance' | 'short_change' | 'short_margin_ratio'
 	| 'monthly_revenue' | 'revenue_yoy' | 'revenue_mom' | 'cumulative_revenue_yoy' | 'pe' | 'pb' | 'dividend_yield' | 'cash_dividend' | 'stock_dividend' | 'total_dividend'
-	| 'cumulative_eps' | 'gross_margin' | 'operating_margin' | 'net_margin' | 'book_value_per_share';
+	| 'cumulative_eps' | 'gross_margin' | 'operating_margin' | 'net_margin' | 'book_value_per_share'
+	| 'debt_ratio' | 'debt_to_equity' | 'current_ratio';
 export type TaiwanScreenerOrder = 'asc' | 'desc';
 
 export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string }[] = [
@@ -135,6 +150,9 @@ export const taiwanScreenerSortOptions: { id: TaiwanScreenerSort; label: string 
 	{ id: 'operating_margin', label: '營業利益率' },
 	{ id: 'net_margin', label: '淨利率' },
 	{ id: 'book_value_per_share', label: '每股參考淨值' },
+	{ id: 'debt_ratio', label: '負債比率' },
+	{ id: 'debt_to_equity', label: '負債權益比' },
+	{ id: 'current_ratio', label: '流動比率' },
 ];
 
 const taiwanScreenerInstitutionalSortKeys = new Set<TaiwanScreenerSort>(['foreign_net', 'trust_net', 'dealer_net', 'institutional_net']);
@@ -148,6 +166,12 @@ const taiwanScreenerDividendSortKeys = new Set<TaiwanScreenerSort>(['cash_divide
 // backend) — the frontend does not need a second "showBalance" concept, it reuses the single existing
 // showFinancials/ScreenerFinancialsFreshness contract for all five metrics.
 const taiwanScreenerFinancialsSortKeys = new Set<TaiwanScreenerSort>(['cumulative_eps', 'gross_margin', 'operating_margin', 'net_margin', 'book_value_per_share']);
+// M7G — debt_ratio/debt_to_equity/current_ratio are a genuinely independent domain on the backend
+// (their own balance_period/balance_status, decoupled from financials_period/financials_status —
+// see taiwan_screener.go's Model B). Deliberately NOT folded into taiwanScreenerFinancialsSortKeys/
+// taiwanScreenerHasFinancialsCriteria above: doing so would make the frontend present financials and
+// balance freshness as one concept when the backend keeps them separate on purpose.
+const taiwanScreenerBalanceSortKeys = new Set<TaiwanScreenerSort>(['debt_ratio', 'debt_to_equity', 'current_ratio']);
 
 export const taiwanScreenerOrderOptions: { id: TaiwanScreenerOrder; label: string }[] = [
 	{ id: 'desc', label: '高到低' },
@@ -195,6 +219,10 @@ export type TaiwanScreenerFilters = {
 	// M7E-C financial statement: ci-only net margin + all-category book value per share.
 	minNetMargin: string; maxNetMargin: string;
 	minBookValuePerShare: string; maxBookValuePerShare: string;
+	// M7G financial statement: ci-only debt_ratio/debt_to_equity/current_ratio.
+	minDebtRatio: string; maxDebtRatio: string;
+	minDebtToEquity: string; maxDebtToEquity: string;
+	minCurrentRatio: string; maxCurrentRatio: string;
 	sort: TaiwanScreenerSort;
 	order: TaiwanScreenerOrder;
 	limit: number;
@@ -234,6 +262,9 @@ export function taiwanScreenerDefaultFilters(): TaiwanScreenerFilters {
 		minOperatingMargin: '', maxOperatingMargin: '',
 		minNetMargin: '', maxNetMargin: '',
 		minBookValuePerShare: '', maxBookValuePerShare: '',
+		minDebtRatio: '', maxDebtRatio: '',
+		minDebtToEquity: '', maxDebtToEquity: '',
+		minCurrentRatio: '', maxCurrentRatio: '',
 		sort: 'amount', order: 'desc',
 		limit: TAIWAN_SCREENER_PAGE_SIZE, offset: 0,
 	};
@@ -284,6 +315,20 @@ export function taiwanScreenerHasFinancialsCriteria(filters: TaiwanScreenerFilte
 	return [
 		filters.minCumulativeEPS, filters.maxCumulativeEPS, filters.minGrossMargin, filters.maxGrossMargin, filters.minOperatingMargin, filters.maxOperatingMargin,
 		filters.minNetMargin, filters.maxNetMargin, filters.minBookValuePerShare, filters.maxBookValuePerShare,
+	].some((raw) => taiwanScreenerRangeValue(raw) != null);
+}
+
+// M7G — true when `filters` (pass the APPLIED filters, never draft) actually engages the balance-sheet
+// ratio domain: an active min/max filter for debt_ratio/debt_to_equity/current_ratio, or a sort key
+// belonging to that domain. This is a domain independent of taiwanScreenerHasFinancialsCriteria above
+// (which remains income-statement/BVPS only) — the backend keeps balance_period/balance_status
+// separate from financials_period/financials_status on purpose, and this helper preserves that
+// distinction on the frontend.
+export function taiwanScreenerHasBalanceCriteria(filters: TaiwanScreenerFilters): boolean {
+	if (taiwanScreenerBalanceSortKeys.has(filters.sort)) return true;
+	return [
+		filters.minDebtRatio, filters.maxDebtRatio, filters.minDebtToEquity, filters.maxDebtToEquity,
+		filters.minCurrentRatio, filters.maxCurrentRatio,
 	].some((raw) => taiwanScreenerRangeValue(raw) != null);
 }
 
@@ -364,6 +409,12 @@ export function taiwanScreenerPath(filters: TaiwanScreenerFilters): string {
 	setRange('max_net_margin', filters.maxNetMargin);
 	setRange('min_book_value_per_share', filters.minBookValuePerShare);
 	setRange('max_book_value_per_share', filters.maxBookValuePerShare);
+	setRange('min_debt_ratio', filters.minDebtRatio);
+	setRange('max_debt_ratio', filters.maxDebtRatio);
+	setRange('min_debt_to_equity', filters.minDebtToEquity);
+	setRange('max_debt_to_equity', filters.maxDebtToEquity);
+	setRange('min_current_ratio', filters.minCurrentRatio);
+	setRange('max_current_ratio', filters.maxCurrentRatio);
 	return `/api/v1/tw/screener?${params.toString()}`;
 }
 
@@ -399,6 +450,9 @@ export function validateTaiwanScreenerFilters(filters: TaiwanScreenerFilters): s
 		['minOperatingMargin', 'maxOperatingMargin', '最低營業利益率不可高於最高營業利益率'],
 		['minNetMargin', 'maxNetMargin', '最低淨利率不可高於最高淨利率'],
 		['minBookValuePerShare', 'maxBookValuePerShare', '最低每股參考淨值不可高於最高每股參考淨值'],
+		['minDebtRatio', 'maxDebtRatio', '負債比率最小不可高於最大'],
+		['minDebtToEquity', 'maxDebtToEquity', '負債權益比最小不可高於最大'],
+		['minCurrentRatio', 'maxCurrentRatio', '流動比率最小不可高於最大'],
 	];
 	for (const [minKey, maxKey, message] of pairs) {
 		const min = taiwanScreenerRangeValue(filters[minKey as keyof TaiwanScreenerFilters] as string);

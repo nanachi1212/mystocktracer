@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	formatTaiwanBookValuePerShare, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
 	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath,
-	taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
+	taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
 	taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters,
 } from './taiwan-product';
 
@@ -435,8 +435,8 @@ describe('M7B — Taiwan Screener local range validation', () => {
 });
 
 describe('M7E-A — Taiwan Screener fundamentals query builder', () => {
-	it('16. sort dropdown offers exactly 28 options (M7A 4 + M7D 9 + M7E-A 8 + M7E-B 3 + M7E-C 2 + M7F 2)', () => {
-		expect(taiwanScreenerSortOptions.length).toBe(28);
+	it('16. sort dropdown offers exactly 31 options (M7A 4 + M7D 9 + M7E-A 8 + M7E-B 3 + M7E-C 2 + M7F 2 + M7G 3)', () => {
+		expect(taiwanScreenerSortOptions.length).toBe(31);
 	});
 
 	it('preserves every M7A/M7D sort id and adds the 8 new M7E-A sort ids', () => {
@@ -916,6 +916,148 @@ describe('M7F — revenue growth percentage rendering (existing formatter, no re
 	});
 
 	it('null renders as —', () => {
+		expect(formatTaiwanPercent(null)).toBe('—');
+	});
+});
+
+describe('M7G — balance ratio query builder', () => {
+	it('default filters include the 6 new fields, all blank', () => {
+		const defaults = taiwanScreenerDefaultFilters();
+		for (const key of ['minDebtRatio', 'maxDebtRatio', 'minDebtToEquity', 'maxDebtToEquity', 'minCurrentRatio', 'maxCurrentRatio'] as const) {
+			expect(defaults[key]).toBe('');
+		}
+	});
+
+	it('A. blank fields are omitted from the query', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		expect(path).not.toMatch(/min_debt_ratio|max_debt_ratio|min_debt_to_equity|max_debt_to_equity|min_current_ratio|max_current_ratio/);
+	});
+
+	it('B. each exact key is emitted correctly', () => {
+		const withValue = (overrides: Partial<TaiwanScreenerFilters>) => taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), ...overrides });
+		expect(withValue({ minDebtRatio: '10' })).toContain('min_debt_ratio=10');
+		expect(withValue({ maxDebtRatio: '20' })).toContain('max_debt_ratio=20');
+		expect(withValue({ minDebtToEquity: '30' })).toContain('min_debt_to_equity=30');
+		expect(withValue({ maxDebtToEquity: '40' })).toContain('max_debt_to_equity=40');
+		expect(withValue({ minCurrentRatio: '50' })).toContain('min_current_ratio=50');
+		expect(withValue({ maxCurrentRatio: '60' })).toContain('max_current_ratio=60');
+	});
+
+	it('C. all six combined correctly in one query', () => {
+		const path = taiwanScreenerPath({
+			...taiwanScreenerDefaultFilters(),
+			minDebtRatio: '1', maxDebtRatio: '2', minDebtToEquity: '3', maxDebtToEquity: '4', minCurrentRatio: '5', maxCurrentRatio: '6',
+		});
+		expect(path).toContain('min_debt_ratio=1');
+		expect(path).toContain('max_debt_ratio=2');
+		expect(path).toContain('min_debt_to_equity=3');
+		expect(path).toContain('max_debt_to_equity=4');
+		expect(path).toContain('min_current_ratio=5');
+		expect(path).toContain('max_current_ratio=6');
+	});
+
+	it('D. negative values are preserved', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minDebtRatio: '-12.3', minDebtToEquity: '-4.5', minCurrentRatio: '-1' });
+		expect(path).toContain('min_debt_ratio=-12.3');
+		expect(path).toContain('min_debt_to_equity=-4.5');
+		expect(path).toContain('min_current_ratio=-1');
+	});
+
+	it('D2. an explicit zero is serialized, never dropped as if blank', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minDebtRatio: '0', minDebtToEquity: '0', minCurrentRatio: '0' });
+		expect(path).toContain('min_debt_ratio=0');
+		expect(path).toContain('min_debt_to_equity=0');
+		expect(path).toContain('min_current_ratio=0');
+	});
+
+	it('E. malformed/Infinity/NaN draft can never produce those in the query output', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minDebtRatio: 'abc', maxDebtToEquity: 'Infinity', minCurrentRatio: 'NaN' });
+		expect(path).not.toMatch(/min_debt_ratio=|max_debt_to_equity=|min_current_ratio=/);
+		expect(path).not.toMatch(/NaN|Infinity/);
+	});
+
+	it('F. existing M7E-C/M7F query params remain unchanged when the new fields are set', () => {
+		const path = taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), minNetMargin: '2', minBookValuePerShare: '3', minDebtRatio: '4' });
+		expect(path).toContain('min_net_margin=2');
+		expect(path).toContain('min_book_value_per_share=3');
+		expect(path).toContain('min_debt_ratio=4');
+	});
+
+	it('rejects inverted ranges', () => {
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minDebtRatio: '10', maxDebtRatio: '5' })).toBe('負債比率最小不可高於最大');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minDebtToEquity: '10', maxDebtToEquity: '5' })).toBe('負債權益比最小不可高於最大');
+		expect(validateTaiwanScreenerFilters({ ...taiwanScreenerDefaultFilters(), minCurrentRatio: '10', maxCurrentRatio: '5' })).toBe('流動比率最小不可高於最大');
+	});
+});
+
+describe('M7G — sort options', () => {
+	it('exposes debt_ratio/debt_to_equity/current_ratio without removing or duplicating existing options', () => {
+		const ids = taiwanScreenerSortOptions.map((item) => item.id);
+		expect(ids).toContain('debt_ratio');
+		expect(ids).toContain('debt_to_equity');
+		expect(ids).toContain('current_ratio');
+		expect(new Set(ids).size).toBe(ids.length); // no duplicate values
+		for (const id of ['price', 'cumulative_eps', 'net_margin', 'book_value_per_share', 'revenue_mom']) {
+			expect(ids).toContain(id);
+		}
+	});
+
+	it('sort=debt_ratio/debt_to_equity/current_ratio query construction', () => {
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'debt_ratio' })).toContain('sort=debt_ratio');
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'debt_to_equity' })).toContain('sort=debt_to_equity');
+		expect(taiwanScreenerPath({ ...taiwanScreenerDefaultFilters(), sort: 'current_ratio' })).toContain('sort=current_ratio');
+	});
+});
+
+// M7G's balance-ratio domain is a genuinely INDEPENDENT domain on the backend (its own
+// balance_period/balance_status, decoupled from financials_period/financials_status), so it gets its
+// own applied-domain detection helper rather than joining taiwanScreenerHasFinancialsCriteria — unlike
+// M7E-C's net_margin/BVPS, which reuse the existing financials criteria because the backend combines
+// their status into one financials_status.
+describe('M7G — applied-domain detection (independent balance criteria helper)', () => {
+	it('taiwanScreenerHasBalanceCriteria is true for an active debt_ratio/debt_to_equity/current_ratio filter or sort key', () => {
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), minDebtRatio: '0' })).toBe(true);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), maxDebtToEquity: '0' })).toBe(true);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), minCurrentRatio: '0' })).toBe(true);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'debt_ratio' })).toBe(true);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'debt_to_equity' })).toBe(true);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'current_ratio' })).toBe(true);
+	});
+
+	it('Clear (taiwanScreenerDefaultFilters()) resets it to false', () => {
+		expect(taiwanScreenerHasBalanceCriteria(taiwanScreenerDefaultFilters())).toBe(false);
+	});
+
+	it('is NOT triggered by an active net_margin/BVPS filter (a separate domain on the backend)', () => {
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), minNetMargin: '0' })).toBe(false);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), minBookValuePerShare: '0' })).toBe(false);
+		expect(taiwanScreenerHasBalanceCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'book_value_per_share' })).toBe(false);
+	});
+
+	it('taiwanScreenerHasFinancialsCriteria remains unaffected by an active M7G filter (still income/BVPS only)', () => {
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), minDebtRatio: '0' })).toBe(false);
+		expect(taiwanScreenerHasFinancialsCriteria({ ...taiwanScreenerDefaultFilters(), sort: 'current_ratio' })).toBe(false);
+	});
+});
+
+describe('M7G — percentage rendering (existing formatter, no rescale)', () => {
+	it('30.94 renders as 30.94%, not 3094%', () => {
+		expect(formatTaiwanPercent(30.94)).toBe('30.94%');
+	});
+
+	it('126.65 renders as 126.65%', () => {
+		expect(formatTaiwanPercent(126.65)).toBe('126.65%');
+	});
+
+	it('0 renders as 0%, not missing', () => {
+		expect(formatTaiwanPercent(0)).toBe('0%');
+	});
+
+	it('-5.5 renders as -5.5%, sign preserved', () => {
+		expect(formatTaiwanPercent(-5.5)).toBe('-5.5%');
+	});
+
+	it('null renders as — (e.g. a non-ci category like 2882.TWSE)', () => {
 		expect(formatTaiwanPercent(null)).toBe('—');
 	});
 });

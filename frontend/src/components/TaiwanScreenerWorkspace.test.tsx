@@ -3,7 +3,7 @@ import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
-	taiwanFinancialsStatusLabel, taiwanScreenerDefaultFilters, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasInstitutionalCriteria, taiwanScreenerHasMarginCriteria,
+	taiwanFinancialsStatusLabel, taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasInstitutionalCriteria, taiwanScreenerHasMarginCriteria,
 	taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria, taiwanScreenerPath,
 	type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
 } from '../lib/taiwan-product';
@@ -26,6 +26,7 @@ const security = (overrides: Partial<TaiwanScreenerSecurity> = {}): TaiwanScreen
 	cash_dividend: null, stock_dividend: null, total_dividend: null,
 	financial_period: null, cumulative_eps: null, gross_margin: null, operating_margin: null,
 	net_margin: null, book_value_per_share: null,
+	debt_ratio: null, debt_to_equity: null, current_ratio: null, balance_period: null,
 	...overrides,
 });
 
@@ -37,15 +38,15 @@ const response = (overrides: Partial<TaiwanScreenerResponse> = {}): TaiwanScreen
 // M7C — default row-level Watchlist props: "ready, not saved, not busy, no error" unless overridden.
 // M7D/M7E-A — showInstitutional/showMargin/showRevenue/showValuation/showDividends default false
 // (legacy row shape) unless a test opts in.
-const rowWatchlistProps = (overrides: Partial<{ membershipState: WatchlistMembershipState; saved: boolean; busy: boolean; mutationError?: string; showInstitutional: boolean; showMargin: boolean; showRevenue: boolean; showValuation: boolean; showDividends: boolean; showFinancials: boolean }> = {}) => ({
+const rowWatchlistProps = (overrides: Partial<{ membershipState: WatchlistMembershipState; saved: boolean; busy: boolean; mutationError?: string; showInstitutional: boolean; showMargin: boolean; showRevenue: boolean; showValuation: boolean; showDividends: boolean; showFinancials: boolean; showBalance: boolean }> = {}) => ({
 	membershipState: 'ready' as WatchlistMembershipState, saved: false, busy: false, mutationError: undefined as string | undefined, onToggleWatchlist: () => {},
-	showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false,
+	showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: false,
 	...overrides,
 });
 
-const tableWatchlistProps = (overrides: Partial<{ watchlistState: WatchlistMembershipState; watchlistedCanonicals: Set<string>; busyCanonicals: Set<string>; mutationErrors: Record<string, string>; showInstitutional: boolean; showMargin: boolean; showRevenue: boolean; showValuation: boolean; showDividends: boolean; showFinancials: boolean }> = {}) => ({
+const tableWatchlistProps = (overrides: Partial<{ watchlistState: WatchlistMembershipState; watchlistedCanonicals: Set<string>; busyCanonicals: Set<string>; mutationErrors: Record<string, string>; showInstitutional: boolean; showMargin: boolean; showRevenue: boolean; showValuation: boolean; showDividends: boolean; showFinancials: boolean; showBalance: boolean }> = {}) => ({
 	watchlistState: 'ready' as WatchlistMembershipState, watchlistedCanonicals: new Set<string>(), busyCanonicals: new Set<string>(), mutationErrors: {} as Record<string, string>, onToggleWatchlist: () => {},
-	showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false,
+	showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: false,
 	...overrides,
 });
 
@@ -613,18 +614,18 @@ describe('M7D -- Clear / pagination / global refresh preserve advanced semantics
 
 describe('M7D -- missing/zero/sign rendering (institutional)', () => {
 	it('17. null institutional values render —', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: null, trust_net: null, dealer_net: null, institutional_net: null }), showInstitutional: true, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: null, trust_net: null, dealer_net: null, institutional_net: null }), showInstitutional: true, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(4);
 	});
 
 	it('18. zero institutional value renders real 0, not missing', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 0, trust_net: 0, dealer_net: 0, institutional_net: 0 }), showInstitutional: true, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 0, trust_net: 0, dealer_net: 0, institutional_net: 0 }), showInstitutional: true, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(html).toContain('外資 0');
 		expect(html).not.toContain('外資 —');
 	});
 
 	it('19. positive/negative institutional values render explicit signs, never "+0"', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 534504, trust_net: -12000, dealer_net: 0 }), showInstitutional: true, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ foreign_net: 534504, trust_net: -12000, dealer_net: 0 }), showInstitutional: true, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(html).toContain('+534,504');
 		expect(html).toContain('-12,000');
 		expect(html).not.toContain('+0');
@@ -633,18 +634,18 @@ describe('M7D -- missing/zero/sign rendering (institutional)', () => {
 
 describe('M7D -- missing/zero/ratio rendering (margin)', () => {
 	it('20. null margin values render —', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: null, margin_change: null, short_balance: null, short_change: null, short_margin_ratio: null }), showInstitutional: false, showMargin: true, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: null, margin_change: null, short_balance: null, short_change: null, short_margin_ratio: null }), showInstitutional: false, showMargin: true, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(5);
 	});
 
 	it('21. zero margin value renders real zero', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: 0, short_balance: 0 }), showInstitutional: false, showMargin: true, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ margin_balance: 0, short_balance: 0 }), showInstitutional: false, showMargin: true, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(html).toContain('融資 0');
 		expect(html).toContain('融券 0');
 	});
 
 	it('22. short_margin_ratio renders as a percentage without re-scaling the raw backend value', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ short_margin_ratio: 8.2 }), showInstitutional: false, showMargin: true, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ short_margin_ratio: 8.2 }), showInstitutional: false, showMargin: true, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(html).toContain('8.2%');
 	});
 });
@@ -925,53 +926,53 @@ describe('M7E-A -- Clear/Apply/pagination/refresh preserve fundamentals', () => 
 
 describe('M7E-A -- missing/zero rendering (revenue)', () => {
 	it('21. null revenue values render —', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ monthly_revenue: null, revenue_yoy: null }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ monthly_revenue: null, revenue_yoy: null }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(2);
 	});
 
 	it('22-23. zero revenue renders 0 (not —), and grouped formatting applies to a real value', () => {
-		const zero = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ monthly_revenue: 0, revenue_yoy: 0 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const zero = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ monthly_revenue: 0, revenue_yoy: 0 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(zero).toContain('月營收 0');
 		expect(zero).toContain('年增 0%');
-		const grouped = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ monthly_revenue: 52340000000 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const grouped = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ monthly_revenue: 52340000000 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(grouped).toContain((52340000000).toLocaleString('zh-TW'));
 		expect(grouped).not.toContain('52340000000');
 	});
 
 	it('24. revenue_yoy renders signed percent (positive/negative/zero)', () => {
-		const up = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ revenue_yoy: 12.16 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const up = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ revenue_yoy: 12.16 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(up).toContain('+12.16%');
-		const down = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ revenue_yoy: -8.4 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const down = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ revenue_yoy: -8.4 }), showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(down).toContain('-8.4%');
 	});
 });
 
 describe('M7E-A -- missing/zero rendering (valuation)', () => {
 	it('25. null PE/PB render —', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ pe: null, pb: null, dividend_yield: null }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: true, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ pe: null, pb: null, dividend_yield: null }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: true, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(3);
 	});
 
 	it('26. real zero PE/PB remains 0, not missing', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ pe: 0, pb: 0 }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: true, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ pe: 0, pb: 0 }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: true, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(html).toContain('PE 0');
 		expect(html).toContain('PB 0');
 	});
 
 	it('27. dividend_yield renders as an unsigned percentage, no re-scaling', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ dividend_yield: 5.3 }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: true, showDividends: false, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ dividend_yield: 5.3 }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: true, showDividends: false, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(html).toContain('殖利率 5.3%');
 	});
 });
 
 describe('M7E-A -- missing/zero rendering (dividends)', () => {
 	it('28. null dividend values render —', () => {
-		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ cash_dividend: null, stock_dividend: null, total_dividend: null }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: true, showFinancials: false })}</tr></tbody></table>);
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ cash_dividend: null, stock_dividend: null, total_dividend: null }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: true, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(3);
 	});
 
 	it('29-30. zero dividend renders 0, and decimal formatting applies to a real value', () => {
-		const zero = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ cash_dividend: 5, stock_dividend: 0, total_dividend: 5 }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: true, showFinancials: false })}</tr></tbody></table>);
+		const zero = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: security({ cash_dividend: 5, stock_dividend: 0, total_dividend: 5 }), showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: true, showFinancials: false, showBalance: false })}</tr></tbody></table>);
 		expect(zero).toContain('股票 0');
 		expect(zero).toContain('現金 5');
 		expect(zero).toContain('合計 5');
@@ -1263,7 +1264,7 @@ describe('M7E-B -- result rendering: null/zero/negative for cumulative_eps/gross
 	it('a full row renders exact user-facing semantics: 期間/累計 EPS/毛利率/營業利益率', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ financial_period: '2026-Q2', cumulative_eps: 49.33, gross_margin: 67.03, operating_margin: 59.29 }),
-			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('期間 2026-Q2');
 		expect(html).toContain('累計 EPS');
@@ -1277,7 +1278,7 @@ describe('M7E-B -- result rendering: null/zero/negative for cumulative_eps/gross
 	it('null values render — (no financials row at all)', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ financial_period: null, cumulative_eps: null, gross_margin: null, operating_margin: null }),
-			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(4); // 期間 + 3 metric fields
 	});
@@ -1285,7 +1286,7 @@ describe('M7E-B -- result rendering: null/zero/negative for cumulative_eps/gross
 	it('zero renders as 0/0%, not missing', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ financial_period: '2026-Q2', cumulative_eps: 0, gross_margin: 0, operating_margin: 0 }),
-			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('累計 EPS 0');
 		expect(html).toContain('毛利率 0%');
@@ -1295,7 +1296,7 @@ describe('M7E-B -- result rendering: null/zero/negative for cumulative_eps/gross
 	it('negative values render as negative, never clamped', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ financial_period: '2026-Q2', cumulative_eps: -1.23, gross_margin: -20, operating_margin: -30 }),
-			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('-1.23');
 		expect(html).toContain('-20%');
@@ -1309,7 +1310,7 @@ describe('M7E-B -- critical per-row financial_period test', () => {
 		// exactly what the backend's mixed-period gate produces for an older-quarter security.
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ financial_period: '2026-Q1', cumulative_eps: null, gross_margin: null, operating_margin: null }),
-			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('期間 2026-Q1');
 		expect(html).not.toContain('2026-Q2');
@@ -1405,7 +1406,7 @@ describe('M7E-B -- research navigation and Watchlist action remain unaffected by
 	it('exact 2330.TWSE navigation preserved even with the financial-statement column rendered', () => {
 		let opened = '';
 		const twse = security({ canonical: '2330.TWSE', cumulative_eps: 49.33 });
-		const element = ScreenerRow({ security: twse, onOpen: () => { opened = twse.canonical; }, ...rowWatchlistProps({ showFinancials: true }) });
+		const element = ScreenerRow({ security: twse, onOpen: () => { opened = twse.canonical; }, ...rowWatchlistProps({ showFinancials: true, showBalance: false }) });
 		const identityCell = (element.props.children as unknown[])[0] as { props: { children: { props: { onClick: () => void } } } };
 		identityCell.props.children.props.onClick();
 		expect(opened).toBe('2330.TWSE');
@@ -1414,7 +1415,7 @@ describe('M7E-B -- research navigation and Watchlist action remain unaffected by
 	it('exact 6488.TPEX navigation preserved with financial-statement column rendered', () => {
 		let opened = '';
 		const tpex = security({ canonical: '6488.TPEX', code: '6488', name: '環球晶', exchange: 'TPEX', cumulative_eps: 11.87 });
-		const element = ScreenerRow({ security: tpex, onOpen: () => { opened = tpex.canonical; }, ...rowWatchlistProps({ showFinancials: true }) });
+		const element = ScreenerRow({ security: tpex, onOpen: () => { opened = tpex.canonical; }, ...rowWatchlistProps({ showFinancials: true, showBalance: false }) });
 		const identityCell = (element.props.children as unknown[])[0] as { props: { children: { props: { onClick: () => void } } } };
 		identityCell.props.children.props.onClick();
 		expect(opened).toBe('6488.TPEX');
@@ -1553,7 +1554,7 @@ describe('M7E-C -- result rendering: null/zero/negative for net_margin/book_valu
 	it('a full row renders exact user-facing semantics: 淨利率/每股參考淨值 with correct units, no ×100 rescale', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ financial_period: '2026-Q2', net_margin: 53.19, book_value_per_share: 248.05 }),
-			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('淨利率');
 		expect(html).toContain('53.19%');
@@ -1565,7 +1566,7 @@ describe('M7E-C -- result rendering: null/zero/negative for net_margin/book_valu
 	it('null values render — (e.g. non-ci category / balance domain not requested)', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ financial_period: '2026-Q2', net_margin: null, book_value_per_share: null }),
-			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).not.toContain('0%');
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(2);
@@ -1574,7 +1575,7 @@ describe('M7E-C -- result rendering: null/zero/negative for net_margin/book_valu
 	it('zero renders as 0%/0 元／股, not missing', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ financial_period: '2026-Q2', net_margin: 0, book_value_per_share: 0 }),
-			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('淨利率 0%');
 		expect(html).toContain('每股參考淨值 0 元／股');
@@ -1583,7 +1584,7 @@ describe('M7E-C -- result rendering: null/zero/negative for net_margin/book_valu
 	it('negative values render as negative, never clamped', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ financial_period: '2026-Q2', net_margin: -12.5, book_value_per_share: -3.2 }),
-			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('-12.5%');
 		expect(html).toContain('-3.2 元／股');
@@ -1594,8 +1595,8 @@ describe('M7E-C -- mixed-period frontend test (row financial_period is never sub
 	it('row A (target period) shows its BVPS; row B (older period, BVPS nulled by backend) shows — and its OWN 2026-Q1 period', () => {
 		const rowA = security({ canonical: '2330.TWSE', financial_period: '2026-Q2', book_value_per_share: 248.05 });
 		const rowB = security({ canonical: '1101.TWSE', code: '1101', name: '台泥', financial_period: '2026-Q1', book_value_per_share: null });
-		const htmlA = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: rowA, showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true })}</tr></tbody></table>);
-		const htmlB = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: rowB, showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true })}</tr></tbody></table>);
+		const htmlA = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: rowA, showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false })}</tr></tbody></table>);
+		const htmlB = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({ security: rowB, showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false })}</tr></tbody></table>);
 		expect(htmlA).toContain('期間 2026-Q2');
 		expect(htmlA).toContain('248.05 元／股');
 		expect(htmlB).toContain('期間 2026-Q1');
@@ -1608,7 +1609,7 @@ describe('M7E-C -- financial holding test (2882.TWSE-style row: net_margin null,
 	it('net margin renders — while BVPS renders normally, with no frontend workaround', () => {
 		const holding = security({ canonical: '2882.TWSE', code: '2882', name: '國泰金', financial_period: '2026-Q2', net_margin: null, book_value_per_share: 69.37 });
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
-			security: holding, showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true,
+			security: holding, showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('淨利率 —');
 		expect(html).toContain('69.37 元／股');
@@ -1631,9 +1632,12 @@ describe('M7E-C -- applied-domain detection reuses the existing showFinancials c
 });
 
 describe('M7E-C -- financials_period/financials_status semantics unchanged; no new balance UI', () => {
-	it('no new balance_status/balance_period/book_value_status UI was introduced', () => {
+	// balance_period/balance_status were deliberately introduced by M7G (independent balance-sheet
+	// ratio domain, see taiwanScreenerHasBalanceCriteria) -- no longer forbidden here. book_value_status/
+	// balance_sheet_period were never introduced by any phase and remain forbidden.
+	it('no book_value_status/balance_sheet_period UI was introduced', () => {
 		const source = workspaceSource();
-		expect(source).not.toMatch(/balance_status|balance_period|book_value_status|balance_sheet_period/);
+		expect(source).not.toMatch(/book_value_status|balance_sheet_period/);
 	});
 
 	it('existing partial/unavailable ScreenerFinancialsFreshness behavior is reused verbatim (not duplicated)', () => {
@@ -1655,7 +1659,7 @@ describe('M7E-C -- research navigation and Watchlist action remain unaffected', 
 	it('exact 2330.TWSE navigation preserved even with net_margin/BVPS columns rendered', () => {
 		let opened = '';
 		const twse = security({ canonical: '2330.TWSE', net_margin: 53.19, book_value_per_share: 248.05 });
-		const element = ScreenerRow({ security: twse, onOpen: () => { opened = twse.canonical; }, ...rowWatchlistProps({ showFinancials: true }) });
+		const element = ScreenerRow({ security: twse, onOpen: () => { opened = twse.canonical; }, ...rowWatchlistProps({ showFinancials: true, showBalance: false }) });
 		const identityCell = (element.props.children as unknown[])[0] as { props: { children: { props: { onClick: () => void } } } };
 		identityCell.props.children.props.onClick();
 		expect(opened).toBe('2330.TWSE');
@@ -1780,7 +1784,7 @@ describe('M7F -- result rendering: null/zero/negative for revenue_mom/cumulative
 	it('a full row renders exact user-facing semantics: 月增率/累計年增率, no ×100 rescale', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ revenue_mom: 5.62, cumulative_revenue_yoy: 37.01 }),
-			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false,
+			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('月增率');
 		expect(html).toContain('+5.62%');
@@ -1792,7 +1796,7 @@ describe('M7F -- result rendering: null/zero/negative for revenue_mom/cumulative
 	it('null values render — (no revenue row at all)', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ revenue_mom: null, cumulative_revenue_yoy: null }),
-			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false,
+			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false, showBalance: false,
 		})}</tr></tbody></table>);
 		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(2);
 	});
@@ -1800,7 +1804,7 @@ describe('M7F -- result rendering: null/zero/negative for revenue_mom/cumulative
 	it('zero renders as 0%, not missing', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ revenue_mom: 0, cumulative_revenue_yoy: 0 }),
-			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false,
+			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('月增率 0%');
 		expect(html).toContain('累計年增率 0%');
@@ -1809,7 +1813,7 @@ describe('M7F -- result rendering: null/zero/negative for revenue_mom/cumulative
 	it('negative values render as negative, never clamped', () => {
 		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
 			security: security({ revenue_mom: -11.5, cumulative_revenue_yoy: -4.44 }),
-			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false,
+			showInstitutional: false, showMargin: false, showRevenue: true, showValuation: false, showDividends: false, showFinancials: false, showBalance: false,
 		})}</tr></tbody></table>);
 		expect(html).toContain('-11.5%');
 		expect(html).toContain('-4.44%');
@@ -1887,6 +1891,329 @@ describe('M7F -- research navigation and Watchlist action remain unaffected', ()
 });
 
 describe('M7F -- race safety and cold-start unchanged', () => {
+	it('still uses the shared runScopedRequest race guard for the Screener fetch', () => {
+		const source = workspaceSource();
+		expect(source).toContain('runScopedRequest(requestID');
+	});
+
+	it('cold overview cold-start still does not preload the Screener or Watchlist', () => {
+		const source = overviewSource();
+		const mountEffect = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('[config, refreshKey]'));
+		expect(mountEffect).not.toMatch(/screener/i);
+		expect(mountEffect).not.toMatch(/watchlist/i);
+	});
+});
+
+// ==================================================
+// M7G -- balance-sheet ratios (debt_ratio / debt_to_equity / current_ratio), independent
+// balance_period/balance_status domain, ci-only via backend nulls (frontend never re-derives category).
+// ==================================================
+
+const fundamentalsPanel = () => {
+	const source = workspaceSource();
+	return source.slice(source.indexOf('{fundamentalsExpanded && <>'), source.indexOf("{localError && <p"));
+};
+
+describe('M7G -- 財務報表 subsection gains exactly 6 new inputs (debt_ratio/debt_to_equity/current_ratio), no new top-level group', () => {
+	it('1. renders the 6 new labeled inputs once 基本面 is expanded, alongside the existing M7E-C/M7E-B inputs', () => {
+		const panel = fundamentalsPanel();
+		expect(panel).toContain('負債比率最小（%）');
+		expect(panel).toContain('負債比率最大（%）');
+		expect(panel).toContain('負債權益比最小（%）');
+		expect(panel).toContain('負債權益比最大（%）');
+		expect(panel).toContain('流動比率最小（%）');
+		expect(panel).toContain('流動比率最大（%）');
+		// existing M7E-C/M7E-B inputs remain present, unduplicated.
+		expect((panel.match(/每股參考淨值最小/g) || []).length).toBe(1);
+		expect((panel.match(/淨利率最小（%）/g) || []).length).toBe(1);
+	});
+
+	it('2. defaults collapsed: the 6 new inputs are not present in the initial (collapsed) render', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		expect(html).not.toContain('負債比率最小');
+		expect(html).not.toContain('負債權益比最小');
+		expect(html).not.toContain('流動比率最小');
+	});
+
+	it('3. no second top-level group and no new 財務報表 subheading -- reuses the existing one', () => {
+		const source = workspaceSource();
+		const panel = source.slice(source.indexOf('export function ScreenerFilterPanel'), source.indexOf('export function ScreenerSummary'));
+		expect((panel.match(/財務報表/g) || []).length).toBe(1);
+		expect((panel.match(/基本面/g) || []).length).toBe(1);
+	});
+
+	it('4. basic filter count under 基本面 grows from 30 to exactly 36 numeric range inputs', () => {
+		const panel = fundamentalsPanel();
+		const count = (panel.match(/inputMode="decimal"|inputMode="numeric"/g) || []).length;
+		expect(count).toBe(36);
+	});
+
+	it('industry note is updated to truthfully include the three new ratios, without exposing internal category codes', () => {
+		const panel = fundamentalsPanel();
+		expect(panel).toContain('負債比率／負債權益比／流動比率');
+		expect(panel).not.toMatch(/\bci\b|\bfh\b|\bbd\b|\bins\b|\bmim\b|\bbasi\b/);
+		expect(panel).not.toContain('只有 ci 類別');
+	});
+});
+
+describe('M7G -- draft typing sends no request (balance ratios)', () => {
+	it('every new input writes via the same set() helper used by every other field, never a request call', () => {
+		const panel = fundamentalsPanel();
+		expect(panel).toContain("set('minDebtRatio'");
+		expect(panel).toContain("set('minDebtToEquity'");
+		expect(panel).toContain("set('minCurrentRatio'");
+		expect(panel).not.toMatch(/requestJSON|taiwanScreenerPath\(/);
+	});
+});
+
+describe('M7G -- query construction', () => {
+	it('Apply serializes debt_ratio/debt_to_equity/current_ratio', () => {
+		const path = taiwanScreenerPath(withFundamentals({ minDebtRatio: '10', maxDebtToEquity: '50', minCurrentRatio: '100' }));
+		expect(path).toContain('min_debt_ratio=10');
+		expect(path).toContain('max_debt_to_equity=50');
+		expect(path).toContain('min_current_ratio=100');
+	});
+
+	it('an explicit zero is serialized, never omitted as if blank', () => {
+		const path = taiwanScreenerPath(withFundamentals({ minDebtRatio: '0', minDebtToEquity: '0', minCurrentRatio: '0' }));
+		expect(path).toContain('min_debt_ratio=0');
+		expect(path).toContain('min_debt_to_equity=0');
+		expect(path).toContain('min_current_ratio=0');
+	});
+
+	it('a negative value is serialized correctly', () => {
+		const path = taiwanScreenerPath(withFundamentals({ minDebtRatio: '-5' }));
+		expect(path).toContain('min_debt_ratio=-5');
+	});
+
+	it('blank balance-ratio params are omitted entirely', () => {
+		const path = taiwanScreenerPath(taiwanScreenerDefaultFilters());
+		expect(path).not.toContain('debt_ratio');
+		expect(path).not.toContain('debt_to_equity');
+		expect(path).not.toContain('current_ratio');
+	});
+});
+
+describe('M7G -- sort', () => {
+	it('sort=debt_ratio / debt_to_equity / current_ratio query', () => {
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'debt_ratio' }))).toContain('sort=debt_ratio');
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'debt_to_equity' }))).toContain('sort=debt_to_equity');
+		expect(taiwanScreenerPath(withFundamentals({ sort: 'current_ratio' }))).toContain('sort=current_ratio');
+	});
+
+	it('sort dropdown includes the 3 new options plus every legacy option (31 total)', () => {
+		const html = renderToStaticMarkup(<ScreenerFilterPanel draft={taiwanScreenerDefaultFilters()} onChange={() => {}} onApply={() => {}} onClear={() => {}} localError="" />);
+		for (const label of ['負債比率', '負債權益比', '流動比率', '淨利率', '每股參考淨值', '股價']) {
+			expect(html).toContain(label);
+		}
+	});
+});
+
+describe('M7G -- Clear/Apply/pagination/refresh preserve balance-ratio fields', () => {
+	it('Clear (taiwanScreenerDefaultFilters()) resets the new fields', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const clearFilters = () => {'), source.indexOf('const goPrevious = () => {'));
+		expect(fn).toContain('taiwanScreenerDefaultFilters()');
+	});
+
+	it('Apply resets offset to 0 even with balance-ratio criteria present', () => {
+		const source = workspaceSource();
+		const fn = source.slice(source.indexOf('const applyFilters = () => {'), source.indexOf('const clearFilters = () => {'));
+		expect(fn).toContain('setApplied({ ...draft, offset: 0 })');
+	});
+
+	it('pagination/refresh spread the full applied object (including the new fields), never rebuild it field-by-field', () => {
+		const source = workspaceSource();
+		const previous = source.slice(source.indexOf('const goPrevious = () => {'), source.indexOf('const goNext = () => {'));
+		const next = source.slice(source.indexOf('const goNext = () => {'), source.indexOf('// Pessimistic add/remove'));
+		expect(previous).toContain('setApplied((current) => ({ ...current, offset:');
+		expect(next).toContain('setApplied((current) => ({ ...current, offset:');
+		expect(source).toContain('}, [config, refreshKey, applied]);');
+	});
+});
+
+describe('M7G -- result rendering: null/zero/negative for debt_ratio/debt_to_equity/current_ratio', () => {
+	it('a full row renders exact user-facing semantics: 負債比/負債權益比/流動比 with correct units, no ×100 rescale', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ balance_period: '2026-Q2', debt_ratio: 30.94, debt_to_equity: 44.81, current_ratio: 245.76 }),
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: true,
+		})}</tr></tbody></table>);
+		expect(html).toContain('負債比');
+		expect(html).toContain('30.94%');
+		expect(html).not.toContain('3094%');
+		expect(html).toContain('負債權益比');
+		expect(html).toContain('44.81%');
+		expect(html).toContain('流動比');
+		expect(html).toContain('245.76%');
+	});
+
+	it('null values render — (e.g. non-ci category, or balance domain not requested for this row)', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ balance_period: null, debt_ratio: null, debt_to_equity: null, current_ratio: null }),
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: true,
+		})}</tr></tbody></table>);
+		expect(html).not.toContain('0%');
+		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(4); // period + 3 metric fields
+	});
+
+	it('zero renders as 0%, not missing', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ balance_period: '2026-Q2', debt_ratio: 0, debt_to_equity: 0, current_ratio: 0 }),
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: true,
+		})}</tr></tbody></table>);
+		expect(html).toContain('負債比 0%');
+		expect(html).toContain('負債權益比 0%');
+		expect(html).toContain('流動比 0%');
+	});
+
+	it('negative values render as negative, never clamped (backend never actually returns one, but the frontend must not fabricate a positive)', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ balance_period: '2026-Q2', debt_ratio: -5.5, debt_to_equity: -1.2, current_ratio: -3 }),
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: true,
+		})}</tr></tbody></table>);
+		expect(html).toContain('-5.5%');
+		expect(html).toContain('-1.2%');
+		expect(html).toContain('-3%');
+	});
+});
+
+describe('M7G -- row balance_period test', () => {
+	it('balance_period=2026-Q2 renders 資產負債表期間 2026-Q2', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ balance_period: '2026-Q2', debt_ratio: 30.94 }),
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: true,
+		})}</tr></tbody></table>);
+		expect(html).toContain('資產負債表期間 2026-Q2');
+	});
+
+	it('balance_period=null never fabricates a row period, and is never substituted by financial_period', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ balance_period: null, financial_period: '2026-Q2', debt_ratio: null }),
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: true,
+		})}</tr></tbody></table>);
+		expect(html).toContain('資產負債表期間 —');
+		expect(html).not.toContain('資產負債表期間 2026-Q2');
+	});
+});
+
+describe('M7G -- balance_status: available / partial / unavailable', () => {
+	it('available renders the domain period and no partial/unavailable warning', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="資產負債表資料" asOf="2026-Q2" status="available" unavailableMessage="資產負債表資料暫時無法取得" partialMessage="部分資產負債表資料暫時無法取得，已顯示目前可用資料。" />);
+		expect(html).toContain('資產負債表資料：2026-Q2');
+		expect(html).not.toContain('部分資產負債表資料暫時無法取得');
+		expect(html).not.toContain('資產負債表資料暫時無法取得');
+	});
+
+	it('partial renders the freshness line PLUS the exact non-blocking warning text -- rows remain visible', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="資產負債表資料" asOf="2026-Q2" status="partial" unavailableMessage="資產負債表資料暫時無法取得" partialMessage="部分資產負債表資料暫時無法取得，已顯示目前可用資料。" />);
+		expect(html).toContain('資產負債表資料：2026-Q2');
+		expect(html).toContain('部分資產負債表資料暫時無法取得，已顯示目前可用資料。');
+	});
+
+	it('unavailable renders a safe warning, independent of empty-result state, never a fabricated period', () => {
+		const html = renderToStaticMarkup(<ScreenerDomainFreshness label="資產負債表資料" asOf={null} status="unavailable" unavailableMessage="資產負債表資料暫時無法取得" partialMessage="部分資產負債表資料暫時無法取得，已顯示目前可用資料。" />);
+		expect(html).toContain('資產負債表資料暫時無法取得');
+		expect(html).not.toContain('資產負債表資料：');
+	});
+
+	it('unavailable warning and the zero-result empty state are independent -- both can render together', () => {
+		const source = workspaceSource();
+		expect(source).toMatch(/data && showBalance && <ScreenerDomainFreshness/);
+		expect(source).toMatch(/data && data\.total === 0 && <div className="taiwan-empty-state">/);
+	});
+});
+
+// Mandatory (task section 39): financials_period/financials_status must never be merged with or
+// overwritten by balance_period/balance_status, even when both are simultaneously present with
+// DIFFERENT periods/statuses.
+describe('M7G -- domain separation (financials vs balance are never merged)', () => {
+	it('financials_period=2026-Q2/available and balance_period=2026-Q1/partial render independently, neither substituted for the other', () => {
+		const html = renderToStaticMarkup(<>
+			<ScreenerFinancialsFreshness period="2026-Q2" status="available" />
+			<ScreenerDomainFreshness label="資產負債表資料" asOf="2026-Q1" status="partial" unavailableMessage="資產負債表資料暫時無法取得" partialMessage="部分資產負債表資料暫時無法取得，已顯示目前可用資料。" />
+		</>);
+		expect(html).toContain('財務報表：2026-Q2');
+		expect(html).toContain('資產負債表資料：2026-Q1');
+		expect(html).toContain('部分資產負債表資料暫時無法取得，已顯示目前可用資料。');
+		expect(html).not.toContain('財務報表：2026-Q1');
+		expect(html).not.toContain('資產負債表資料：2026-Q2');
+	});
+
+	it('the workspace body renders each freshness block gated by its own independent flag (showFinancials vs showBalance)', () => {
+		const source = workspaceSource();
+		expect(source).toMatch(/data && showFinancials && <ScreenerFinancialsFreshness/);
+		expect(source).toMatch(/data && showBalance && <ScreenerDomainFreshness label="資產負債表資料"/);
+	});
+
+	it('showBalance is computed via its own independent helper, not folded into showFinancials', () => {
+		const source = workspaceSource();
+		expect(source).toContain('const showBalance = taiwanScreenerHasBalanceCriteria(applied);');
+		expect(source).toContain('const showFinancials = taiwanScreenerHasFinancialsCriteria(applied);');
+	});
+});
+
+describe('M7G -- BVPS regression: existing behavior unchanged with or without M7G criteria present', () => {
+	it('BVPS still renders under the financials block, never moved into the balance-only block', () => {
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: security({ financial_period: '2026-Q2', book_value_per_share: 28.5 }),
+			showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: true, showBalance: false,
+		})}</tr></tbody></table>);
+		expect(html).toContain('每股參考淨值');
+		expect(html).toContain('28.5 元／股');
+	});
+
+	it('financials freshness/status rendering is unaffected when M7G criteria are also present', () => {
+		expect(taiwanScreenerHasFinancialsCriteria(withFundamentals({ minBookValuePerShare: '0', minDebtRatio: '0' }))).toBe(true);
+		expect(taiwanScreenerHasBalanceCriteria(withFundamentals({ minBookValuePerShare: '0', minDebtRatio: '0' }))).toBe(true);
+		const source = workspaceSource();
+		expect((source.match(/function ScreenerFinancialsFreshness/g) || []).length).toBe(1);
+	});
+});
+
+describe('M7G -- ci-only user-facing semantics (2882.TWSE-style fixture: frontend trusts backend nulls)', () => {
+	it('all three metrics render —, no fabricated period, industry note is available when the section is expanded', () => {
+		const holding = security({ canonical: '2882.TWSE', code: '2882', name: '國泰金', balance_period: null, debt_ratio: null, debt_to_equity: null, current_ratio: null });
+		const html = renderToStaticMarkup(<table><tbody><tr>{ScreenerAdvancedCell({
+			security: holding, showInstitutional: false, showMargin: false, showRevenue: false, showValuation: false, showDividends: false, showFinancials: false, showBalance: true,
+		})}</tr></tbody></table>);
+		expect(html).toContain('負債比 —');
+		expect(html).toContain('負債權益比 —');
+		expect(html).toContain('流動比 —');
+		expect(html).toContain('資產負債表期間 —');
+		const panel = fundamentalsPanel();
+		expect(panel).toContain('負債比率／負債權益比／流動比率');
+	});
+});
+
+describe('M7G -- no request fan-out introduced', () => {
+	it('still issues exactly one requestJSON call (Screener) and never a direct balance/fundamentals/FinMind/TWSE/TPEx endpoint', () => {
+		const source = workspaceSource();
+		const matches = source.match(/requestJSON</g) || [];
+		expect(matches.length).toBe(1);
+		expect(source).not.toMatch(/t187ap07|mopsfin_t187ap07|\/api\/v1\/tw\/financials|\/api\/v1\/tw\/fundamentals|\/api\/v1\/tw\/balance|FinMind|Yahoo|openapi\.twse|tpex\.org/i);
+	});
+});
+
+describe('M7G -- research navigation and Watchlist action remain unaffected', () => {
+	it('exact 2330.TWSE navigation preserved even with debt_ratio/debt_to_equity/current_ratio columns rendered', () => {
+		let opened = '';
+		const twse = security({ canonical: '2330.TWSE', debt_ratio: 30.94, debt_to_equity: 44.81, current_ratio: 245.76 });
+		const element = ScreenerRow({ security: twse, onOpen: () => { opened = twse.canonical; }, ...rowWatchlistProps({ showBalance: true }) });
+		const identityCell = (element.props.children as unknown[])[0] as { props: { children: { props: { onClick: () => void } } } };
+		identityCell.props.children.props.onClick();
+		expect(opened).toBe('2330.TWSE');
+	});
+
+	it('the Watchlist toggle still never triggers onOpen, even with balance-ratio columns present', () => {
+		let toggled = false;
+		const element = ScreenerWatchlistAction({ membershipState: 'ready', saved: false, busy: false, onToggle: () => { toggled = true; } });
+		const button = (element.props.children as unknown[])[0] as { type: string; props: { onClick: () => void } };
+		button.props.onClick();
+		expect(toggled).toBe(true);
+	});
+});
+
+describe('M7G -- race safety and cold-start unchanged', () => {
 	it('still uses the shared runScopedRequest race guard for the Screener fetch', () => {
 		const source = workspaceSource();
 		expect(source).toContain('runScopedRequest(requestID');
