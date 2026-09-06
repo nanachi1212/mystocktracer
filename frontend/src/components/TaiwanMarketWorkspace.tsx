@@ -7,12 +7,12 @@ import { TaiwanMarketView } from './market/TaiwanMarketView';
 
 type View = 'overview' | 'breadth' | 'emotion' | 'industry';
 export type CommonScope = { scope: string; status: string; freshness: string; as_of: string | null; target_latest_trading_date: string; included_exchanges: string[]; missing_exchanges: string[] };
-type Breadth = CommonScope & { advancers: number; decliners: number; unchanged: number; no_trade: number; unknown: number; universe_count: number; advance_ratio: number | null; advancing_amount_ratio: number | null; total_amount_twd: number; missing_amount_count: number };
-type Emotion = CommonScope & { model_version: string; confidence: string; state: string; raw: Breadth; components: { breadth_participation: string; capital_participation: string; breadth_capital_relationship: string }; coverage: { direction_coverage: number | null; amount_coverage: number | null } };
-type Industry = { industry_id: string; industry_name: string; exchange: string; constituent_count: number; relative_breadth: number | null; relative_capital: number | null; data_quality: { direction_coverage: number | null; amount_coverage: number | null } };
-type IndustryScope = CommonScope & { snapshot_status: string; taxonomy_status: string; industry_coverage: number | null; classified_count: number; eligible_universe_count: number; industries: Industry[] };
+export type Breadth = CommonScope & { advancers: number; decliners: number; unchanged: number; no_trade: number; unknown: number; universe_count: number; advance_ratio: number | null; advancing_amount_ratio: number | null; total_amount_twd: number; missing_amount_count: number };
+export type Emotion = CommonScope & { model_version: string; confidence: string; state: string; raw: Breadth; components: { breadth_participation: string; capital_participation: string; breadth_capital_relationship: string }; coverage: { direction_coverage: number | null; amount_coverage: number | null } };
+export type Industry = { industry_id: string; industry_name: string; exchange: string; constituent_count: number; relative_breadth: number | null; relative_capital: number | null; data_quality: { direction_coverage: number | null; amount_coverage: number | null } };
+export type IndustryScope = CommonScope & { snapshot_status: string; taxonomy_status: string; industry_coverage: number | null; classified_count: number; eligible_universe_count: number; industries: Industry[] };
 
-export function TaiwanMarketWorkspace({ config, refreshKey, view }: { config: BackendConfig | null; refreshKey: number; view: View }) {
+export function TaiwanMarketWorkspace({ config, refreshKey, view, onNavigate }: { config: BackendConfig | null; refreshKey: number; view: View; onNavigate?: (target: 'taiwan-screener' | 'taiwan-breadth' | 'taiwan-emotion' | 'taiwan-industry') => void }) {
 	const [scope, setScope] = useState<TaiwanScope>('combined');
 	const [data, setData] = useState<Breadth | Emotion | IndustryScope | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -30,7 +30,7 @@ export function TaiwanMarketWorkspace({ config, refreshKey, view }: { config: Ba
 			onSettle: () => setLoading(false),
 		});
 	}, [config, refreshKey, scope, view]);
-	if (view === 'overview') return <TaiwanMarketView config={config} refreshKey={refreshKey} />;
+	if (view === 'overview') return <TaiwanMarketView config={config} refreshKey={refreshKey} onNavigate={onNavigate} />;
 	return <div className="taiwan-product-workspace">
 		<div className="taiwan-scope-tabs" aria-label="市場範圍">{taiwanScopes.map((item) => <button type="button" key={item.id} className={scope === item.id ? 'active' : ''} onClick={() => setScope(item.id)}>{item.label}</button>)}</div>
 		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取官方市場資料</div>}

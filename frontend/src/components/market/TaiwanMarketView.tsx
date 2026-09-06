@@ -1,10 +1,30 @@
 import { LoaderCircle, Search, Star } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import type { BackendConfig, InstitutionalHistory, KLine, MarginHistory, MarketIndexSeries, Quote, SecurityIdentity, TaiwanFundamentals } from '../../lib/backend';
+import type { BackendConfig, InstitutionalHistory, KLine, MarginHistory, MarketIndexSeries, MarketIndexSnapshot, Quote, SecurityIdentity, TaiwanFundamentals } from '../../lib/backend';
 import { requestJSON } from '../../lib/backend';
-import { addTaiwanWatchlistSecurity, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage } from '../../lib/taiwan-product';
+import { addTaiwanWatchlistSecurity, formatTaiwanPercent, formatTaiwanRatio, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanMarketPath, taiwanStatusLabel } from '../../lib/taiwan-product';
+import type { Breadth, Emotion, Industry, IndustryScope } from '../TaiwanMarketWorkspace';
 import { CoreIndexView, SourceNotice } from './MarketDataViews';
+
+// M8G: the primary weighted index shown in the compact Overview summary card. This mirrors the
+// existing `selectedIndex` default below — 'taiex' is already the deterministic identifier this
+// codebase uses for the headline Taiwan index, so the summary reuses it rather than guessing by
+// array position.
+const PRIMARY_INDEX_ID = 'taiex';
+
+type DomainState<T> = { data: T | null; loading: boolean; error: string };
+const emptyDomainState = <T,>(): DomainState<T> => ({ data: null, loading: false, error: '' });
+
+// Returns the top 3 industries by `relative_breadth` descending, without mutating the input
+// array. Industries with a null/non-finite `relative_breadth` cannot be ranked and are excluded
+// rather than fabricating a position for them.
+export function topIndustriesByBreadth(industries: Industry[]): Industry[] {
+	return [...industries]
+		.filter((item) => Number.isFinite(item.relative_breadth))
+		.sort((a, b) => (b.relative_breadth as number) - (a.relative_breadth as number))
+		.slice(0, 3);
+}
 
 const DATASET_LABELS = { quote: '報價', kline: 'K 線', institutional: '法人買賣超', margin: '融資融券', fundamentals: '基本面' } as const;
 
@@ -17,7 +37,13 @@ export function partialFailureWarning(failed: string[]): string {
 // started. This ref tracks who last set `error`, without triggering a render on its own.
 type ErrorOwner = 'indexes' | 'search' | 'stock' | '';
 
-export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig | null; refreshKey: number }) {
+export function TaiwanMarketView({ config, refreshKey, onNavigate }: { config: BackendConfig | null; refreshKey: number; onNavigate?: (target: 'taiwan-screener' | 'taiwan-breadth' | 'taiwan-emotion' | 'taiwan-industry') => void }) {
+	// M8G: Overview summary domains (Breadth/Emotion/Industry). Each fetches independently on the
+	// same config/refreshKey trigger as the `indexes` effect below, and fails independently: one
+	// domain erroring never blanks the other summary cards.
+	const [breadth, setBreadth] = useState<DomainState<Breadth>>(emptyDomainState);
+	const [emotion, setEmotion] = useState<DomainState<Emotion>>(emptyDomainState);
+	const [industry, setIndustry] = useState<DomainState<IndustryScope>>(emptyDomainState);
 	const [query, setQuery] = useState('');
 	const [matches, setMatches] = useState<SecurityIdentity[]>([]);
 	const [selected, setSelected] = useState<SecurityIdentity | null>(null);
@@ -120,6 +146,33 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 			.catch((reason) => { errorOwnerRef.current = 'indexes'; setError(taiwanErrorMessage(reason, '台股指數載入失敗')); });
 	}, [config, refreshKey]);
 
+	// M8G: Overview summary domains. Deliberately independent of the `error`/`errorOwnerRef`
+	// banner above (that banner is reserved for the search/select/indexes flow below) — each
+	// summary card owns its own loading/error state so one domain failing never hides the others.
+	useEffect(() => {
+		if (!config) return;
+		setBreadth((current) => ({ ...current, loading: true, error: '' }));
+		requestJSON<{ data: Breadth }>(config, taiwanMarketPath('market-breadth', 'combined'))
+			.then((payload) => setBreadth({ data: payload.data, loading: false, error: '' }))
+			.catch((reason) => setBreadth({ data: null, loading: false, error: taiwanErrorMessage(reason, '市場廣度載入失敗') }));
+	}, [config, refreshKey]);
+
+	useEffect(() => {
+		if (!config) return;
+		setEmotion((current) => ({ ...current, loading: true, error: '' }));
+		requestJSON<{ data: Emotion }>(config, taiwanMarketPath('market-emotion', 'combined'))
+			.then((payload) => setEmotion({ data: payload.data, loading: false, error: '' }))
+			.catch((reason) => setEmotion({ data: null, loading: false, error: taiwanErrorMessage(reason, '市場氣氛載入失敗') }));
+	}, [config, refreshKey]);
+
+	useEffect(() => {
+		if (!config) return;
+		setIndustry((current) => ({ ...current, loading: true, error: '' }));
+		requestJSON<{ data: IndustryScope }>(config, taiwanMarketPath('industry-radar', 'combined'))
+			.then((payload) => setIndustry({ data: payload.data, loading: false, error: '' }))
+			.catch((reason) => setIndustry({ data: null, loading: false, error: taiwanErrorMessage(reason, '產業雷達載入失敗') }));
+	}, [config, refreshKey]);
+
 	// Refresh retries the currently selected security (if any) in addition to the indexes effect
 	// above. This effect only depends on [config, refreshKey] — not `selected` — so selecting a
 	// stock does not itself re-trigger a fetch; only a refreshKey change (or config resolving) does.
@@ -135,7 +188,21 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 	const submit = (event: FormEvent) => { event.preventDefault(); void search(); };
 	const indexSnapshots = indexes.map((item) => item.index);
 	const indexSeries = indexes.find((item) => item.index.id === selectedIndex) || null;
+	// M8G: the summary card's index snapshot is independent of the `selectedIndex` the user may
+	// click lower on the page in `CoreIndexView` — it always shows the primary weighted index, and
+	// reuses `indexSnapshots` already fetched above (no second /indexes request).
+	const primaryIndexSnapshot = indexSnapshots.find((item) => item.id === PRIMARY_INDEX_ID) || indexSnapshots[0] || null;
+	const topIndustries = industry.data ? topIndustriesByBreadth(industry.data.industries) : [];
 	return <div className="market-data-view taiwan-market-view">
+		<OverviewSummary
+			breadth={breadth}
+			emotion={emotion}
+			topIndustries={topIndustries}
+			industryLoading={industry.loading}
+			industryError={industry.error}
+			indexSnapshot={primaryIndexSnapshot}
+			onNavigate={onNavigate}
+		/>
 		<form className="market-filter" onSubmit={submit}><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 2330、台積電、2330.TWSE 或 6488.TPEX" /></label><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : '搜尋'}</button></form>
 		{error && <div className="market-partial-warning">{error}</div>}
 		{matches.length > 1 && <div className="taiwan-search-results">{matches.map((item) => <button type="button" key={item.canonical} onClick={() => void select(item)}><strong>{item.code} {item.name}</strong><span>{item.exchange} · {item.security_type.toUpperCase()} · {item.currency}</span></button>)}</div>}
@@ -147,6 +214,46 @@ export function TaiwanMarketView({ config, refreshKey }: { config: BackendConfig
 		{fundamentals && <FundamentalsView data={fundamentals} />}
 		<CoreIndexView indexes={indexSnapshots} selectedID={selectedIndex} onSelect={setSelectedIndex} series={indexSeries} seriesLoading={false} meta={indexSeries?.meta || null} locale="zh-TW" />
 	</div>;
+}
+
+// M8G: compact first-glance Overview summary — up to 4 cards, each showing only the fields the
+// M8G.0 gate locked (advancers/decliners/advance_ratio; emotion `state`; top-3 industries by
+// existing `relative_breadth`; the primary index's name/price/change_percent), plus a Screener
+// navigation action. Each card fails/loads independently; a missing `onNavigate` (e.g. in tests
+// that don't wire navigation) simply renders no detail/Screener links rather than erroring.
+export function OverviewSummary({ breadth, emotion, topIndustries, industryLoading, industryError, indexSnapshot, onNavigate }: {
+	breadth: { data: Breadth | null; loading: boolean; error: string };
+	emotion: { data: Emotion | null; loading: boolean; error: string };
+	topIndustries: Industry[];
+	industryLoading: boolean;
+	industryError: string;
+	indexSnapshot: MarketIndexSnapshot | null;
+	onNavigate?: (target: 'taiwan-screener' | 'taiwan-breadth' | 'taiwan-emotion' | 'taiwan-industry') => void;
+}) {
+	return <section className="taiwan-overview-summary">
+		<div className="taiwan-overview-summary-grid">
+			<article className="taiwan-overview-card">
+				<header><span>漲跌家數</span>{onNavigate && <button type="button" onClick={() => onNavigate('taiwan-breadth')}>市場廣度</button>}</header>
+				{breadth.loading ? <LoaderCircle className="spin" size={16} /> : breadth.error ? <p>{breadth.error}</p> : breadth.data ? <>
+					<strong>上漲 {breadth.data.advancers.toLocaleString('zh-TW')} · 下跌 {breadth.data.decliners.toLocaleString('zh-TW')}</strong>
+					<span>廣度 {formatTaiwanRatio(breadth.data.advance_ratio)}</span>
+				</> : <p>暫無資料</p>}
+			</article>
+			<article className="taiwan-overview-card">
+				<header><span>市場氣氛</span>{onNavigate && <button type="button" onClick={() => onNavigate('taiwan-emotion')}>市場情緒</button>}</header>
+				{emotion.loading ? <LoaderCircle className="spin" size={16} /> : emotion.error ? <p>{emotion.error}</p> : emotion.data ? <strong>{taiwanStatusLabel(emotion.data.state)}</strong> : <p>暫無資料</p>}
+			</article>
+			<article className="taiwan-overview-card">
+				<header><span>前 3 強產業</span>{onNavigate && <button type="button" onClick={() => onNavigate('taiwan-industry')}>產業雷達</button>}</header>
+				{industryLoading ? <LoaderCircle className="spin" size={16} /> : industryError ? <p>{industryError}</p> : topIndustries.length ? <ol>{topIndustries.map((item) => <li key={item.industry_id}>{item.industry_name} <b>{formatTaiwanPercent(item.relative_breadth == null ? null : item.relative_breadth * 100, true)}</b></li>)}</ol> : <p>暫無資料</p>}
+			</article>
+			<article className="taiwan-overview-card">
+				<header><span>加權指數</span></header>
+				{indexSnapshot ? <><strong>{indexSnapshot.price.toLocaleString('zh-TW')}</strong><span className={indexSnapshot.change_percent > 0 ? 'up' : indexSnapshot.change_percent < 0 ? 'down' : 'flat'}>{indexSnapshot.change_percent > 0 ? '+' : ''}{indexSnapshot.change_percent.toFixed(2)}%</span></> : <p>暫無資料</p>}
+			</article>
+		</div>
+		{onNavigate && <button type="button" className="taiwan-overview-screener-action" onClick={() => onNavigate('taiwan-screener')}>查看台股選股器</button>}
+	</section>;
 }
 
 export function FundamentalsView({ data }: { data: TaiwanFundamentals }) {

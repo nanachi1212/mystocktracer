@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { InstitutionalFlow, InstitutionalHistory, MarginHistory, MarginTrading, SecurityIdentity, SourceMeta, TaiwanFundamentals } from '../../lib/backend';
+import type { InstitutionalFlow, InstitutionalHistory, MarginHistory, MarginTrading, MarketIndexSnapshot, SecurityIdentity, SourceMeta, TaiwanFundamentals } from '../../lib/backend';
 import { taiwanErrorMessage } from '../../lib/taiwan-product';
-import { ChipView, FundamentalsView, partialFailureWarning } from './TaiwanMarketView';
+import type { Breadth, Emotion, Industry } from '../TaiwanMarketWorkspace';
+import { ChipView, FundamentalsView, OverviewSummary, partialFailureWarning, topIndustriesByBreadth } from './TaiwanMarketView';
 
 const security: SecurityIdentity = {
 	canonical: '0050.TWSE', code: '0050', name: '元大台灣50', market: 'TW', exchange: 'TWSE',
@@ -217,5 +218,149 @@ describe('P1E refresh behavior — TaiwanMarketView retries the currently select
 		const mountEffect = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('[config, refreshKey]'));
 		expect(mountEffect).toContain('/api/v1/tw/indexes');
 		expect(mountEffect).not.toMatch(/search\(/);
+	});
+});
+
+const commonScope = { scope: 'combined', status: 'ok', freshness: 'fresh', as_of: '2026-09-07', target_latest_trading_date: '2026-09-07', included_exchanges: ['TWSE', 'TPEx'], missing_exchanges: [] };
+const breadthData: Breadth = { ...commonScope, advancers: 812, decliners: 623, unchanged: 40, no_trade: 5, unknown: 0, universe_count: 1480, advance_ratio: 0.566, advancing_amount_ratio: 0.6, total_amount_twd: 1, missing_amount_count: 0 };
+const emotionData: Emotion = { ...commonScope, model_version: 'v1', confidence: 'high', state: '偏多', raw: breadthData, components: { breadth_participation: 'high', capital_participation: 'high', breadth_capital_relationship: 'aligned' }, coverage: { direction_coverage: 0.98, amount_coverage: 0.95 } };
+const industryFixture = (id: string, name: string, relativeBreadth: number | null): Industry => ({ industry_id: id, industry_name: name, exchange: 'TWSE', constituent_count: 10, relative_breadth: relativeBreadth, relative_capital: relativeBreadth, data_quality: { direction_coverage: 0.9, amount_coverage: 0.9 } });
+const indexSnapshotFixture: MarketIndexSnapshot = { id: 'taiex', secid: 'TAIEX', code: 'TAIEX', name: '加權指數', region: 'TW', market: 'TW', currency: 'TWD', price: 17850.32, change: 74, change_percent: 0.42, status: 'ok', meta: { source: 'taiwan:indexes', fetched_at: '', latency_ms: 0, stale: false, status: 'ok' } };
+const idleDomain = <T,>(): { data: T | null; loading: boolean; error: string } => ({ data: null, loading: false, error: '' });
+
+describe('M8G topIndustriesByBreadth — display-order-only ranking of an existing field', () => {
+	it('sorts by relative_breadth descending and takes the top 3', () => {
+		const items = [industryFixture('a', 'A', 0.1), industryFixture('b', 'B', 0.5), industryFixture('c', 'C', 0.3), industryFixture('d', 'D', 0.4)];
+		expect(topIndustriesByBreadth(items).map((item) => item.industry_id)).toEqual(['b', 'd', 'c']);
+	});
+
+	it('does not mutate the input array (copies before sorting)', () => {
+		const items = [industryFixture('a', 'A', 0.1), industryFixture('b', 'B', 0.5)];
+		const original = [...items];
+		topIndustriesByBreadth(items);
+		expect(items).toEqual(original);
+	});
+
+	it('excludes industries with a null relative_breadth rather than fabricating a rank', () => {
+		const items = [industryFixture('a', 'A', null), industryFixture('b', 'B', 0.5)];
+		expect(topIndustriesByBreadth(items).map((item) => item.industry_id)).toEqual(['b']);
+	});
+
+	it('excludes non-finite relative_breadth values (NaN/Infinity) the same way', () => {
+		const items = [industryFixture('a', 'A', Number.NaN), industryFixture('b', 'B', Number.POSITIVE_INFINITY), industryFixture('c', 'C', 0.2)];
+		expect(topIndustriesByBreadth(items).map((item) => item.industry_id)).toEqual(['c']);
+	});
+
+	it('returns fewer than 3 when fewer than 3 are rankable', () => {
+		const items = [industryFixture('a', 'A', 0.1)];
+		expect(topIndustriesByBreadth(items)).toHaveLength(1);
+	});
+});
+
+describe('M8G OverviewSummary — compact Overview summary cards', () => {
+	it('renders Breadth advancers/decliners/advance_ratio', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={{ data: breadthData, loading: false, error: '' }} emotion={idleDomain<Emotion>()} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={null} />);
+		expect(html).toContain('812');
+		expect(html).toContain('623');
+		expect(html).toContain('56.6');
+	});
+
+	it('renders the existing Emotion state truthfully, without inventing new sentiment wording', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={{ data: emotionData, loading: false, error: '' }} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={null} />);
+		expect(html).toContain('偏多');
+	});
+
+	it('renders the top 3 industries passed in, in the given order, with their relative_breadth', () => {
+		const top3 = [industryFixture('a', '半導體', 0.62), industryFixture('b', '金融', 0.58), industryFixture('c', '電子', 0.55)];
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={idleDomain<Emotion>()} topIndustries={top3} industryLoading={false} industryError="" indexSnapshot={null} />);
+		expect(html.indexOf('半導體')).toBeLessThan(html.indexOf('金融'));
+		expect(html.indexOf('金融')).toBeLessThan(html.indexOf('電子'));
+	});
+
+	it('renders the index snapshot name/price/change_percent without duplicating the K-line/MiniStat detail', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={idleDomain<Emotion>()} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={indexSnapshotFixture} />);
+		expect(html).toContain('17,850.32');
+		expect(html).toContain('0.42');
+		expect(html).not.toContain('market-kline-table');
+	});
+
+	it('a Breadth failure renders that card in an unavailable state while Emotion/Industry/Index remain usable', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={{ data: null, loading: false, error: '市場廣度載入失敗' }} emotion={{ data: emotionData, loading: false, error: '' }} topIndustries={[industryFixture('a', '半導體', 0.62)]} industryLoading={false} industryError="" indexSnapshot={indexSnapshotFixture} />);
+		expect(html).toContain('市場廣度載入失敗');
+		expect(html).toContain('偏多');
+		expect(html).toContain('半導體');
+		expect(html).toContain('17,850.32');
+	});
+
+	it('an Emotion failure renders that card in an unavailable state while the others remain usable', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={{ data: breadthData, loading: false, error: '' }} emotion={{ data: null, loading: false, error: '市場氣氛載入失敗' }} topIndustries={[industryFixture('a', '半導體', 0.62)]} industryLoading={false} industryError="" indexSnapshot={indexSnapshotFixture} />);
+		expect(html).toContain('市場氣氛載入失敗');
+		expect(html).toContain('812');
+		expect(html).toContain('半導體');
+	});
+
+	it('an Industry failure renders that card in an unavailable state while the others remain usable', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={{ data: breadthData, loading: false, error: '' }} emotion={{ data: emotionData, loading: false, error: '' }} topIndustries={[]} industryLoading={false} industryError="產業雷達載入失敗" indexSnapshot={indexSnapshotFixture} />);
+		expect(html).toContain('產業雷達載入失敗');
+		expect(html).toContain('812');
+		expect(html).toContain('偏多');
+	});
+
+	it('an Index failure (no snapshot) renders that card as unavailable while the others remain usable', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={{ data: breadthData, loading: false, error: '' }} emotion={{ data: emotionData, loading: false, error: '' }} topIndustries={[industryFixture('a', '半導體', 0.62)]} industryLoading={false} industryError="" indexSnapshot={null} />);
+		expect(html).toContain('812');
+		expect(html).toContain('偏多');
+		expect(html).toContain('半導體');
+	});
+
+	it('each card loads independently — a loading Breadth does not block already-ready Emotion/Industry from rendering', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={{ data: null, loading: true, error: '' }} emotion={{ data: emotionData, loading: false, error: '' }} topIndustries={[industryFixture('a', '半導體', 0.62)]} industryLoading={false} industryError="" indexSnapshot={indexSnapshotFixture} />);
+		expect(html).toContain('偏多');
+		expect(html).toContain('半導體');
+		expect(html).toContain('17,850.32');
+	});
+
+	it('renders a Screener navigation action that calls onNavigate with only the target — no filters/preset/state payload', () => {
+		const source = fs.readFileSync(path.join(root, 'frontend/src/components/market/TaiwanMarketView.tsx'), 'utf8');
+		const overviewSummarySource = source.slice(source.indexOf('export function OverviewSummary'));
+		expect(overviewSummarySource).toContain("onClick={() => onNavigate('taiwan-screener')}");
+		expect(overviewSummarySource).toContain('查看台股選股器');
+	});
+
+	it('omits the Screener navigation action and detail links entirely when onNavigate is not provided (e.g. tests that do not wire navigation)', () => {
+		const html = renderToStaticMarkup(<OverviewSummary breadth={idleDomain<Breadth>()} emotion={idleDomain<Emotion>()} topIndustries={[]} industryLoading={false} industryError="" indexSnapshot={null} />);
+		expect(html).not.toContain('查看台股選股器');
+	});
+});
+
+describe('M8G Overview layout — summary renders above the individual-stock search, index request is reused', () => {
+	it('TaiwanMarketView renders <OverviewSummary> before the stock-search <form>', () => {
+		const source = overviewSource();
+		expect(source.indexOf('<OverviewSummary')).toBeGreaterThan(-1);
+		expect(source.indexOf('<OverviewSummary')).toBeLessThan(source.indexOf('<form className="market-filter"'));
+	});
+
+	it('the Overview index summary reuses the existing `indexes` fetch/state — no second /api/v1/tw/indexes request is introduced', () => {
+		const source = overviewSource();
+		expect(source.match(/\/api\/v1\/tw\/indexes/g)?.length).toBe(1);
+		expect(source).toContain('const primaryIndexSnapshot = indexSnapshots.find(');
+	});
+
+	it('Breadth/Emotion/Industry are each fetched from their own existing endpoint exactly once (4 domain requests total on Overview)', () => {
+		const source = overviewSource();
+		expect(source).toContain("taiwanMarketPath('market-breadth', 'combined')");
+		expect(source).toContain("taiwanMarketPath('market-emotion', 'combined')");
+		expect(source).toContain("taiwanMarketPath('industry-radar', 'combined')");
+	});
+
+	it('the existing individual-stock search form is still present and unchanged (input + submit button)', () => {
+		const source = overviewSource();
+		expect(source).toContain('placeholder="例如 2330、台積電、2330.TWSE 或 6488.TPEX"');
+	});
+
+	it('the existing CoreIndexView detail block still renders lower on the page', () => {
+		const source = overviewSource();
+		expect(source).toContain('<CoreIndexView');
+		expect(source.indexOf('<OverviewSummary')).toBeLessThan(source.indexOf('<CoreIndexView'));
 	});
 });

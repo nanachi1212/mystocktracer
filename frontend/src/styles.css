@@ -70,6 +70,18 @@
 .taiwan-research-error-boundary { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 16px 18px; padding: 14px 16px; border: 1px solid #ead5b6; border-radius: 10px; background: #fffaf2; color: #9b6a25; }
 .taiwan-research-error-boundary button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; }
 @media (max-width: 900px) { .taiwan-metric-grid, .taiwan-detail-grid, .taiwan-industry-list, .taiwan-interpretation > div, .taiwan-research-result > div { grid-template-columns: 1fr; } .taiwan-stock-heading, .taiwan-emotion-summary, .taiwan-ai-action { align-items: stretch; flex-direction: column; } }
+/* M8G: Taiwan Overview compact summary (Breadth/Emotion/Industry/Index at a glance) */
+.taiwan-overview-summary { display: grid; gap: 10px; margin-bottom: 4px; }
+.taiwan-overview-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.taiwan-overview-card { display: grid; gap: 6px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.taiwan-overview-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); }
+.taiwan-overview-card header button { padding: 0; border: 0; background: none; color: var(--blue); cursor: pointer; font-size: 12px; }
+.taiwan-overview-card strong { font-size: 19px; }
+.taiwan-overview-card p { margin: 0; color: var(--muted); }
+.taiwan-overview-card ol { margin: 0; padding-left: 16px; }
+.taiwan-overview-card .up { color: #1a8b4c; } .taiwan-overview-card .down { color: #c23b3b; } .taiwan-overview-card .flat { color: var(--muted); }
+.taiwan-overview-screener-action { justify-self: start; min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; }
+@media (max-width: 900px) { .taiwan-overview-summary-grid { grid-template-columns: 1fr; } }
 
 /* Portfolio AI inspection */
 .portfolio-inspection-workspace {
