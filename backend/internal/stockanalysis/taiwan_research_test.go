@@ -198,6 +198,40 @@ func TestM8CPayloadStatusNotApplicableForNonStock(t *testing.T) {
 	}
 }
 
+// M8C.1 — cashflow_status must reflect the archive's own authoritative status (propagated from
+// providers/taiwan's cashflowSnapshot.Status via FinancialStatementPeriod.CashflowStatus), never be
+// inferred purely from metric/period presence. A present, valid operating_cash_flow value must NOT
+// override an authoritative "partial" status into "available".
+func TestM8CCashflowStatusReflectsAuthoritativeSnapshotNotMetricPresence(t *testing.T) {
+	partial := m8cStatement("ci")
+	partial.CashflowStatus = "partial"
+	payload := BuildTaiwanResearchPayload(fundamentalsInput(m8cValuation(), partial))
+	if payload.Fundamentals["cashflow_status"] != "partial" {
+		t.Fatalf("authoritative partial status must survive even though operating_cash_flow is present and valid: %+v", payload.Fundamentals)
+	}
+	cf, _ := payload.Fundamentals["cashflow"].(map[string]any)
+	if cf["operating_cash_flow"] == nil {
+		t.Fatal("the metric itself must still be present -- partial status describes confidence, not absence")
+	}
+
+	available := m8cStatement("ci")
+	available.CashflowStatus = "available"
+	payloadAvailable := BuildTaiwanResearchPayload(fundamentalsInput(m8cValuation(), available))
+	if payloadAvailable.Fundamentals["cashflow_status"] != "available" {
+		t.Fatalf("explicit available status must be preserved as available: %+v", payloadAvailable.Fundamentals)
+	}
+
+	// Defensive fallback: an unexpected empty CashflowStatus (should never happen in practice, since
+	// statement() always sets it alongside the period) still resolves to "available" rather than a
+	// zero-value string reaching the AI payload.
+	fallback := m8cStatement("ci")
+	fallback.CashflowStatus = ""
+	payloadFallback := BuildTaiwanResearchPayload(fundamentalsInput(m8cValuation(), fallback))
+	if payloadFallback.Fundamentals["cashflow_status"] != "available" {
+		t.Fatalf("empty CashflowStatus should fall back to available, not leak an empty string: %+v", payloadFallback.Fundamentals)
+	}
+}
+
 func TestM8CPayloadZeroNegativeAndNullPreserved(t *testing.T) {
 	statement := m8cStatement("ci")
 	zero, negativeOCF, negativeRatio := f64(0), i64ptr(-150005), f64(-6.34)

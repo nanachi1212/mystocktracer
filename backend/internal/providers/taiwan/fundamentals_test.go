@@ -1862,6 +1862,37 @@ func TestStatement_CashflowUnavailableNeverFailsStatement(t *testing.T) {
 	}
 }
 
+// M8C.1 — the archive-wide "partial" status (some OTHER issuer's document failed to parse) must
+// survive into statement()'s CashflowStatus even though 2330's OWN row parsed successfully. A
+// present/valid row for the security under test must never silently upgrade an authoritatively
+// partial archive to "available".
+func TestStatement_CashflowPartialStatusSurvivesEvenWhenIssuerRowPresent(t *testing.T) {
+	good2330 := buildIXBRLDocument(ixbrlFixture{code: "2330", year: 2026, quarter: 2, ocfText: "111,000", ocfScale: "3", plText: "50,000", plScale: "3"})
+	good9999 := buildIXBRLDocument(ixbrlFixture{code: "9999", year: 2026, quarter: 2, ocfText: "333,000", ocfScale: "3", plText: "70,000", plScale: "3"})
+	bad6488 := buildIXBRLDocument(ixbrlFixture{code: "6488", year: 2026, quarter: 2, malformedXML: true})
+	zipBytes := buildZipBytes(t, map[string]string{
+		"tifrs-fr1-m1-ci-cr-2330-2026Q2.html": good2330,
+		"tifrs-fr1-m1-ci-cr-9999-2026Q2.html": good9999,
+		"tifrs-fr1-m1-ci-cr-6488-2026Q2.html": bad6488,
+	})
+	server := statementTestServer(t, []string{"2330", "9999"}, []string{"6488"},
+		map[string][]map[string]string{"TWSE:ci": {tsmcIncomeRow()}},
+		map[string][]map[string]string{"TWSE:ci": {tsmcBalanceRow()}},
+		zipBytes, nil, nil)
+	defer server.Close()
+	c := newStatementTestClient(server)
+	got, err := c.statement(context.Background(), foundation.SecurityIdentity{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE"})
+	if err != nil {
+		t.Fatalf("statement: %v", err)
+	}
+	if got.OperatingCashFlow == nil || *got.OperatingCashFlow != 111000 {
+		t.Fatalf("2330's own row must still parse and populate normally: %+v", got.OperatingCashFlow)
+	}
+	if got.CashflowStatus != "partial" {
+		t.Fatalf("cashflow_status must reflect the archive-wide partial signal, got %q", got.CashflowStatus)
+	}
+}
+
 func TestStatement_NegativeOCFAndRatioPolicy(t *testing.T) {
 	cases := []struct {
 		name             string

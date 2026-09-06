@@ -170,7 +170,17 @@ func addTaiwanM8CEvidence(fundamentals map[string]any, fundamentalsStatus string
 				fundamentals["balance"] = balance
 			}
 			if st.CashflowFiscalYear > 0 {
-				cashflowStatus = "available"
+				// M8C.1 — cashflowStatus reflects the archive's own authoritative quality signal
+				// (st.CashflowStatus, copied verbatim from cashflowSnapshot.Status by statement()),
+				// never inferred from period presence alone: a "partial" archive stays "partial"
+				// here even though THIS security's own row parsed successfully. st.CashflowStatus
+				// should always be non-empty whenever CashflowFiscalYear > 0 (both are set together
+				// in the same statement() block) — the "available" fallback only guards against an
+				// unexpected empty value rather than fabricating a stronger claim.
+				cashflowStatus = st.CashflowStatus
+				if cashflowStatus == "" {
+					cashflowStatus = "available"
+				}
 				fundamentals["cashflow"] = map[string]any{
 					"cashflow_fiscal_year": st.CashflowFiscalYear, "cashflow_fiscal_quarter": st.CashflowFiscalQuarter,
 					"operating_cash_flow": st.OperatingCashFlow, "cash_flow_to_net_income": st.CashFlowToNetIncome,

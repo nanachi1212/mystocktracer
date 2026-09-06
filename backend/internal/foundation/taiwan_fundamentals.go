@@ -94,21 +94,30 @@ type FinancialStatementPeriod struct {
 	// joined — never inferred from FiscalYear/FiscalQuarter above, and never fabricated when a domain
 	// join fails. Zero means "not populated" (a real fiscal year is always >= 1911 in ROC terms after
 	// rocYear() conversion, so 0 never collides with a genuine value).
-	BalanceFiscalYear     int               `json:"balance_fiscal_year,omitempty"`
-	BalanceFiscalQuarter  int               `json:"balance_fiscal_quarter,omitempty"`
-	CashflowFiscalYear    int               `json:"cashflow_fiscal_year,omitempty"`
-	CashflowFiscalQuarter int               `json:"cashflow_fiscal_quarter,omitempty"`
-	Currency              string            `json:"currency"`
-	Unit                  string            `json:"unit"`
-	RawUnit               string            `json:"raw_unit"`
-	RawValues             map[string]string `json:"raw_values,omitempty"`
-	Provider              string            `json:"provider"`
-	Source                string            `json:"source"`
-	SourceURL             string            `json:"source_url"`
-	RetrievedAt           time.Time         `json:"retrieved_at"`
-	PublishedAt           *time.Time        `json:"published_at"`
-	AvailableAt           *time.Time        `json:"available_at"`
-	Status                string            `json:"status"`
+	BalanceFiscalYear     int `json:"balance_fiscal_year,omitempty"`
+	BalanceFiscalQuarter  int `json:"balance_fiscal_quarter,omitempty"`
+	CashflowFiscalYear    int `json:"cashflow_fiscal_year,omitempty"`
+	CashflowFiscalQuarter int `json:"cashflow_fiscal_quarter,omitempty"`
+	// M8C.1 — the cash-flow domain's own authoritative status ("available" | "partial"), copied
+	// verbatim from the MOPS XBRL archive snapshot that produced this security's row (see
+	// providers/taiwan/cashflow_xbrl.go's cashflowSnapshot.Status). "partial" means the archive that
+	// covered this security also had OTHER issuers fail to parse — a legitimate lower-confidence
+	// signal about this data batch that must survive into the single-security path (and from there
+	// into the AI research payload) rather than being silently upgraded to "available" merely
+	// because this one security's own row happened to parse. Empty when the cash-flow domain was
+	// never joined (never fabricated as "available" by omission).
+	CashflowStatus string            `json:"cashflow_status,omitempty"`
+	Currency       string            `json:"currency"`
+	Unit           string            `json:"unit"`
+	RawUnit        string            `json:"raw_unit"`
+	RawValues      map[string]string `json:"raw_values,omitempty"`
+	Provider       string            `json:"provider"`
+	Source         string            `json:"source"`
+	SourceURL      string            `json:"source_url"`
+	RetrievedAt    time.Time         `json:"retrieved_at"`
+	PublishedAt    *time.Time        `json:"published_at"`
+	AvailableAt    *time.Time        `json:"available_at"`
+	Status         string            `json:"status"`
 }
 
 // LatestAvailableStatement applies the cross-project strict rule: an

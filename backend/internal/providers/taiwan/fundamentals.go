@@ -306,6 +306,12 @@ func (c *Client) statement(ctx context.Context, s foundation.SecurityIdentity) (
 			item.OperatingCashFlow = row.OperatingCashFlow
 			item.CashFlowToNetIncome = cashflowRatio(row.OperatingCashFlow, row.ProfitLoss)
 			item.CashflowFiscalYear, item.CashflowFiscalQuarter = row.FiscalYear, row.FiscalQuarter
+			// M8C.1 — the snapshot's own status ("available"/"partial") is the archive-wide quality
+			// signal for the batch that produced this row; it must not be discarded just because
+			// this specific security's own row parsed successfully (snapshot.Rows only ever contains
+			// a canonical when ok==true, so Status here is always "available" or "partial", never
+			// "unavailable" — see cashflowData/discoverAndParseCashflow).
+			item.CashflowStatus = snapshot.Status
 		}
 	}
 	return item, nil
