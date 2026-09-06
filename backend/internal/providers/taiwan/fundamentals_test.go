@@ -85,7 +85,7 @@ func TestFinancialCategoryResolverUsesFinancialHoldingSchema(t *testing.T) {
 			rows = []map[string]string{{"出表日期": "1150830", "年度": "115", "季別": "2", "公司代號": "2881", "淨收益": "5446990.00", "繼續營業單位稅前損益": "16468262.00", "本期稅後淨利（淨損）": "97780594.00", "淨利（淨損）歸屬於母公司業主": "97391130.00", "基本每股盈餘（元）": "6.67"}}
 		}
 		if strings.HasSuffix(r.URL.Path, "07_L_fh") {
-			rows = []map[string]string{{"公司代號": "2881", "資產總計": "100.00", "負債總計": "60.00", "權益總計": "40.00", "歸屬於母公司業主之權益合計": "39.00", "每股參考淨值": "20.5"}}
+			rows = []map[string]string{{"年度": "115", "季別": "2", "公司代號": "2881", "資產總計": "100.00", "負債總計": "60.00", "權益總計": "40.00", "歸屬於母公司業主之權益合計": "39.00", "每股參考淨值": "20.5"}}
 		}
 		json.NewEncoder(w).Encode(rows)
 	}))
@@ -1639,4 +1639,271 @@ func TestFundamentalsCacheDoesNotHoldLockDuringFetch(t *testing.T) {
 	}
 	close(release)
 	<-done
+}
+
+// ==================================================
+// M8A -- single-security statement() reuse of parseBalanceSheetRow + M7H cashflowData()
+// ==================================================
+
+// statementTestServer serves TWSE/TPEx directory endpoints (needed by cashflowData's eligible-universe
+// computation), income/balance bulk endpoints for the "ci"/"fh" categories used below (empty for the
+// other categories, so statement()'s category loop never reports a discrepancy), and the MOPS
+// discovery/download endpoints for the cash-flow archive. counts (if non-nil) are incremented per
+// endpoint hit, so tests can assert warm-cache reuse.
+func statementTestServer(t *testing.T, twseCodes, tpexCodes []string, incomeRows, balanceRows map[string][]map[string]string, zipBytes []byte, discoveryCalls, downloadCalls *int64) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/opendata/t187ap03_L", func(w http.ResponseWriter, r *http.Request) {
+		rows := make([]map[string]string, 0, len(twseCodes))
+		for _, code := range twseCodes {
+			rows = append(rows, map[string]string{"公司代號": code, "公司簡稱": code, "公司名稱": code, "產業別": "一般業", "上市日期": "1994/09/05"})
+		}
+		json.NewEncoder(w).Encode(rows)
+	})
+	mux.HandleFunc("/opendata/t187ap47_L", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `[]`) })
+	mux.HandleFunc("/mopsfin_t187ap03_O", func(w http.ResponseWriter, r *http.Request) {
+		rows := make([]map[string]string, 0, len(tpexCodes))
+		for _, code := range tpexCodes {
+			rows = append(rows, map[string]string{"SecuritiesCompanyCode": code, "CompanyAbbreviation": code, "CompanyName": code, "SecuritiesIndustryCode": "一般業", "DateOfListing": "2019/07/10"})
+		}
+		json.NewEncoder(w).Encode(rows)
+	})
+	for _, category := range statementCategories {
+		category := category
+		mux.HandleFunc("/opendata/t187ap06_L_"+category, func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(incomeRows["TWSE:"+category])
+		})
+		mux.HandleFunc("/opendata/t187ap07_L_"+category, func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(balanceRows["TWSE:"+category])
+		})
+		mux.HandleFunc("/mopsfin_t187ap06_O_"+category, func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(incomeRows["TPEX:"+category])
+		})
+		mux.HandleFunc("/mopsfin_t187ap07_O_"+category, func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(balanceRows["TPEX:"+category])
+		})
+	}
+	mux.HandleFunc("/mops/web/t203sb02", func(w http.ResponseWriter, r *http.Request) {
+		if discoveryCalls != nil {
+			atomic.AddInt64(discoveryCalls, 1)
+		}
+		fmt.Fprint(w, `<a onclick="...fileName=tifrs-2026Q2.zip...">x</a>`)
+	})
+	mux.HandleFunc("/server-java/FileDownLoad", func(w http.ResponseWriter, r *http.Request) {
+		if downloadCalls != nil {
+			atomic.AddInt64(downloadCalls, 1)
+		}
+		if zipBytes == nil {
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, "<html>maintenance</html>")
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-zip-compressed")
+		w.Write(zipBytes)
+	})
+	return httptest.NewServer(mux)
+}
+
+func newStatementTestClient(server *httptest.Server) *Client {
+	return NewClient(Config{
+		TWSEBaseURL: server.URL, TPExBaseURL: server.URL, CashflowBaseURL: server.URL, HTTPClient: server.Client(),
+	})
+}
+
+func tsmcIncomeRow() map[string]string {
+	return map[string]string{"出表日期": "1150905", "年度": "115", "季別": "2", "公司代號": "2330", "營業收入": "1,000,000", "本期稅前淨利（淨損）": "300,000", "本期稅後淨利（淨損）": "250,000", "淨利（淨損）歸屬於母公司業主": "248,000", "基本每股盈餘（元）": "9.55"}
+}
+func tsmcBalanceRow() map[string]string {
+	return map[string]string{"出表日期": "1150905", "年度": "115", "季別": "1", "公司代號": "2330", "資產總計": "8000000", "負債總計": "2500000", "權益總計": "5500000", "流動資產": "3000000", "流動負債": "1200000", "每股參考淨值": "28.5"}
+}
+func gwsIncomeRow() map[string]string {
+	return map[string]string{"出表日期": "1150905", "年度": "115", "季別": "2", "公司代號": "6488", "營業收入": "50,000", "本期稅前淨利（淨損）": "9,000", "本期稅後淨利（淨損）": "7,300", "淨利（淨損）歸屬於母公司業主": "7,300", "基本每股盈餘（元）": "3.5"}
+}
+func gwsBalanceRow() map[string]string {
+	return map[string]string{"出表日期": "1150905", "年度": "115", "季別": "1", "公司代號": "6488", "資產總計": "100000", "負債總計": "40000", "權益總計": "60000", "流動資產": "50000", "流動負債": "20000", "每股參考淨值": "45.2"}
+}
+func tsmcCashflowZIP(t *testing.T, ocfText, ocfSign, plText, plSign string) []byte {
+	doc := buildIXBRLDocument(ixbrlFixture{code: "2330", year: 2026, quarter: 2, ocfText: ocfText, ocfScale: "3", ocfSign: ocfSign, plText: plText, plScale: "3", plSign: plSign})
+	return buildZipBytes(t, map[string]string{"tifrs-fr1-m1-ci-cr-2330-2026Q2.html": doc})
+}
+
+func ratioValue(numerator, denominator int64) float64 {
+	return float64(numerator) / float64(denominator) * 100
+}
+
+func TestStatement_SingleStockBalanceIntegration_TWSE(t *testing.T) {
+	server := statementTestServer(t, []string{"2330"}, nil,
+		map[string][]map[string]string{"TWSE:ci": {tsmcIncomeRow()}},
+		map[string][]map[string]string{"TWSE:ci": {tsmcBalanceRow()}},
+		nil, nil, nil)
+	defer server.Close()
+	c := newStatementTestClient(server)
+	got, err := c.statement(context.Background(), foundation.SecurityIdentity{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE"})
+	if err != nil {
+		t.Fatalf("statement: %v", err)
+	}
+	if got.DebtRatio == nil || *got.DebtRatio != ratioValue(2500000, 8000000) {
+		t.Fatalf("debt_ratio = %v, want %v", got.DebtRatio, ratioValue(2500000, 8000000))
+	}
+	if got.DebtToEquity == nil || *got.DebtToEquity != ratioValue(2500000, 5500000) {
+		t.Fatalf("debt_to_equity = %v", got.DebtToEquity)
+	}
+	if got.CurrentRatio == nil || *got.CurrentRatio != ratioValue(3000000, 1200000) {
+		t.Fatalf("current_ratio = %v", got.CurrentRatio)
+	}
+	if got.BookValuePerShare == nil || *got.BookValuePerShare != 28.5 {
+		t.Fatalf("book_value_per_share = %v", got.BookValuePerShare)
+	}
+	// M8A period independence: income row is 115-Q2, balance row is 115-Q1 -- never collapsed together.
+	if got.FiscalYear != 2026 || got.FiscalQuarter != 2 {
+		t.Fatalf("income period = %d-Q%d, want 2026-Q2", got.FiscalYear, got.FiscalQuarter)
+	}
+	if got.BalanceFiscalYear != 2026 || got.BalanceFiscalQuarter != 1 {
+		t.Fatalf("balance period = %d-Q%d, want 2026-Q1", got.BalanceFiscalYear, got.BalanceFiscalQuarter)
+	}
+}
+
+func TestStatement_SingleStockCashflowIntegration_TPEXCanonicalMapping(t *testing.T) {
+	doc := buildIXBRLDocument(ixbrlFixture{code: "6488", year: 2026, quarter: 2, ocfText: "12,744,715", ocfScale: "3", plText: "7,311,661", plScale: "3"})
+	zipBytes := buildZipBytes(t, map[string]string{"tifrs-fr1-m1-ci-cr-6488-2026Q2.html": doc})
+	server := statementTestServer(t, nil, []string{"6488"},
+		map[string][]map[string]string{"TPEX:ci": {gwsIncomeRow()}},
+		map[string][]map[string]string{"TPEX:ci": {gwsBalanceRow()}},
+		zipBytes, nil, nil)
+	defer server.Close()
+	c := newStatementTestClient(server)
+	got, err := c.statement(context.Background(), foundation.SecurityIdentity{Canonical: "6488.TPEX", Code: "6488", Exchange: "TPEX"})
+	if err != nil {
+		t.Fatalf("statement: %v", err)
+	}
+	if got.OperatingCashFlow == nil || *got.OperatingCashFlow != 12744715 {
+		t.Fatalf("operating_cash_flow = %v, want 12744715 (correct TPEX canonical join, not TWSE)", got.OperatingCashFlow)
+	}
+	if got.CashFlowToNetIncome == nil {
+		t.Fatal("cash_flow_to_net_income should not be nil")
+	}
+	if got.CashflowFiscalYear != 2026 || got.CashflowFiscalQuarter != 2 {
+		t.Fatalf("cashflow period = %d-Q%d, want 2026-Q2", got.CashflowFiscalYear, got.CashflowFiscalQuarter)
+	}
+}
+
+func TestStatement_CashflowWarmReuse(t *testing.T) {
+	zipBytes := tsmcCashflowZIP(t, "1,122,637,757", "", "758,226,085", "")
+	var discoveries, downloads int64
+	server := statementTestServer(t, []string{"2330"}, nil,
+		map[string][]map[string]string{"TWSE:ci": {tsmcIncomeRow()}},
+		map[string][]map[string]string{"TWSE:ci": {tsmcBalanceRow()}},
+		zipBytes, &discoveries, &downloads)
+	defer server.Close()
+	c := newStatementTestClient(server)
+	s := foundation.SecurityIdentity{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE"}
+	if _, err := c.statement(context.Background(), s); err != nil {
+		t.Fatalf("first statement: %v", err)
+	}
+	if discoveries != 1 || downloads != 1 {
+		t.Fatalf("expected 1 discovery + 1 download on cold call, got discoveries=%d downloads=%d", discoveries, downloads)
+	}
+	if _, err := c.statement(context.Background(), s); err != nil {
+		t.Fatalf("second statement: %v", err)
+	}
+	if discoveries != 1 || downloads != 1 {
+		t.Fatalf("expected warm reuse (0 additional HTTP), got discoveries=%d downloads=%d", discoveries, downloads)
+	}
+}
+
+func TestStatement_CashflowMissingIssuer(t *testing.T) {
+	// 2882.TWSE is in the directory but has no entry in the cash-flow archive -- 4 of 5 eligible TWSE
+	// companies ARE covered (80%, meeting the completeness threshold), so the archive is genuinely
+	// accepted; 2882 itself is simply the one absent issuer, not a stub/incomplete archive.
+	entries := map[string]string{}
+	for _, code := range []string{"2330", "3001", "3002", "3003"} {
+		entries[fmt.Sprintf("tifrs-fr1-m1-ci-cr-%s-2026Q2.html", code)] = buildIXBRLDocument(ixbrlFixture{code: code, year: 2026, quarter: 2, ocfText: "1,000", ocfScale: "3", plText: "500", plScale: "3"})
+	}
+	zipBytes := buildZipBytes(t, entries)
+	server := statementTestServer(t, []string{"2330", "2882", "3001", "3002", "3003"}, nil,
+		map[string][]map[string]string{"TWSE:fh": {{"出表日期": "1150905", "年度": "115", "季別": "2", "公司代號": "2882", "淨收益": "1,000,000", "本期稅後淨利（淨損）": "500,000", "淨利（淨損）歸屬於母公司業主": "498,000", "基本每股盈餘（元）": "3.2"}}},
+		map[string][]map[string]string{"TWSE:fh": {{"出表日期": "1150905", "年度": "115", "季別": "1", "公司代號": "2882", "資產總額": "9000000", "負債總額": "8000000", "權益總額": "1000000", "每股參考淨值": "12.1"}}},
+		zipBytes, nil, nil)
+	defer server.Close()
+	c := newStatementTestClient(server)
+	got, err := c.statement(context.Background(), foundation.SecurityIdentity{Canonical: "2882.TWSE", Code: "2882", Exchange: "TWSE"})
+	if err != nil {
+		t.Fatalf("statement: %v (missing issuer in cashflow archive must not fail the whole statement)", err)
+	}
+	if got.OperatingCashFlow != nil || got.CashFlowToNetIncome != nil {
+		t.Fatalf("expected nil cashflow fields for an issuer absent from the archive, got %+v / %+v", got.OperatingCashFlow, got.CashFlowToNetIncome)
+	}
+	if got.CashflowFiscalYear != 0 || got.CashflowFiscalQuarter != 0 {
+		t.Fatalf("cashflow period must stay unpopulated (0) when absent, got %d-Q%d", got.CashflowFiscalYear, got.CashflowFiscalQuarter)
+	}
+	// fh category never computes the three ratios (ci-only policy, unchanged).
+	if got.DebtRatio != nil || got.DebtToEquity != nil || got.CurrentRatio != nil {
+		t.Fatalf("fh category must never expose the three ratios, got %+v/%+v/%+v", got.DebtRatio, got.DebtToEquity, got.CurrentRatio)
+	}
+}
+
+func TestStatement_CashflowUnavailableNeverFailsStatement(t *testing.T) {
+	server := statementTestServer(t, []string{"2330"}, nil,
+		map[string][]map[string]string{"TWSE:ci": {tsmcIncomeRow()}},
+		map[string][]map[string]string{"TWSE:ci": {tsmcBalanceRow()}},
+		nil, nil, nil) // nil zipBytes -> every candidate download is a fake-HTML failure.
+	defer server.Close()
+	c := newStatementTestClient(server)
+	got, err := c.statement(context.Background(), foundation.SecurityIdentity{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE"})
+	if err != nil {
+		t.Fatalf("statement must still succeed with income+balance when cashflow is unavailable: %v", err)
+	}
+	if got.OperatingCashFlow != nil || got.CashFlowToNetIncome != nil {
+		t.Fatalf("expected nil cashflow fields when the archive is unavailable, got %+v/%+v", got.OperatingCashFlow, got.CashFlowToNetIncome)
+	}
+	// Income and balance must remain fully intact -- an optional domain outage never poisons them.
+	if got.DebtRatio == nil || got.BookValuePerShare == nil || got.CumulativeEPS == nil {
+		t.Fatalf("income/balance fields must remain populated despite cashflow outage: %+v", got)
+	}
+}
+
+func TestStatement_NegativeOCFAndRatioPolicy(t *testing.T) {
+	cases := []struct {
+		name             string
+		ocfText, ocfSign string
+		plText, plSign   string
+		wantOCF          int64
+		wantRatioNil     bool
+		wantRatioNeg     bool
+	}{
+		{"negative OCF, positive ProfitLoss", "150,005", "-", "60,000", "", -150005, false, true},
+		{"zero ProfitLoss yields nil ratio", "1,000", "", "0", "", 1000, true, false},
+		{"negative ProfitLoss still computes a valid (negative) ratio", "41,699", "", "4,420", "-", 41699, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := buildIXBRLDocument(ixbrlFixture{code: "2330", year: 2026, quarter: 2, ocfText: tc.ocfText, ocfScale: "3", ocfSign: tc.ocfSign, plText: tc.plText, plScale: "3", plSign: tc.plSign})
+			zipBytes := buildZipBytes(t, map[string]string{"tifrs-fr1-m1-ci-cr-2330-2026Q2.html": doc})
+			server := statementTestServer(t, []string{"2330"}, nil,
+				map[string][]map[string]string{"TWSE:ci": {tsmcIncomeRow()}},
+				map[string][]map[string]string{"TWSE:ci": {tsmcBalanceRow()}},
+				zipBytes, nil, nil)
+			defer server.Close()
+			c := newStatementTestClient(server)
+			got, err := c.statement(context.Background(), foundation.SecurityIdentity{Canonical: "2330.TWSE", Code: "2330", Exchange: "TWSE"})
+			if err != nil {
+				t.Fatalf("statement: %v", err)
+			}
+			if got.OperatingCashFlow == nil || *got.OperatingCashFlow != tc.wantOCF {
+				t.Fatalf("operating_cash_flow = %v, want %d", got.OperatingCashFlow, tc.wantOCF)
+			}
+			if tc.wantRatioNil {
+				if got.CashFlowToNetIncome != nil {
+					t.Fatalf("expected nil ratio (zero ProfitLoss), got %v", *got.CashFlowToNetIncome)
+				}
+				return
+			}
+			if got.CashFlowToNetIncome == nil {
+				t.Fatal("expected a non-nil ratio")
+			}
+			if tc.wantRatioNeg && *got.CashFlowToNetIncome >= 0 {
+				t.Fatalf("expected a negative ratio, got %v", *got.CashFlowToNetIncome)
+			}
+		})
+	}
 }

@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { InterpretationView, type Component, type Intelligence } from './TaiwanStockResearchWorkspace';
+import { InterpretationView, TaiwanResearchSnapshot, type Component, type Intelligence, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
 import { TaiwanStockResearchErrorBoundary } from './TaiwanStockResearchErrorBoundary';
 
 const root = path.resolve(__dirname, '../../..');
@@ -217,5 +217,97 @@ describe('M6C — refresh and manual-entry behavior are preserved', () => {
 describe('M6C — no polling/timer introduced, no backend change required', () => {
 	it('introduces no setInterval/setTimeout in TaiwanStockResearchWorkspace', () => {
 		expect(researchSource()).not.toMatch(/setInterval|setTimeout/);
+	});
+});
+
+// ==================================================
+// M8A -- Taiwan Research Snapshot (估值/獲利能力/資產負債/現金流量), reusing existing backend evidence.
+// ==================================================
+
+const valuation = (overrides: Partial<TaiwanValuationData> = {}): TaiwanValuationData => ({
+	data_date: '2026-09-04', pe: 18.5, pb: 6.2, dividend_yield_percent: 2.1,
+	...overrides,
+});
+const statement = (overrides: Partial<TaiwanStatementData> = {}): TaiwanStatementData => ({
+	fiscal_year: 2026, fiscal_quarter: 2, accounting_category: 'ci',
+	cumulative_eps: 9.55, gross_margin_percent: 67.03, operating_margin_percent: 59.29, net_margin_percent: 53.22,
+	book_value_per_share: 28.5,
+	balance_fiscal_year: 2026, balance_fiscal_quarter: 1,
+	debt_ratio_percent: 30.94, debt_to_equity_percent: 44.81, current_ratio_percent: 245.76,
+	cashflow_fiscal_year: 2026, cashflow_fiscal_quarter: 2,
+	operating_cash_flow: 1122637757, cash_flow_to_net_income: 148.06,
+	...overrides,
+});
+const fundamentalsWith = (v?: TaiwanValuationData, s?: TaiwanStatementData): Intelligence['fundamentals'] => ({
+	status: 'available', data: { valuation: v, financial_statement: s },
+});
+
+describe('M8A — four snapshot groups render with real values', () => {
+	it('renders 估值/獲利能力/資產負債/現金流量 headings and their values, no ×100 regression', () => {
+		const html = renderToStaticMarkup(<TaiwanResearchSnapshot fundamentals={fundamentalsWith(valuation(), statement())} />);
+		expect(html).toContain('估值');
+		expect(html).toContain('獲利能力');
+		expect(html).toContain('資產負債');
+		expect(html).toContain('現金流量');
+		expect(html).toContain('67.03%');
+		expect(html).not.toContain('6703%');
+		expect(html).toContain('2.1%');
+		expect(html).toContain('30.94%');
+		expect(html).toContain('148.06%');
+		expect(html).toContain('億元');
+	});
+
+	it('independent periods: 財報期間/資產負債表期間/現金流量期間 are shown separately, never collapsed into one', () => {
+		const html = renderToStaticMarkup(<TaiwanResearchSnapshot fundamentals={fundamentalsWith(valuation(), statement({ fiscal_year: 2026, fiscal_quarter: 2, balance_fiscal_year: 2026, balance_fiscal_quarter: 1, cashflow_fiscal_year: 2025, cashflow_fiscal_quarter: 4 }))} />);
+		expect(html).toContain('財報期間 2026-Q2');
+		expect(html).toContain('資產負債表期間 2026-Q1');
+		expect(html).toContain('現金流量期間 2025-Q4');
+	});
+});
+
+describe('M8A — null / zero / negative semantics', () => {
+	it('missing valuation/statement entirely renders — for every field, never 0 or a fabricated period', () => {
+		const html = renderToStaticMarkup(<TaiwanResearchSnapshot fundamentals={{ status: 'unavailable' }} />);
+		expect(html).not.toContain('0%');
+		expect(html).not.toContain('0 億元');
+		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(9);
+	});
+
+	it('zero renders as a real zero, never —', () => {
+		const html = renderToStaticMarkup(<TaiwanResearchSnapshot fundamentals={fundamentalsWith(
+			valuation({ dividend_yield_percent: 0 }),
+			statement({ debt_ratio_percent: 0, operating_cash_flow: 0, cash_flow_to_net_income: 0 }),
+		)} />);
+		expect(html).toContain('殖利率 0%');
+		expect(html).toContain('負債比 0%');
+		expect(html).toContain('0 億元');
+		expect(html).toContain('營業現金流／淨利 0%');
+	});
+
+	it('negative values are preserved (cash_flow_to_net_income and operating_cash_flow can be legitimately negative)', () => {
+		const html = renderToStaticMarkup(<TaiwanResearchSnapshot fundamentals={fundamentalsWith(
+			valuation(),
+			statement({ operating_cash_flow: -150005, cash_flow_to_net_income: -6.34 }),
+		)} />);
+		expect(html).toContain('-6.34%');
+		expect(html).toMatch(/-[\d.,]+\s*億元/);
+	});
+
+	it('cashflow fields null while the rest of the statement (valuation/EPS/margins/balance ratios) still renders -- an unavailable cashflow domain never hides other Research sections', () => {
+		const html = renderToStaticMarkup(<TaiwanResearchSnapshot fundamentals={fundamentalsWith(
+			valuation(),
+			statement({ cashflow_fiscal_year: undefined, cashflow_fiscal_quarter: undefined, operating_cash_flow: null, cash_flow_to_net_income: null }),
+		)} />);
+		expect(html).toContain('現金流量期間 —');
+		expect(html).toContain('營業活動現金流量 —');
+		// Balance/income groups remain fully populated despite the cashflow domain being absent.
+		expect(html).toContain('30.94%');
+		expect(html).toContain('67.03%');
+	});
+
+	it('ETF / not_applicable fundamentals renders every field as — without throwing', () => {
+		const html = renderToStaticMarkup(<TaiwanResearchSnapshot fundamentals={{ status: 'not_applicable', reason: 'ordinary-stock fundamentals are not applicable' }} />);
+		expect(html).toContain('估值');
+		expect((html.match(/—/g) || []).length).toBeGreaterThanOrEqual(9);
 	});
 });

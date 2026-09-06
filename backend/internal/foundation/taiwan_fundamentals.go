@@ -84,19 +84,31 @@ type FinancialStatementPeriod struct {
 	// bulk archive (see providers/taiwan/cashflow_xbrl.go), completely independent of the income-
 	// statement/balance-sheet bulk payloads above. ProfitLoss (the ratio's denominator) is deliberately
 	// NOT added here — it is provider-internal only (cashflowRow), never a public/shared field.
-	OperatingCashFlow   *int64            `json:"operating_cash_flow"`
-	CashFlowToNetIncome *float64          `json:"cash_flow_to_net_income"`
-	Currency            string            `json:"currency"`
-	Unit                string            `json:"unit"`
-	RawUnit             string            `json:"raw_unit"`
-	RawValues           map[string]string `json:"raw_values,omitempty"`
-	Provider            string            `json:"provider"`
-	Source              string            `json:"source"`
-	SourceURL           string            `json:"source_url"`
-	RetrievedAt         time.Time         `json:"retrieved_at"`
-	PublishedAt         *time.Time        `json:"published_at"`
-	AvailableAt         *time.Time        `json:"available_at"`
-	Status              string            `json:"status"`
+	OperatingCashFlow   *int64   `json:"operating_cash_flow"`
+	CashFlowToNetIncome *float64 `json:"cash_flow_to_net_income"`
+	// M8A — the single-security statement() path merges income + balance-sheet + cash-flow evidence
+	// into this one combined struct (unlike the Screener, where ScreenerFinancials/ScreenerBalance/
+	// ScreenerCashflow each return their own separate FinancialStatementPeriod instances per domain).
+	// FiscalYear/FiscalQuarter above remain the INCOME statement's own period, unchanged; these two
+	// pairs are each domain's own true period, populated only when that domain's row was actually
+	// joined — never inferred from FiscalYear/FiscalQuarter above, and never fabricated when a domain
+	// join fails. Zero means "not populated" (a real fiscal year is always >= 1911 in ROC terms after
+	// rocYear() conversion, so 0 never collides with a genuine value).
+	BalanceFiscalYear     int               `json:"balance_fiscal_year,omitempty"`
+	BalanceFiscalQuarter  int               `json:"balance_fiscal_quarter,omitempty"`
+	CashflowFiscalYear    int               `json:"cashflow_fiscal_year,omitempty"`
+	CashflowFiscalQuarter int               `json:"cashflow_fiscal_quarter,omitempty"`
+	Currency              string            `json:"currency"`
+	Unit                  string            `json:"unit"`
+	RawUnit               string            `json:"raw_unit"`
+	RawValues             map[string]string `json:"raw_values,omitempty"`
+	Provider              string            `json:"provider"`
+	Source                string            `json:"source"`
+	SourceURL             string            `json:"source_url"`
+	RetrievedAt           time.Time         `json:"retrieved_at"`
+	PublishedAt           *time.Time        `json:"published_at"`
+	AvailableAt           *time.Time        `json:"available_at"`
+	Status                string            `json:"status"`
 }
 
 // LatestAvailableStatement applies the cross-project strict rule: an

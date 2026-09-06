@@ -3,16 +3,32 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { BackendConfig, SecurityIdentity } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
-import { addTaiwanWatchlistSecurity, formatTaiwanPercent, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel } from '../lib/taiwan-product';
+import { addTaiwanWatchlistSecurity, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel } from '../lib/taiwan-product';
 
 export type Evidence = { status: string; freshness?: string; as_of?: string; reason?: string; data?: Record<string, unknown> };
 export type Component = { state: string; status: string; freshness?: string; as_of?: string; reasons: string[] };
+// M8A — the single-security valuation/statement shapes actually returned inside
+// fundamentals.data.valuation / fundamentals.data.financial_statement, reusing the exact existing
+// backend field names verbatim (never renamed, never rescaled here). Every metric stays nullable —
+// missing/unavailable never becomes 0, and each domain (income/balance/cashflow) keeps its OWN
+// fiscal_year/fiscal_quarter, never inferred from another domain's period.
+export type TaiwanValuationData = { data_date?: string; pe: number | null; pb: number | null; dividend_yield_percent: number | null };
+export type TaiwanStatementData = {
+	fiscal_year: number; fiscal_quarter: number; accounting_category?: string;
+	cumulative_eps: number | null; gross_margin_percent: number | null; operating_margin_percent: number | null; net_margin_percent: number | null;
+	book_value_per_share: number | null;
+	balance_fiscal_year?: number; balance_fiscal_quarter?: number;
+	debt_ratio_percent: number | null; debt_to_equity_percent: number | null; current_ratio_percent: number | null;
+	cashflow_fiscal_year?: number; cashflow_fiscal_quarter?: number;
+	operating_cash_flow: number | null; cash_flow_to_net_income: number | null;
+};
 export type Intelligence = {
 	model_version: string; symbol: string;
 	identity: { canonical_symbol: string; code: string; name: string; exchange: string; currency: string; security_type: string; industry_name?: string };
 	quote: Evidence & { target_latest_completed_trading_date?: string; data?: { price: number; change_percent: number; meta?: { trade_date?: string; is_realtime?: boolean } } };
 	price_history_summary: Evidence & { return_5d_percent: number | null; return_20d_percent: number | null; latest_bar_date?: string };
-	fundamentals: Evidence; institutional: Evidence; margin: Evidence;
+	fundamentals: Evidence & { data?: { valuation?: TaiwanValuationData | null; financial_statement?: TaiwanStatementData | null } };
+	institutional: Evidence; margin: Evidence;
 	market_context: Evidence & { state?: string; confidence?: string; advance_ratio?: number | null; advancing_amount_ratio?: number | null };
 	industry_context: Evidence & { taxonomy_status?: string; industry?: { industry_name: string; relative_breadth: number | null; relative_capital: number | null } };
 	interpretation?: { model_version: string; components: Record<string, Component>; data_quality: { available_components: string[] | null; indeterminate_components: string[] | null; unavailable_components: string[] | null; stale_components: string[] | null; partial_components: string[] | null } };
@@ -155,6 +171,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 			<section className="taiwan-status-card"><div><span className={`taiwan-status ${intelligence.quote.status}`}>{taiwanStatusLabel(intelligence.quote.status)}</span><span>{taiwanStatusLabel(intelligence.quote.freshness)}</span></div><small>資料日期 {intelligence.quote.as_of || intelligence.quote.data?.meta?.trade_date || '未提供'} · 最新完成交易日 {intelligence.quote.target_latest_completed_trading_date || '未提供'}</small></section>
 			<section className="taiwan-detail-grid"><article><span>5 日收盤報酬</span><strong>{formatTaiwanPercent(intelligence.price_history_summary.return_5d_percent, true)}</strong><small>{intelligence.price_history_summary.latest_bar_date || '資料不足'}</small></article><article><span>20 日收盤報酬</span><strong>{formatTaiwanPercent(intelligence.price_history_summary.return_20d_percent, true)}</strong></article><article><span>市場狀態</span><strong>{taiwanStatusLabel(intelligence.market_context.state)}</strong><small>資料信心 {taiwanStatusLabel(intelligence.market_context.confidence)}</small></article></section>
 			<EvidenceOverview intelligence={intelligence} />
+			<TaiwanResearchSnapshot fundamentals={intelligence.fundamentals} />
 			{intelligence.interpretation && <InterpretationView intelligence={intelligence} />}
 			<section className="taiwan-ai-action"><div><strong>AI 研究</strong><p>AI 只會在你按下按鈕後，依上方官方資料與確定性解讀產生摘要。</p></div><button type="button" onClick={() => void generateResearch()} disabled={researching}>{researching ? <><LoaderCircle className="spin" size={14} />產生中</> : <><Bot size={14} />產生 AI 研究摘要</>}</button></section>
 			{research && <ResearchView research={research} />}
@@ -172,6 +189,54 @@ function EvidenceOverview({ intelligence }: { intelligence: Intelligence }) {
 		['產業', intelligence.industry_context, industry ? `${industry.industry_name} · 相對市場廣度 ${formatTaiwanPercent(industry.relative_breadth == null ? null : industry.relative_breadth * 100, true)} · 相對成交方向 ${formatTaiwanPercent(industry.relative_capital == null ? null : industry.relative_capital * 100, true)}` : intelligence.industry_context.reason || '官方產業分類資料'],
 	];
 	return <section className="taiwan-evidence-overview"><header><span>官方證據</span><h3>資料涵蓋與狀態</h3></header><div className="taiwan-detail-grid">{items.map(([label, item, detail]) => <article key={label}><span>{label}</span><strong>{taiwanStatusLabel(item.status)}</strong><small>{item.as_of ? `資料日期 ${item.as_of}` : taiwanStatusLabel(item.freshness)}</small><p>{taiwanReasonLabel(detail)}</p></article>)}</div></section>;
+}
+
+// M8A — snapshotPeriod formats one domain's own (fiscal_year, fiscal_quarter) pair as "YYYY-QN", never
+// substituting another domain's period and never fabricating a period when the pair is absent/zero
+// (the backend's own omitempty convention: 0 means "this domain was not joined for this security").
+function snapshotPeriod(year?: number, quarter?: number): string {
+	return year ? `${year}-Q${quarter}` : '—';
+}
+
+// M8A — Taiwan Research Snapshot: structured, period-aware, status-aware evidence for the four M8A
+// domains (估值/獲利能力/資產負債/現金流量), reusing the exact backend values already carried inside
+// fundamentals.data (valuation/financial_statement) — no derived/recalculated numbers, no AI. Each
+// group renders independently: a missing statement/valuation (fundamentals unavailable/not_applicable/
+// data_insufficient, or an ETF where fundamentals are not applicable at all) never hides the OTHER
+// already-rendered Research sections above/below it — every field simply falls back to the existing
+// null placeholder ("—") via the shared formatters, exactly like every other Screener/Research value.
+export function TaiwanResearchSnapshot({ fundamentals }: { fundamentals: Intelligence['fundamentals'] }) {
+	const valuation = fundamentals.data?.valuation;
+	const statement = fundamentals.data?.financial_statement;
+	return <section className="taiwan-research-snapshot"><header><span>結構化證據</span><h3>財務與現金流量現況</h3></header>
+		<div className="taiwan-detail-grid">
+			<article><span>估值</span>
+				<small>PE {formatTaiwanPlainNumber(valuation?.pe)}</small>
+				<small>PB {formatTaiwanPlainNumber(valuation?.pb)}</small>
+				<small>殖利率 {formatTaiwanPercent(valuation?.dividend_yield_percent)}</small>
+				<small>資料日期 {valuation?.data_date || '—'}</small>
+			</article>
+			<article><span>獲利能力</span>
+				<small>累計 EPS {formatTaiwanPlainNumber(statement?.cumulative_eps)}</small>
+				<small>毛利率 {formatTaiwanPercent(statement?.gross_margin_percent)}</small>
+				<small>營業利益率 {formatTaiwanPercent(statement?.operating_margin_percent)}</small>
+				<small>淨利率 {formatTaiwanPercent(statement?.net_margin_percent)}</small>
+				<small>財報期間 {snapshotPeriod(statement?.fiscal_year, statement?.fiscal_quarter)}</small>
+			</article>
+			<article><span>資產負債</span>
+				<small>每股參考淨值 {formatTaiwanBookValuePerShare(statement?.book_value_per_share)}</small>
+				<small>負債比 {formatTaiwanPercent(statement?.debt_ratio_percent)}</small>
+				<small>負債權益比 {formatTaiwanPercent(statement?.debt_to_equity_percent)}</small>
+				<small>流動比 {formatTaiwanPercent(statement?.current_ratio_percent)}</small>
+				<small>資產負債表期間 {snapshotPeriod(statement?.balance_fiscal_year, statement?.balance_fiscal_quarter)}</small>
+			</article>
+			<article><span>現金流量</span>
+				<small>營業活動現金流量 {formatTaiwanCashFlowTWD(statement?.operating_cash_flow)}</small>
+				<small>營業現金流／淨利 {formatTaiwanPercent(statement?.cash_flow_to_net_income)}</small>
+				<small>現金流量期間 {snapshotPeriod(statement?.cashflow_fiscal_year, statement?.cashflow_fiscal_quarter)}</small>
+			</article>
+		</div>
+	</section>;
 }
 
 export function InterpretationView({ intelligence }: { intelligence: Intelligence }) {

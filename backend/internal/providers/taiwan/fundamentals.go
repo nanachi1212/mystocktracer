@@ -273,30 +273,40 @@ func (c *Client) statement(ctx context.Context, s foundation.SecurityIdentity) (
 		return foundation.FinancialStatementPeriod{}, fmt.Errorf("matching balance sheet unavailable")
 	}
 	item.SourceURL = incomeURL + " | " + balanceURL
-	for key, target := range map[string]**int64{
-		"total_assets": &item.TotalAssets, "total_liabilities": &item.TotalLiabilities, "equity": &item.Equity, "equity_parent": &item.EquityParent,
-	} {
-		var keys []string
-		switch key {
-		case "total_assets":
-			keys = []string{"資產總計"}
-		case "total_liabilities":
-			keys = []string{"負債總計"}
-		case "equity":
-			keys = []string{"權益總計"}
-		case "equity_parent":
-			keys = []string{"歸屬於母公司業主之權益合計"}
-		}
-		raw := firstMap(balance, keys...)
-		value, parseErr := optionalThousandTWD(raw)
-		if parseErr != nil {
-			return foundation.FinancialStatementPeriod{}, fmt.Errorf("%s: %w", key, parseErr)
-		}
-		*target, item.RawValues[key] = value, raw
-	}
-	item.BookValuePerShare, err = optionalFloat(firstMap(balance, "每股參考淨值"))
+	// M8A — reuse the exact same balance-sheet parser ScreenerBalance uses (dual-key 資產總額/資產總計
+	// fallback, field-level malformed isolation, ci-only ratio policy) instead of the previous ad-hoc
+	// single-key join here, so single-security Research gets byte-identical debt_ratio/debt_to_equity/
+	// current_ratio semantics to the Screener — never a second, differently-behaving implementation.
+	balanceItem, err := parseBalanceSheetRow(s, category, balanceURL, balance)
 	if err != nil {
-		return foundation.FinancialStatementPeriod{}, fmt.Errorf("book value per share: %w", err)
+		return foundation.FinancialStatementPeriod{}, err
+	}
+	item.TotalAssets, item.TotalLiabilities, item.Equity = balanceItem.TotalAssets, balanceItem.TotalLiabilities, balanceItem.Equity
+	item.CurrentAssets, item.CurrentLiabilities = balanceItem.CurrentAssets, balanceItem.CurrentLiabilities
+	item.BookValuePerShare = balanceItem.BookValuePerShare
+	item.DebtRatio, item.DebtToEquity, item.CurrentRatio = balanceItem.DebtRatio, balanceItem.DebtToEquity, balanceItem.CurrentRatio
+	item.BalanceFiscalYear, item.BalanceFiscalQuarter = balanceItem.FiscalYear, balanceItem.FiscalQuarter
+	// equity_parent is not part of parseBalanceSheetRow's scope (M7G never needed it) — kept as its
+	// own existing single-key join, unchanged from before this M8A change.
+	equityParentRaw := firstMap(balance, "歸屬於母公司業主之權益合計")
+	equityParent, parseErr := optionalThousandTWD(equityParentRaw)
+	if parseErr != nil {
+		return foundation.FinancialStatementPeriod{}, fmt.Errorf("equity_parent: %w", parseErr)
+	}
+	item.EquityParent, item.RawValues["equity_parent"] = equityParent, equityParentRaw
+
+	// M8A — single-security cash-flow lookup, reusing the exact same M7H snapshot/cache/parser the
+	// Screener uses (cashflowData() itself locks/discovers/downloads/parses exactly like a Screener
+	// cold/warm request would — never a second archive download path, never duplicated parsing logic).
+	// A cash-flow lookup failure is swallowed here (never returned as an error from statement()) — it
+	// is a genuinely optional domain, and must not make an otherwise-successful income+balance result
+	// unavailable, matching M8A's failure-semantics requirement.
+	if snapshot, cfErr := c.cashflowData(ctx, time.Now()); cfErr == nil {
+		if row, ok := snapshot.Rows[s.Canonical]; ok {
+			item.OperatingCashFlow = row.OperatingCashFlow
+			item.CashFlowToNetIncome = cashflowRatio(row.OperatingCashFlow, row.ProfitLoss)
+			item.CashflowFiscalYear, item.CashflowFiscalQuarter = row.FiscalYear, row.FiscalQuarter
+		}
 	}
 	return item, nil
 }
