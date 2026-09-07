@@ -503,6 +503,11 @@ a:focus-visible {
 	margin-top: 14px;
 }
 
+.sidebar-primary, .sidebar-market-details { display: grid; gap: 5px; }
+.sidebar-market-details { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.sidebar-group-heading { padding: 0 11px 3px; color: var(--muted); font-size: 11px; }
+.sidebar-collapsed .sidebar-group-heading { display: none; }
+
 .app-sidebar nav button,
 .sidebar-settings,
 .sidebar-toggle {
@@ -2499,6 +2504,7 @@ a:focus-visible {
 	}
 
 	.sidebar-brand > div:last-child,
+	.sidebar-group-heading,
 	.app-sidebar nav button span,
 	.sidebar-guidance,
 	.sidebar-settings span,

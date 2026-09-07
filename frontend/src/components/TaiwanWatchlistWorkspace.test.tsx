@@ -3,7 +3,7 @@ import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { Quote, SourceMeta } from '../lib/backend';
-import { chunkTaiwanSymbols, type TaiwanWatchlistSecurity } from '../lib/taiwan-product';
+import { chunkTaiwanSymbols, resolveTaiwanWorkspace, taiwanPrimaryNavigation, type TaiwanWatchlistSecurity } from '../lib/taiwan-product';
 import { TaiwanWatchlistWorkspace, WatchlistRow, WatchlistSummaryPanel } from './TaiwanWatchlistWorkspace';
 
 const root = path.resolve(__dirname, '../../..');
@@ -27,9 +27,10 @@ describe('M6B — Watchlist navigation exists', () => {
 	it('App.tsx declares a taiwan-watchlist workspace mode, hash mapping, and a 自選股 nav button', () => {
 		const app = appSource();
 		expect(app).toContain("'taiwan-watchlist'");
-		expect(app).toContain("if (window.location.hash === '#taiwan-watchlist') return 'taiwan-watchlist';");
-		expect(app).toMatch(/switchWorkspace\('taiwan-watchlist'\)/);
-		expect(app).toContain('自選股');
+		expect(resolveTaiwanWorkspace('#taiwan-watchlist')).toBe('taiwan-watchlist');
+		expect(app).toContain('return resolveTaiwanWorkspace(window.location.hash)');
+		expect(app).toContain('onClick={() => switchWorkspace(mode)}');
+		expect(taiwanPrimaryNavigation).toContainEqual(['taiwan-watchlist', '自選股']);
 	});
 
 	it('renders TaiwanWatchlistWorkspace for the taiwan-watchlist mode (not a stub/placeholder)', () => {
@@ -72,7 +73,7 @@ describe('M6B — empty state', () => {
 	it('renders the explicit Traditional Chinese empty state when config is unset (no securities loaded)', () => {
 		const html = renderToStaticMarkup(<TaiwanWatchlistWorkspace config={null} refreshKey={0} onOpenResearch={() => {}} />);
 		expect(html).toContain('目前還沒有自選股');
-		expect(html).toContain('可從台股總覽或個股研究加入');
+		expect(html).toContain('可從台股總覽或個股分析加入');
 	});
 });
 

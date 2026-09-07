@@ -20,7 +20,7 @@ export class TaiwanStockResearchErrorBoundary extends Component<Props, State> {
 	render() {
 		if (this.state.hasError) {
 			return <div className="taiwan-research-error-boundary">
-				<strong>個股研究畫面發生錯誤，請重新載入此研究。</strong>
+				<strong>個股分析畫面發生錯誤，請重新載入此分析。</strong>
 				<button type="button" onClick={() => this.setState({ hasError: false })}>重新載入</button>
 			</div>;
 		}

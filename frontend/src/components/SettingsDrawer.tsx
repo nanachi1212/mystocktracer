@@ -482,7 +482,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 						<HermesAgentSettingsPanel config={config} open={open} />
 
 						<section className="settings-section">
-							<div className="settings-section-title"><Bot size={18} /><div><h3>Hermes 模型執行環境</h3><p>台股個股研究的「產生 AI 研究摘要」與 AI 助手對話統一由本機 Hermes 驅動。</p></div></div>
+							<div className="settings-section-title"><Bot size={18} /><div><h3>Hermes 模型執行環境</h3><p>台股個股分析的「產生 AI 研究摘要」與 AI 助手對話統一由本機 Hermes 驅動。</p></div></div>
 							<div className={`llm-connection-test ${settings?.hermes.available ? settings.hermes.configured ? 'success' : '' : 'error'}`}>
 								<div><Bot size={17} /><span><strong>{settings?.hermes.available ? `Hermes ${settings.hermes.version || 'Runtime'} 已安裝` : 'Hermes 執行環境不可用'}</strong><small>{settings?.hermes.message || (settings?.hermes.configured ? '執行環境和模型設定均已就緒。' : '執行環境已就緒，請繼續設定模型連線。')}</small></span></div>
 							</div>

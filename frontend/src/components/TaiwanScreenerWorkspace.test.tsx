@@ -3,6 +3,7 @@ import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
+	resolveTaiwanWorkspace, taiwanPrimaryNavigation,
 	taiwanFinancialsStatusLabel, taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasCashflowCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasInstitutionalCriteria, taiwanScreenerHasMarginCriteria,
 	taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria, taiwanScreenerPath,
 	type TaiwanScreenerFilters, type TaiwanScreenerResponse, type TaiwanScreenerSecurity,
@@ -61,9 +62,10 @@ describe('M7B — navigation wiring', () => {
 	it('App.tsx declares a taiwan-screener workspace mode, hash mapping, and a 台股選股器 nav button', () => {
 		const app = appSource();
 		expect(app).toContain("'taiwan-screener'");
-		expect(app).toContain("if (window.location.hash === '#taiwan-screener') return 'taiwan-screener';");
-		expect(app).toMatch(/switchWorkspace\('taiwan-screener'\)/);
-		expect(app).toContain('台股選股器');
+		expect(resolveTaiwanWorkspace('#taiwan-screener')).toBe('taiwan-screener');
+		expect(app).toContain('return resolveTaiwanWorkspace(window.location.hash)');
+		expect(app).toContain('onClick={() => switchWorkspace(mode)}');
+		expect(taiwanPrimaryNavigation).toContainEqual(['taiwan-screener', '台股選股器']);
 	});
 
 	it('renders TaiwanScreenerWorkspace for the taiwan-screener mode, wired to the existing App research handoff', () => {

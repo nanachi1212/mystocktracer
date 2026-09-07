@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	buildTaiwanScreenerContext, buildTaiwanScreenerMatchReason, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
-	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanResearchPath,
+	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanMarketDetailNavigation, taiwanResearchPath,
 	taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasCashflowCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
 	taiwanScreenerMatchReasonSuffix, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters, type TaiwanScreenerSecurity,
 } from './taiwan-product';
@@ -116,7 +116,8 @@ describe('Taiwan-first product shell', () => {
 		const html = fs.readFileSync(path.join(root, 'frontend/index.html'), 'utf8');
 		expect(html).toContain('<html lang="zh-TW">');
 		expect(html).not.toContain('A股');
-		expect(html).toContain('台灣股票研究工作台');
+		expect(html).toContain('台灣股票分析工作台');
+		expect(html).toContain('<title>mystocktracer · 台股分析工作台 · 僅限個人非商業使用</title>');
 	});
 
 	it('uses the Taiwan overview for empty and unknown hashes', () => {
@@ -125,8 +126,16 @@ describe('Taiwan-first product shell', () => {
 		expect(resolveTaiwanWorkspace('#taiwan-emotion')).toBe('taiwan-emotion');
 	});
 
+	it('keeps old research bookmarks on stock analysis and preserves all market-detail routes', () => {
+		expect(resolveTaiwanWorkspace('#taiwan-research')).toBe('taiwan-stock');
+		expect(taiwanMarketDetailNavigation.map(([, label]) => label)).toEqual(['市場廣度', '市場情緒', '產業雷達']);
+		for (const [id] of [...taiwanPrimaryNavigation, ...taiwanMarketDetailNavigation]) {
+			expect(resolveTaiwanWorkspace(`#${id}`)).toBe(id);
+		}
+	});
+
 	it('keeps only Taiwan-safe primary navigation labels', () => {
-		expect(taiwanPrimaryNavigation.map((item) => item[1])).toEqual(['台股總覽', '市場廣度', '市場情緒', '產業雷達', '台股選股器', '個股研究', 'AI 研究', '自選股']);
+		expect(taiwanPrimaryNavigation.map((item) => item[1])).toEqual(['台股總覽', '台股選股器', '自選股', '個股分析']);
 		expect(taiwanPrimaryNavigation.join(' ')).not.toMatch(/遊資|連板|龍虎榜|打板|首板|炸板/);
 		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
 		const primaryNav = app.slice(app.indexOf('<aside className="app-sidebar"'), app.indexOf('<div className="sidebar-guidance">'));

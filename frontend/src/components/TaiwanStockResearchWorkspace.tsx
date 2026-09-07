@@ -113,7 +113,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 		await runScopedRequest(selectRequestID, () => requestJSON<{ data: Intelligence }>(config, taiwanIntelligencePath(security.canonical)), {
 			onStart: () => { setIntelligence(null); setResearch(null); setLoading(true); setError(''); },
 			onSuccess: (payload) => setIntelligence(payload.data),
-			onError: (reason) => { setIntelligence(null); setError(taiwanErrorMessage(reason, '台灣個股研究資料載入失敗')); },
+			onError: (reason) => { setIntelligence(null); setError(taiwanErrorMessage(reason, '台灣個股分析資料載入失敗')); },
 			onSettle: () => setLoading(false),
 		});
 	};
@@ -194,7 +194,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 			<section className="taiwan-ai-action"><div><strong>AI 研究</strong><p>AI 只會在你按下按鈕後，依上方官方資料與確定性解讀產生摘要。</p></div><button type="button" onClick={() => void generateResearch()} disabled={researching}>{researching ? <><LoaderCircle className="spin" size={14} />產生中</> : <><Bot size={14} />產生 AI 研究摘要</>}</button></section>
 			{research && <ResearchView research={research} />}
 		</>}
-		{!intelligence && !loading && <div className="taiwan-empty-state"><strong>選擇台灣證券開始研究</strong><p>可搜尋上市或上櫃股票；原始資料載入不會呼叫 AI。</p></div>}
+		{!intelligence && !loading && <div className="taiwan-empty-state"><strong>選擇台灣證券開始分析</strong><p>可搜尋上市或上櫃股票；原始資料載入不會呼叫 AI。</p></div>}
 	</div>;
 }
 
@@ -202,12 +202,12 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 // Screener row click, carrying the exact APPLIED filters/sort at that moment. Deliberately separate
 // from EvidenceOverview/TaiwanResearchSnapshot/InterpretationView below — this is navigation
 // provenance, not evidence, and is never passed into BuildTaiwanResearchPayload/GenerateTaiwanResearch
-// or seen by the AI. Wording uses provenance language ("你從以下篩選條件的結果中開啟此研究") rather
+// or seen by the AI. Wording uses provenance language ("你從以下篩選條件的結果中開啟此分析") rather
 // than any present-tense match claim ("目前仍符合") — the underlying data may have changed since the
 // Screener request, and this component never re-fetches Screener or re-validates the match.
 export function ScreenerEntryContext({ context }: { context: TaiwanResearchEntryContext }) {
 	return <section className="taiwan-screener-entry-context">
-		<header><span>來自台股篩選器</span><h3>你從以下篩選條件的結果中開啟此研究</h3></header>
+		<header><span>來自台股篩選器</span><h3>你從以下篩選條件的結果中開啟此分析</h3></header>
 		<div className="taiwan-detail-grid">
 			<article><span>篩選條件</span>{context.filterLabels.length > 0 ? <ul>{context.filterLabels.map((label) => <li key={label}>{label}</li>)}</ul> : <small>未設定篩選條件</small>}</article>
 			<article><span>排序方式</span><small>{context.sortLabel}</small></article>

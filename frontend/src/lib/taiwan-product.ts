@@ -3,16 +3,21 @@ import { requestJSON, type BackendConfig } from './backend';
 export type TaiwanScope = 'twse' | 'tpex' | 'combined';
 
 export const taiwanPrimaryNavigation = [
-	['taiwan-overview', '台股總覽'], ['taiwan-breadth', '市場廣度'], ['taiwan-emotion', '市場情緒'],
-	['taiwan-industry', '產業雷達'], ['taiwan-screener', '台股選股器'], ['taiwan-stock', '個股研究'],
-	['taiwan-research', 'AI 研究'], ['taiwan-watchlist', '自選股'],
+	['taiwan-overview', '台股總覽'], ['taiwan-screener', '台股選股器'],
+	['taiwan-watchlist', '自選股'], ['taiwan-stock', '個股分析'],
+] as const;
+
+export const taiwanMarketDetailNavigation = [
+	['taiwan-breadth', '市場廣度'], ['taiwan-emotion', '市場情緒'], ['taiwan-industry', '產業雷達'],
 ] as const;
 
 export const taiwanDefaultWorkspace = 'taiwan-overview';
 
 export function resolveTaiwanWorkspace(hash: string) {
 	const value = hash.replace(/^#/, '');
-	return taiwanPrimaryNavigation.some(([id]) => id === value) ? value : taiwanDefaultWorkspace;
+	// ponytail: retain the old bookmark as an alias; no browser-history migration needed.
+	if (value === 'taiwan-research') return 'taiwan-stock';
+	return [...taiwanPrimaryNavigation, ...taiwanMarketDetailNavigation].find(([id]) => id === value)?.[0] ?? taiwanDefaultWorkspace;
 }
 
 export const taiwanMarketPath = (kind: 'market-breadth' | 'market-emotion' | 'industry-radar', scope: TaiwanScope) => `/api/v1/tw/${kind}?scope=${scope}`;

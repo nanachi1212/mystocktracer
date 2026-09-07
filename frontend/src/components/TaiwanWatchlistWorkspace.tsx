@@ -159,7 +159,7 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 	return <div className="taiwan-product-workspace taiwan-watchlist-workspace">
 		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取自選股清單</div>}
 		{error && <div className="market-partial-warning">{error}</div>}
-		{!loading && securities.length === 0 && !error && <div className="taiwan-empty-state"><strong>目前還沒有自選股</strong><p>可從台股總覽或個股研究加入。</p></div>}
+		{!loading && securities.length === 0 && !error && <div className="taiwan-empty-state"><strong>目前還沒有自選股</strong><p>可從台股總覽或個股分析加入。</p></div>}
 		{securities.length > 0 && <div className="taiwan-watchlist-list">{securities.map((item) => (
 			<WatchlistRow key={item.canonical} security={item} quote={quotes[item.canonical]} busy={removingSymbol === item.canonical}
 				onOpen={() => onOpenResearch(item.canonical)} onRemove={() => void remove(item.canonical)}

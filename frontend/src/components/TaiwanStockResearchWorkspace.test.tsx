@@ -110,7 +110,7 @@ describe('TaiwanStockResearchErrorBoundary', () => {
 		const instance = new TaiwanStockResearchErrorBoundary({ children: <div>正常內容</div> });
 		instance.state = { hasError: true };
 		const html = renderToStaticMarkup(instance.render() as ReactElement);
-		expect(html).toContain('個股研究畫面發生錯誤，請重新載入此研究。');
+		expect(html).toContain('個股分析畫面發生錯誤，請重新載入此分析。');
 		expect(html).toContain('重新載入');
 	});
 
@@ -139,9 +139,9 @@ describe('M6C — Watchlist row passes canonical identity, not code, into App-le
 		expect(fn).toContain("switchWorkspace('taiwan-stock')");
 	});
 
-	it('App.tsx passes externalSymbolRequest to the stock research workspace (both taiwan-stock and taiwan-research render branches)', () => {
+	it('App.tsx passes externalSymbolRequest to the stock research workspace (single canonical stock-analysis branch)', () => {
 		const app = appSource();
-		expect(app.match(/<TaiwanStockResearchWorkspace config=\{config\} refreshKey=\{marketRefreshKey\} externalSymbolRequest=\{requestedTaiwanSymbol\}/g)?.length).toBe(2);
+		expect(app.match(/<TaiwanStockResearchWorkspace config=\{config\} refreshKey=\{marketRefreshKey\} externalSymbolRequest=\{requestedTaiwanSymbol\}/g)?.length).toBe(1);
 	});
 });
 
@@ -326,7 +326,7 @@ describe('M8B — ScreenerEntryContext rendering', () => {
 	it('renders the exact heading and both subsections, separating 篩選條件 from 排序方式', () => {
 		const html = renderToStaticMarkup(<ScreenerEntryContext context={screenerContext()} />);
 		expect(html).toContain('來自台股篩選器');
-		expect(html).toContain('你從以下篩選條件的結果中開啟此研究');
+		expect(html).toContain('你從以下篩選條件的結果中開啟此分析');
 		expect(html).toContain('篩選條件');
 		expect(html).toContain('排序方式');
 		expect(html).toContain('本益比（PE） ≤ 25');
