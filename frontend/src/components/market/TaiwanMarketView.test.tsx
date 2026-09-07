@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { InstitutionalFlow, InstitutionalHistory, MarginHistory, MarginTrading, MarketIndexSnapshot, SecurityIdentity, SourceMeta, TaiwanFundamentals } from '../../lib/backend';
 import { taiwanErrorMessage } from '../../lib/taiwan-product';
 import type { Breadth, Emotion, Industry } from '../TaiwanMarketWorkspace';
-import { ChipView, FundamentalsView, OverviewSummary, partialFailureWarning, topIndustriesByBreadth } from './TaiwanMarketView';
+import { ChipView, FundamentalsView, OverviewSummary, partialFailureWarning, taiwanOverviewChangeTone, topIndustriesByBreadth } from './TaiwanMarketView';
 
 const security: SecurityIdentity = {
 	canonical: '0050.TWSE', code: '0050', name: '元大台灣50', market: 'TW', exchange: 'TWSE',
@@ -59,6 +59,26 @@ const institutional: InstitutionalHistory = {
 };
 const marginTrading: MarginTrading = { canonical: '2330.TWSE', trade_date: '2026-09-03', unit: 'shares', margin_balance: 100000, margin_change: 500, short_balance: 20000, short_change: -100, short_margin_ratio: 20, meta };
 const margin: MarginHistory = { security, data: [marginTrading], meta };
+
+describe('Taiwan Overview K-line change percent presentation', () => {
+	it('keeps numeric values and uses neutral styling for a real zero', () => {
+		expect(taiwanOverviewChangeTone(1.234)).toBe('up');
+		expect(taiwanOverviewChangeTone(-2.5)).toBe('down');
+		expect(taiwanOverviewChangeTone(0)).toBe('flat');
+	});
+
+	it('uses neutral styling for both null and missing values', () => {
+		expect(taiwanOverviewChangeTone(null)).toBe('flat');
+		expect(taiwanOverviewChangeTone(undefined)).toBe('flat');
+	});
+
+	it('renders missing K-line change percent through the null-safe shared formatter', () => {
+		const source = overviewSource();
+		expect(source).toContain('className={taiwanOverviewChangeTone(line.change_percent)}');
+		expect(source).toContain('{formatTaiwanPercent(line.change_percent)}');
+		expect(source).not.toContain('(line.change_percent || 0).toFixed(2)');
+	});
+});
 
 describe('ChipView (P1E: partial dataset failure isolation — institutional/margin render independently)', () => {
 	it('renders both institutional and margin sections when both datasets succeeded', () => {
