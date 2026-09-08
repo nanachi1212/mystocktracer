@@ -11,6 +11,7 @@ const CACHE_DIRECTORY_NAMES = new Set([
   'GrShaderCache',
   'ShaderCache',
   'easy-stock-updater',
+  'Partitions',
 ]);
 
 function resolveBackupRoot(userDataPath, configuredPath = process.env.A_STOCK_UPDATE_BACKUP_DIR) {

@@ -27,21 +27,22 @@ test('update backup preserves models, articles, memories and login state byte-fo
     'hermes-home/memories/session.json': '{"memory":"keep"}',
     'hermes-workspace/imported/article.md': '# imported article',
     'browser-auth/xueqiu.json': '{"cookies":[{"name":"xq_a_token"}]}',
-    'Partitions/persist_xueqiu/Cookies': Buffer.from([1, 2, 3, 4, 5]),
     'wechat-download-api/.env': 'WX_KEY=keep\n',
     'wechat-download-api/data/account.json': '{"fakeid":"123"}',
     'trading-mastery/index.json': '{"items":["keep"]}',
   };
   for (const [relativePath, content] of Object.entries(fixtures)) write(userData, relativePath, content);
   write(userData, 'Cache/remove.bin', 'cache');
+  write(userData, 'Partitions/persist_xueqiu/Cookies', Buffer.from([1, 2, 3, 4, 5]));
   write(userData, 'Partitions/persist_xueqiu/Code Cache/remove.bin', 'cache');
+  write(userData, 'Partitions/persist_mystocktracer_ai_chatgpt/Cookies', Buffer.from([6, 7, 8]));
 
   const backup = createUpdateBackup({ userDataPath: userData, fromVersion: '0.3.0', toVersion: '0.4.0' });
   for (const [relativePath, content] of Object.entries(fixtures)) {
     assert.deepEqual(fs.readFileSync(path.join(backup.path, 'data', relativePath)), Buffer.from(content));
   }
   assert.equal(fs.existsSync(path.join(backup.path, 'data', 'Cache')), false);
-  assert.equal(fs.existsSync(path.join(backup.path, 'data', 'Partitions', 'persist_xueqiu', 'Code Cache')), false);
+  assert.equal(fs.existsSync(path.join(backup.path, 'data', 'Partitions')), false);
   assert.equal(backup.manifest.files.length, Object.keys(fixtures).length);
   assert.equal(listUpdateBackups(backup.backupRoot).length, 1);
 });
