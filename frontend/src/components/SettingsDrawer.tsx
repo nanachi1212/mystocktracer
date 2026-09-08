@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AppSettings, BackendConfig, BrowserAuthStatus, LLMConnectionTestResult, LLMModelOption, LLMModelsResult, LLMProfile, ReviewAutomationProfile, RuntimeLogStatus, SecretSettingStatus, WechatServiceStatus, requestJSON } from '../lib/backend';
-import { llmProviderDefinition, llmProviders } from '../lib/llm-providers';
+import { llmLocalConnectionError, llmLocalPresets, llmProviderDefinition, llmProviders } from '../lib/llm-providers';
 import { AppUpdatePanel } from './AppUpdatePanel';
 import { HermesAgentSettingsPanel } from './HermesAgentSettingsPanel';
 
@@ -244,6 +244,13 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 			: '請輸入相容介面的 Base URL 和 API Key，再取得模型清單。');
 	};
 
+	const applyLocalPreset = (preset: typeof llmLocalPresets[number]) => {
+		setProvider('custom'); setBaseURL(preset.baseURL); setModel(preset.defaultModel); setAPIMode(preset.apiMode);
+		patchSelectedLLMProfile({ provider: 'custom', base_url: preset.baseURL, model: preset.defaultModel, api_mode: preset.apiMode });
+		resetModelList(); setTestState('idle'); setTestResult(null);
+		setModelListMessage(`${preset.label} 使用既有 OpenAI-compatible 介面；API Key 可留空。`);
+	};
+
 	const updateSecret = (key: SecretKey, value: string) => {
 		if (key === 'llm_api_key') {
 			setProfileKeyValues((current) => ({ ...current, [activeLLMProfileID]: value }));
@@ -316,7 +323,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 			if (fetchID !== modelFetchSequence.current) return;
 			setModelOptions([]);
 			setModelListState('error');
-			setModelListMessage(error instanceof Error ? error.message : '取得模型清單失敗');
+			setModelListMessage(llmLocalConnectionError(requestBaseURL, error));
 			setManualModel(true);
 		}
 	};
@@ -443,7 +450,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		} catch (error) {
 			setTestState('error');
 			setState('error');
-			setMessage(error instanceof Error ? error.message : '模型連線測試失敗');
+			setMessage(llmLocalConnectionError(baseURL, error));
 		}
 	};
 
@@ -493,9 +500,10 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 							</div>
 							<label><span>設定名稱</span><input value={profileName} onChange={(event) => { setProfileName(event.target.value); patchSelectedLLMProfile({ name: event.target.value }); }} placeholder="例如 DeepSeek 日常 / GPT-5.6 Sol 深度分析" /></label>
 							<div className="settings-grid two-columns">
-								<label><span>服務商</span><select value={provider} onChange={(event) => updateProvider(event.target.value)}>{llmProviders.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label>
+								<label><span>雲端 API</span><select value={provider} onChange={(event) => updateProvider(event.target.value)}>{llmProviders.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label>
 								<label><span>介面協定</span><select value={apiMode} onChange={(event) => { setAPIMode(event.target.value); patchSelectedLLMProfile({ api_mode: event.target.value }); setTestState('idle'); setTestResult(null); }}><option value="chat_completions">Chat Completions</option><option value="codex_responses">Responses API</option><option value="anthropic_messages">Anthropic Messages</option></select></label>
 							</div>
+							<div className="llm-local-presets"><span>本地模型</span><div>{llmLocalPresets.map((preset) => <button type="button" key={preset.id} onClick={() => applyLocalPreset(preset)}>{preset.label}<small>{preset.baseURL}</small></button>)}</div><small>使用既有 OpenAI-compatible 設定；API Key 可留空，Base URL 與 model 都可自行修改。</small></div>
 								<label><span>API Base URL</span><input value={baseURL} onChange={(event) => updateBaseURL(event.target.value)} placeholder="https://api.example.com/v1" /></label>
 								<SecretField key={`llm-api-key-${activeLLMProfileID}`} label="模型 API Key" secretKey="llm_api_key" status={selectedLLMProfile?.api_key} value={profileKeyValues[activeLLMProfileID] || ''} clearing={clearProfileKeys.has(activeLLMProfileID)} onChange={updateSecret} onClear={toggleClear} hint="每套設定獨立安全保存；切換設定不會覆蓋其他密鑰" revealable />
 								<div className="model-field">
