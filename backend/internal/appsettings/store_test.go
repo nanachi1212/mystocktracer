@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -25,7 +26,7 @@ func TestStorePersistsSecretsWithPrivatePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat settings: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("settings permissions = %o, want 600", info.Mode().Perm())
 	}
 	reopened, err := Open(path)
