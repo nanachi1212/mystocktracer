@@ -2,8 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolvePackageResourcesDir } from './package-resources.mjs';
+
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(desktopRoot, '..');
 const packageManifest = JSON.parse(fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8'));
+const packageResourcesDir = resolvePackageResourcesDir({ desktopRoot, repoRoot });
 const updateFeedURL = process.env.A_STOCK_UPDATE_FEED_URL || 'https://easy-stock-fs.oss-cn-beijing.aliyuncs.com/updates/desktop';
 const platform = process.argv[2];
 const mode = process.argv[3] || 'release';
@@ -66,7 +70,7 @@ const config = {
     '!scripts{,/**/*}',
     '!test{,/**/*}',
   ],
-  extraResources: [{ from: path.join(desktopRoot, 'resources'), to: 'resources' }],
+  extraResources: [{ from: packageResourcesDir, to: 'resources' }],
   asar: true,
   publish: [{ provider: 'generic', url: updateFeedURL }],
   mac: {

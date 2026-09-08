@@ -4,11 +4,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { prepareHermesRuntime } from './hermes-runtime.mjs';
+import { resolvePackageResourcesDir } from './package-resources.mjs';
 import { prepareWechatRuntime } from './wechat-runtime.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(desktopRoot, '..');
-const resourcesRoot = path.join(desktopRoot, 'resources');
+const resourcesRoot = resolvePackageResourcesDir({ desktopRoot, repoRoot });
 const backendName = process.platform === 'win32' ? 'easy-stock-backend.exe' : 'easy-stock-backend';
 const targetArch = process.env.A_STOCK_DESKTOP_ARCH || process.arch;
 

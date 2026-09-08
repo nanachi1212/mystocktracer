@@ -13,7 +13,7 @@
     "package:mac": "npm run prepare:package && node scripts/electron-builder.mjs mac dir",
     "installer:mac": "npm run release:mac",
     "release:mac": "npm run prepare:package && node scripts/electron-builder.mjs mac release && node scripts/stage-builder-artifacts.mjs mac && node scripts/create-dmg.mjs",
-    "package:windows": "npm run prepare:package && node scripts/electron-builder.mjs windows dir",
+    "package:windows": "npm run prepare:package && node scripts/electron-builder.mjs windows dir && node scripts/verify-release-package.mjs dist/builder-dir/win-unpacked windows",
     "release:windows": "npm run prepare:package && node scripts/electron-builder.mjs windows release && node scripts/stage-builder-artifacts.mjs windows && node scripts/create-windows-archive.mjs"
   },
   "devDependencies": {
