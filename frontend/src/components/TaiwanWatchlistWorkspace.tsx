@@ -1,8 +1,8 @@
-import { LoaderCircle, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Download, LoaderCircle, Trash2, Upload } from 'lucide-react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { BackendConfig, Quote } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
-import { chunkTaiwanSymbols, fetchTaiwanWatchlist, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanIntelligencePath, taiwanSecurityTypeLabel, type TaiwanWatchlistSecurity } from '../lib/taiwan-product';
+import { chunkTaiwanSymbols, createTaiwanWatchlistBackup, fetchTaiwanWatchlist, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, mergeTaiwanWatchlistBackup, parseTaiwanWatchlistBackup, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanIntelligencePath, taiwanSecurityTypeLabel, type TaiwanWatchlistSecurity } from '../lib/taiwan-product';
 
 type QuoteLookup = Record<string, Quote>;
 
@@ -71,6 +71,8 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 	const [summaries, setSummaries] = useState<WatchlistSummaryLookup>({});
 	const summaryRequestsRef = useRef<Set<string>>(new Set());
 	const securitiesRef = useRef<Set<string>>(new Set());
+	const fileInputRef = useRef<HTMLInputElement>(null);
+	const [backupBusy, setBackupBusy] = useState(false);
 	useEffect(() => { securitiesRef.current = new Set(securities.map((item) => item.canonical)); }, [securities]);
 
 	// Fetches only while this view is mounted (App unmounts it when the user switches away), and
@@ -155,8 +157,28 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 			setRemovingSymbol(null);
 		}
 	};
+	const exportBackup = () => {
+		const blob = new Blob([JSON.stringify(createTaiwanWatchlistBackup(securities), null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob); const link = document.createElement('a');
+		link.href = url; link.download = `mystocktracer-watchlist-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url);
+	};
+	const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0]; event.target.value = '';
+		if (!file || !config || backupBusy) return;
+		setBackupBusy(true); setError('');
+		try {
+			const result = await mergeTaiwanWatchlistBackup(config, parseTaiwanWatchlistBackup(await file.text()).items, securities);
+			setError(`匯入完成：新增 ${result.added}、已存在 ${result.existing}、無效 ${result.invalid}`);
+			if (result.added > 0) {
+				const list = await fetchTaiwanWatchlist(config);
+				setSecurities(list); setQuotes(await fetchWatchlistQuotes(config, list.map((item) => item.canonical)));
+			}
+		} catch (reason) { setError(taiwanErrorMessage(reason, '匯入自選股失敗')); }
+		finally { setBackupBusy(false); }
+	};
 
 	return <div className="taiwan-product-workspace taiwan-watchlist-workspace">
+		<div className="taiwan-watchlist-backup-actions"><button type="button" onClick={exportBackup} disabled={loading}><Download size={14} />匯出 JSON</button><button type="button" onClick={() => fileInputRef.current?.click()} disabled={!config || backupBusy}><Upload size={14} />匯入 JSON</button><input ref={fileInputRef} type="file" accept="application/json,.json" onChange={(event) => void importBackup(event)} hidden /></div>
 		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取自選股清單</div>}
 		{error && <div className="market-partial-warning">{error}</div>}
 		{!loading && securities.length === 0 && !error && <div className="taiwan-empty-state"><strong>目前還沒有自選股</strong><p>可從台股總覽或個股分析加入。</p></div>}

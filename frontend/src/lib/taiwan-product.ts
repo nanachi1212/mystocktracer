@@ -650,6 +650,49 @@ export function validateTaiwanScreenerFilters(filters: TaiwanScreenerFilters): s
 // prices are composed separately from the existing /tw/quotes endpoint (M6B).
 export type TaiwanWatchlistSecurity = { canonical: string; code: string; name: string; exchange: string; security_type: string; created_at: string };
 
+export type TaiwanWatchlistBackupItem = { canonical: string; code?: string; name?: string; security_type?: string };
+export type TaiwanWatchlistBackup = { schema: 'mystocktracer.watchlist'; version: 1; exported_at: string; items: TaiwanWatchlistBackupItem[] };
+
+export function createTaiwanWatchlistBackup(securities: TaiwanWatchlistSecurity[], exportedAt = new Date().toISOString()): TaiwanWatchlistBackup {
+	return {
+		schema: 'mystocktracer.watchlist', version: 1, exported_at: exportedAt,
+		items: securities.map(({ canonical, code, name, security_type }) => ({ canonical, code, name, security_type })),
+	};
+}
+
+export function parseTaiwanWatchlistBackup(raw: string): TaiwanWatchlistBackup {
+	let value: unknown;
+	try { value = JSON.parse(raw); } catch { throw new Error('JSON 格式錯誤'); }
+	if (!value || typeof value !== 'object') throw new Error('備份格式錯誤');
+	const backup = value as Partial<TaiwanWatchlistBackup>;
+	if (backup.schema !== 'mystocktracer.watchlist' || backup.version !== 1) throw new Error('不支援的自選股備份版本');
+	if (typeof backup.exported_at !== 'string') throw new Error('備份缺少 exported_at');
+	if (!Array.isArray(backup.items)) throw new Error('備份缺少自選股 items');
+	const unique = new Map<string, TaiwanWatchlistBackupItem>();
+	for (const item of backup.items) {
+		if (!item || typeof item !== 'object' || typeof item.canonical !== 'string') throw new Error('備份包含無效的自選股項目');
+		const canonical = item.canonical.trim().toUpperCase();
+		if (!unique.has(canonical)) unique.set(canonical, { canonical, code: typeof item.code === 'string' ? item.code : undefined, name: typeof item.name === 'string' ? item.name : undefined, security_type: typeof item.security_type === 'string' ? item.security_type : undefined });
+	}
+	return { schema: 'mystocktracer.watchlist', version: 1, exported_at: backup.exported_at, items: [...unique.values()] };
+}
+
+export async function mergeTaiwanWatchlistBackup(config: BackendConfig, items: TaiwanWatchlistBackupItem[], existing: TaiwanWatchlistSecurity[]): Promise<{ added: number; existing: number; invalid: number }> {
+	const known = new Set(existing.map((item) => item.canonical.toUpperCase()));
+	let added = 0; let alreadyPresent = 0; let invalid = 0;
+	for (const item of items) {
+		const canonical = item.canonical.toUpperCase();
+		if (!/^\d{4,6}\.(TWSE|TPEX)$/.test(canonical)) { invalid++; continue; }
+		if (known.has(canonical)) { alreadyPresent++; continue; }
+		const payload = await requestJSON<{ data: { securities: Array<{ canonical: string }> } }>(config, `/api/v1/tw/securities?query=${encodeURIComponent(canonical)}`);
+		const resolved = payload.data.securities.find((security) => security.canonical.toUpperCase() === canonical);
+		if (!resolved) { invalid++; continue; }
+		await addTaiwanWatchlistSecurity(config, resolved.canonical);
+		known.add(canonical); added++;
+	}
+	return { added, existing: alreadyPresent, invalid };
+}
+
 export async function fetchTaiwanWatchlist(config: BackendConfig): Promise<TaiwanWatchlistSecurity[]> {
 	const payload = await requestJSON<{ data: { securities: TaiwanWatchlistSecurity[] } }>(config, taiwanWatchlistPath());
 	return payload.data.securities;

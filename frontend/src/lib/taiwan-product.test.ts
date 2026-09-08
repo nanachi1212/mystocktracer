@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	buildTaiwanScreenerContext, buildTaiwanScreenerMatchReason, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
 	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanMarketDetailNavigation, taiwanResearchPath,
 	taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasCashflowCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
 	taiwanScreenerMatchReasonSuffix, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters, type TaiwanScreenerSecurity,
+	createTaiwanWatchlistBackup, mergeTaiwanWatchlistBackup, parseTaiwanWatchlistBackup,
 } from './taiwan-product';
 
 // M8F -- minimal TaiwanScreenerSecurity fixture (only the fields a given test actually needs are
@@ -95,6 +96,37 @@ describe('runScopedRequest (scope/selection race safety)', () => {
 		a.resolve('A');
 		await runA;
 		expect(settled).toEqual(['B']);
+	});
+});
+
+describe('P5.1 — portable watchlist backup', () => {
+	const security = { canonical: '2330.TWSE', code: '2330', name: '台積電', exchange: 'TWSE', security_type: 'stock', created_at: '2026-09-08T00:00:00Z' };
+	const config = { backendUrl: 'http://127.0.0.1:20081', token: '' };
+
+	it('exports versioned identity-only JSON without secrets or runtime data', () => {
+		const json = JSON.stringify(createTaiwanWatchlistBackup([security], '2026-09-08T01:02:03Z'));
+		const parsed = JSON.parse(json);
+		expect(parsed).toEqual({ schema: 'mystocktracer.watchlist', version: 1, exported_at: '2026-09-08T01:02:03Z', items: [{ canonical: '2330.TWSE', code: '2330', name: '台積電', security_type: 'stock' }] });
+		expect(json).not.toMatch(/api[_-]?key|cookie|credential|\.env|hermes|database|cache|quote|path|token/i);
+	});
+
+	it('parses, canonical-deduplicates, and rejects malformed or unsupported backups', () => {
+		const backup = parseTaiwanWatchlistBackup(JSON.stringify({ schema: 'mystocktracer.watchlist', version: 1, exported_at: '2026-09-08T00:00:00Z', items: [{ canonical: '2330.TWSE' }, { canonical: ' 2330.twse ' }] }));
+		expect(backup.items).toHaveLength(1);
+		expect(() => parseTaiwanWatchlistBackup('{')).toThrow('JSON 格式錯誤');
+		expect(() => parseTaiwanWatchlistBackup(JSON.stringify({ schema: 'mystocktracer.watchlist', version: 2, exported_at: '2026-09-08T00:00:00Z', items: [] }))).toThrow('不支援');
+		expect(parseTaiwanWatchlistBackup(JSON.stringify({ schema: 'mystocktracer.watchlist', version: 1, exported_at: '', items: [{ canonical: '2330.UNKNOWN' }] })).items[0].canonical).toBe('2330.UNKNOWN');
+	});
+
+	it('merges only validated new canonical symbols and counts existing/invalid entries', async () => {
+		const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (init?.method === 'POST') return new Response(JSON.stringify({ data: { security } }), { status: 200 });
+			return new Response(JSON.stringify({ data: { securities: url.includes('6488.TPEX') ? [] : [security] } }), { status: 200 });
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		await expect(mergeTaiwanWatchlistBackup(config, [{ canonical: '2330.TWSE' }, { canonical: '6488.TPEX' }, { canonical: '2330.UNKNOWN' }], [security])).resolves.toEqual({ added: 0, existing: 1, invalid: 2 });
+		vi.unstubAllGlobals();
 	});
 });
 
