@@ -3,6 +3,7 @@ package taiwan
 import (
 	"archive/zip"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -58,12 +60,12 @@ var cashflowIssuerFilePattern = regexp.MustCompile(`^tifrs-fr1-m\d+-([a-z]+)-(cr
 // package — it exists solely to compute CashFlowToNetIncome before the public
 // foundation.FinancialStatementPeriod row is built (see ScreenerCashflow).
 type cashflowRow struct {
-	Canonical         string
-	Category          string
-	FiscalYear        int
-	FiscalQuarter     int
-	OperatingCashFlow *int64
-	ProfitLoss        *int64
+	Canonical         string `json:"canonical"`
+	Category          string `json:"category"`
+	FiscalYear        int    `json:"fiscal_year"`
+	FiscalQuarter     int    `json:"fiscal_quarter"`
+	OperatingCashFlow *int64 `json:"operating_cash_flow"`
+	ProfitLoss        *int64 `json:"profit_loss"`
 }
 
 // cashflowSnapshot is the single combined cache entry for the M7H domain: the target period (Period)
@@ -79,6 +81,97 @@ type cashflowSnapshot struct {
 
 type cashflowCandidate struct {
 	year, quarter int
+}
+
+// cashflowCacheSchemaVersion is incremented when the parsing logic changes in a way that invalidates
+// previously cached results (e.g. new fields extracted, changed normalization). On load, a mismatch
+// causes the cached file to be treated as a miss — the next network fetch will re-populate it.
+const cashflowCacheSchemaVersion = 1
+
+// cashflowCacheEnvelope is the JSON-serializable wrapper written to disk by saveCashflowCache.
+type cashflowCacheEnvelope struct {
+	SchemaVersion int                    `json:"schema_version"`
+	Period        string                 `json:"period"`
+	Status        string                 `json:"status"`
+	ExpiresAt     time.Time              `json:"expires_at"`
+	Rows          map[string]cashflowRow `json:"rows"`
+}
+
+// cashflowRow JSON tags — the struct already has exported fields, so json.Marshal works directly.
+// We add tags via a shadow type to keep the original struct clean.
+
+// loadCashflowCache attempts to read a previously persisted cashflow snapshot from disk. Returns nil
+// (never an error) on any miss — corrupt file, schema mismatch, missing file, expired entry — so the
+// caller falls through to the normal network path.
+func (c *Client) loadCashflowCache(now time.Time) *cashflowSnapshot {
+	if c.cashflowCacheDir == "" {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(c.cashflowCacheDir, "cashflow-snapshot.json"))
+	if err != nil {
+		return nil
+	}
+	var envelope cashflowCacheEnvelope
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil
+	}
+	if envelope.SchemaVersion != cashflowCacheSchemaVersion {
+		return nil
+	}
+	if !now.Before(envelope.ExpiresAt) {
+		return nil
+	}
+	if envelope.Rows == nil {
+		envelope.Rows = map[string]cashflowRow{}
+	}
+	return &cashflowSnapshot{
+		Period:    envelope.Period,
+		Status:    envelope.Status,
+		ExpiresAt: envelope.ExpiresAt,
+		Rows:      envelope.Rows,
+	}
+}
+
+// saveCashflowCache persists a successful cashflow snapshot to disk using atomic temp+rename. Errors
+// are silently ignored — a failed save simply means the next cold start will re-download, which is the
+// existing behavior. Only "available" and "partial" snapshots are persisted; "unavailable" is not worth
+// caching to disk (its 15-minute TTL is shorter than typical restart intervals).
+func (c *Client) saveCashflowCache(snapshot *cashflowSnapshot) {
+	if c.cashflowCacheDir == "" || snapshot == nil || snapshot.Status == "unavailable" {
+		return
+	}
+	envelope := cashflowCacheEnvelope{
+		SchemaVersion: cashflowCacheSchemaVersion,
+		Period:        snapshot.Period,
+		Status:        snapshot.Status,
+		ExpiresAt:     snapshot.ExpiresAt,
+		Rows:          snapshot.Rows,
+	}
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(c.cashflowCacheDir, 0o755); err != nil {
+		return
+	}
+	target := filepath.Join(c.cashflowCacheDir, "cashflow-snapshot.json")
+	temp, err := os.CreateTemp(c.cashflowCacheDir, "cashflow-snapshot-*.tmp")
+	if err != nil {
+		return
+	}
+	tempPath := temp.Name()
+	if _, writeErr := temp.Write(data); writeErr != nil {
+		temp.Close()
+		os.Remove(tempPath)
+		return
+	}
+	if closeErr := temp.Close(); closeErr != nil {
+		os.Remove(tempPath)
+		return
+	}
+	if renameErr := os.Rename(tempPath, target); renameErr != nil {
+		os.Remove(tempPath)
+	}
 }
 
 // ScreenerCashflow returns, for every TWSE/TPEx stock security present in the current target quarter's
@@ -129,11 +222,21 @@ func cashflowRatio(numerator, denominator *int64) *float64 {
 // cashflowMu is held across the entire sequence (mirroring chipDay's existing tight-locking pattern in
 // chip.go, not fundamentalsRows' looser check-then-fetch one), so concurrent cold callers never each
 // trigger a duplicate 110-130MB download — they serialize and then all reuse the one result.
+//
+// Persistent cache: when CashflowCacheDir is configured, a successful network result is saved to disk
+// as JSON, and on cold start the disk cache is checked before falling through to the network path.
 func (c *Client) cashflowData(ctx context.Context, now time.Time) (*cashflowSnapshot, error) {
 	c.cashflowMu.Lock()
 	defer c.cashflowMu.Unlock()
 	if c.cashflowSnapshot != nil && now.Before(c.cashflowSnapshot.ExpiresAt) {
 		return c.cashflowSnapshot, nil
+	}
+	// Cold start: try disk cache before expensive network fetch.
+	if c.cashflowSnapshot == nil {
+		if cached := c.loadCashflowCache(now); cached != nil {
+			c.cashflowSnapshot = cached
+			return cached, nil
+		}
 	}
 	snapshot, err := c.discoverAndParseCashflow(ctx, now)
 	if err != nil {
@@ -147,6 +250,7 @@ func (c *Client) cashflowData(ctx context.Context, now time.Time) (*cashflowSnap
 		snapshot.ExpiresAt = now.Add(cashflowAvailableTTL)
 	}
 	c.cashflowSnapshot = snapshot
+	c.saveCashflowCache(snapshot)
 	return snapshot, nil
 }
 

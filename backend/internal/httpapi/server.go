@@ -150,7 +150,9 @@ func NewServer(config any) *Server {
 		cfg.StockDirectory = eastMoneyClient
 	}
 	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanScreener == nil || cfg.TaiwanScreenerInstitutional == nil || cfg.TaiwanScreenerMargin == nil || cfg.TaiwanScreenerRevenue == nil || cfg.TaiwanScreenerValuation == nil || cfg.TaiwanScreenerDividends == nil || cfg.TaiwanScreenerFinancials == nil || cfg.TaiwanScreenerBalance == nil || cfg.TaiwanEmotion == nil || cfg.TaiwanIndustryRadar == nil || cfg.TaiwanIntelligence == nil {
-		taiwanClient := taiwan.NewClient(taiwan.Config{})
+		taiwanClient := taiwan.NewClient(taiwan.Config{
+			CashflowCacheDir: cfg.TaiwanCashflowCacheDir,
+		})
 		if cfg.TaiwanDirectory == nil {
 			cfg.TaiwanDirectory = taiwanClient
 		}

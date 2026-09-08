@@ -254,6 +254,7 @@ type Config struct {
 	MasteryLibrary              *methodology.Library
 	Logger                      *log.Logger
 	StrictPersistence           bool
+	TaiwanCashflowCacheDir      string
 }
 
 func normalizeConfig(value any) Config {

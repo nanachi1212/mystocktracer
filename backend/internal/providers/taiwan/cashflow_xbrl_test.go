@@ -744,3 +744,187 @@ func TestScreenerCashflow_UnavailableIsNegativelyCachedAndDeduplicated(t *testin
 		t.Fatalf("expected exactly 1 additional discovery after TTL expiry, got %d total", discoveries)
 	}
 }
+
+// ==================================================
+// Persistent cache tests (P5.5B)
+// ==================================================
+
+func TestCashflowPersistentCache_SaveAndLoadRoundTrip(t *testing.T) {
+	cacheDir := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	c := NewClient(Config{CashflowCacheDir: cacheDir})
+
+	ocf := int64(1122637757)
+	pl := int64(758226085)
+	original := &cashflowSnapshot{
+		Period:    "2026-Q2",
+		Status:    "available",
+		ExpiresAt: now.Add(cashflowAvailableTTL),
+		Rows: map[string]cashflowRow{
+			"2330.TWSE": {
+				Canonical:         "2330.TWSE",
+				Category:          "ci",
+				FiscalYear:        2026,
+				FiscalQuarter:     2,
+				OperatingCashFlow: &ocf,
+				ProfitLoss:        &pl,
+			},
+		},
+	}
+
+	c.saveCashflowCache(original)
+
+	// Verify file exists on disk
+	cachedPath := cacheDir + "/cashflow-snapshot.json"
+	if _, err := os.Stat(cachedPath); err != nil {
+		t.Fatalf("expected cached file to exist at %s: %v", cachedPath, err)
+	}
+
+	// Create a new client instance pointing at the same cache dir (simulating process restart)
+	c2 := NewClient(Config{CashflowCacheDir: cacheDir})
+	loaded := c2.loadCashflowCache(now)
+	if loaded == nil {
+		t.Fatal("expected loadCashflowCache to return snapshot, got nil")
+	}
+	if loaded.Period != original.Period {
+		t.Errorf("period = %q, want %q", loaded.Period, original.Period)
+	}
+	if loaded.Status != original.Status {
+		t.Errorf("status = %q, want %q", loaded.Status, original.Status)
+	}
+	row, ok := loaded.Rows["2330.TWSE"]
+	if !ok {
+		t.Fatal("missing 2330.TWSE row in loaded cache")
+	}
+	if row.OperatingCashFlow == nil || *row.OperatingCashFlow != ocf {
+		t.Errorf("OCF = %v, want %d", row.OperatingCashFlow, ocf)
+	}
+	if row.ProfitLoss == nil || *row.ProfitLoss != pl {
+		t.Errorf("ProfitLoss = %v, want %d", row.ProfitLoss, pl)
+	}
+}
+
+func TestCashflowPersistentCache_ColdRestartHitsDiskWithoutHTTP(t *testing.T) {
+	cacheDir := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+
+	var downloadCalls, discoveryCalls int64
+	server := cashflowTestServer(t, threeIssuerZip(t), &downloadCalls, &discoveryCalls)
+	defer server.Close()
+
+	// Client 1: cold start, fetches from network, saves to disk cache
+	c1 := NewClient(Config{
+		TWSEBaseURL:      server.URL,
+		TPExBaseURL:      server.URL,
+		CashflowBaseURL:  server.URL,
+		HTTPClient:       server.Client(),
+		CashflowCacheDir: cacheDir,
+		Now:              func() time.Time { return now },
+	})
+
+	rows1, freshness1, err := c1.ScreenerCashflow(context.Background(), now)
+	if err != nil {
+		t.Fatalf("c1 ScreenerCashflow: %v", err)
+	}
+	if freshness1.Status != "available" || len(rows1) != 3 {
+		t.Fatalf("c1 unexpected result: rows=%d status=%s", len(rows1), freshness1.Status)
+	}
+	if discoveryCalls != 1 || downloadCalls != 1 {
+		t.Fatalf("c1 expected 1 discovery + 1 download, got discoveries=%d downloads=%d", discoveryCalls, downloadCalls)
+	}
+
+	// Client 2: new client instance with EMPTY memory (simulating process restart) pointing to same cache dir
+	c2 := NewClient(Config{
+		TWSEBaseURL:      server.URL,
+		TPExBaseURL:      server.URL,
+		CashflowBaseURL:  server.URL,
+		HTTPClient:       server.Client(),
+		CashflowCacheDir: cacheDir,
+		Now:              func() time.Time { return now },
+	})
+
+	rows2, freshness2, err := c2.ScreenerCashflow(context.Background(), now)
+	if err != nil {
+		t.Fatalf("c2 ScreenerCashflow: %v", err)
+	}
+	if freshness2.Status != "available" || len(rows2) != 3 {
+		t.Fatalf("c2 unexpected result: rows=%d status=%s", len(rows2), freshness2.Status)
+	}
+	// Zero new network calls!
+	if discoveryCalls != 1 || downloadCalls != 1 {
+		t.Fatalf("c2 expected 0 additional network calls on disk cache hit, got discoveries=%d downloads=%d", discoveryCalls, downloadCalls)
+	}
+}
+
+func TestCashflowPersistentCache_CorruptFileFallsBackToNetwork(t *testing.T) {
+	cacheDir := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+
+	// Write garbage to the cache file
+	cachedPath := cacheDir + "/cashflow-snapshot.json"
+	if err := os.WriteFile(cachedPath, []byte("NOT_VALID_JSON{{{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var downloadCalls, discoveryCalls int64
+	server := cashflowTestServer(t, threeIssuerZip(t), &downloadCalls, &discoveryCalls)
+	defer server.Close()
+
+	c := NewClient(Config{
+		TWSEBaseURL:      server.URL,
+		TPExBaseURL:      server.URL,
+		CashflowBaseURL:  server.URL,
+		HTTPClient:       server.Client(),
+		CashflowCacheDir: cacheDir,
+		Now:              func() time.Time { return now },
+	})
+
+	rows, freshness, err := c.ScreenerCashflow(context.Background(), now)
+	if err != nil {
+		t.Fatalf("ScreenerCashflow: %v", err)
+	}
+	if freshness.Status != "available" || len(rows) != 3 {
+		t.Fatalf("unexpected result: rows=%d status=%s", len(rows), freshness.Status)
+	}
+	// Corrupt cache fell back to network cleanly!
+	if discoveryCalls != 1 || downloadCalls != 1 {
+		t.Fatalf("expected fallback to network: discoveries=%d downloads=%d", discoveryCalls, downloadCalls)
+	}
+}
+
+func TestCashflowPersistentCache_SchemaVersionMismatchInvalidates(t *testing.T) {
+	cacheDir := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+
+	// Write valid JSON but with an incompatible schema_version
+	staleJSON := `{"schema_version": 999, "period": "2026-Q2", "status": "available", "expires_at": "2030-01-01T00:00:00Z", "rows": {}}`
+	cachedPath := cacheDir + "/cashflow-snapshot.json"
+	if err := os.WriteFile(cachedPath, []byte(staleJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var downloadCalls, discoveryCalls int64
+	server := cashflowTestServer(t, threeIssuerZip(t), &downloadCalls, &discoveryCalls)
+	defer server.Close()
+
+	c := NewClient(Config{
+		TWSEBaseURL:      server.URL,
+		TPExBaseURL:      server.URL,
+		CashflowBaseURL:  server.URL,
+		HTTPClient:       server.Client(),
+		CashflowCacheDir: cacheDir,
+		Now:              func() time.Time { return now },
+	})
+
+	// Schema mismatch should be treated as cache miss, falling through to network
+	rows, freshness, err := c.ScreenerCashflow(context.Background(), now)
+	if err != nil {
+		t.Fatalf("ScreenerCashflow: %v", err)
+	}
+	if freshness.Status != "available" || len(rows) != 3 {
+		t.Fatalf("unexpected result: rows=%d status=%s", len(rows), freshness.Status)
+	}
+	if discoveryCalls != 1 || downloadCalls != 1 {
+		t.Fatalf("expected network fetch after schema mismatch: discoveries=%d downloads=%d", discoveryCalls, downloadCalls)
+	}
+}

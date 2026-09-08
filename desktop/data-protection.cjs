@@ -12,6 +12,7 @@ const CACHE_DIRECTORY_NAMES = new Set([
   'ShaderCache',
   'easy-stock-updater',
   'Partitions',
+  'cashflow-cache',
 ]);
 
 function resolveBackupRoot(userDataPath, configuredPath = process.env.A_STOCK_UPDATE_BACKUP_DIR) {

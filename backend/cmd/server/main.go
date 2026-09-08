@@ -54,6 +54,10 @@ func main() {
 	if masteryCacheDir == "" {
 		masteryCacheDir = dataPath(dataDir, "trading-mastery")
 	}
+	cashflowCacheDir := os.Getenv("A_STOCK_CASHFLOW_CACHE")
+	if cashflowCacheDir == "" {
+		cashflowCacheDir = dataPath(dataDir, "cashflow-cache")
+	}
 	logDirectory := os.Getenv("A_STOCK_LOG_DIR")
 	if logDirectory == "" {
 		logDirectory = dataPath(dataDir, "logs")
@@ -97,9 +101,10 @@ func main() {
 		WeChatAPIURL:         os.Getenv("A_STOCK_WECHAT_API_URL"),
 		SettingsPath:         settingsPath,
 		HermesGateway:        hermesGateway,
-		MasteryLibrary:       masteryLibrary,
-		Logger:               log.Default(),
-		StrictPersistence:    true,
+		MasteryLibrary:         masteryLibrary,
+		Logger:                 log.Default(),
+		StrictPersistence:      true,
+		TaiwanCashflowCacheDir: cashflowCacheDir,
 	})
 	if err := server.StartupError(); err != nil {
 		log.Fatalf("persistent data startup failed: %v", err)

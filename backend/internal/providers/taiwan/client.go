@@ -39,6 +39,7 @@ type Client struct {
 	// cold Screener requests never each trigger their own 110-130MB archive download.
 	cashflowMu       sync.Mutex
 	cashflowSnapshot *cashflowSnapshot
+	cashflowCacheDir string // empty means no persistent cache
 	snapshotMu       sync.RWMutex
 	dailyDays         map[string][]foundation.TaiwanDailySnapshot
 	instDays          map[string][]foundation.InstitutionalFlow
@@ -71,6 +72,7 @@ type Config struct {
 	TWSEReportBaseURL string
 	TPExReportBaseURL string
 	CashflowBaseURL   string
+	CashflowCacheDir  string // optional directory for persistent cashflow snapshot cache
 	Holidays          map[string]bool
 	Now               func() time.Time
 }
@@ -92,6 +94,7 @@ func NewClient(config Config) *Client {
 		twseReportBaseURL: first(config.TWSEReportBaseURL, "https://www.twse.com.tw"),
 		tpexReportBaseURL: first(config.TPExReportBaseURL, "https://www.tpex.org.tw"),
 		cashflowBaseURL:   first(config.CashflowBaseURL, defaultCashflowBaseURL),
+		cashflowCacheDir:  config.CashflowCacheDir,
 		chipDays:          map[string]chipSnapshot{},
 		fundRows:          map[string]fundSnapshot{},
 		dailyDays:         map[string][]foundation.TaiwanDailySnapshot{},
