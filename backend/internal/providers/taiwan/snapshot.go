@@ -44,6 +44,30 @@ func identityAllowlist(items []foundation.SecurityIdentity) map[string]map[strin
 }
 
 func (c *Client) refreshDaily(ctx context.Context, target time.Time, allow map[string]map[string]foundation.SecurityIdentity) foundation.TaiwanRefreshSection {
+	dateKey := target.Format("2006-01-02")
+	existing := c.dailyOn(target)
+	if len(existing) > 0 && hasExchangeRows(existing, "TWSE") && hasExchangeRows(existing, "TPEX") {
+		return sectionResult(dateKey, len(existing), nil)
+	}
+
+	c.dailyFlightMu.Lock()
+	if flight, active := c.dailyFlights[dateKey]; active {
+		c.dailyFlightMu.Unlock()
+		flight.wg.Wait()
+		return flight.section
+	}
+	flight := &dailyFlightCall{}
+	flight.wg.Add(1)
+	c.dailyFlights[dateKey] = flight
+	c.dailyFlightMu.Unlock()
+
+	defer func() {
+		c.dailyFlightMu.Lock()
+		delete(c.dailyFlights, dateKey)
+		c.dailyFlightMu.Unlock()
+		flight.wg.Done()
+	}()
+
 	date := target.In(taipei()).Format("20060102")
 	twseURL := c.twseReportBaseURL + "/rwd/zh/afterTrading/MI_INDEX?response=json&type=ALL&date=" + date
 	tpexURL := c.tpexReportBaseURL + "/www/zh-tw/afterTrading/dailyQuotes?response=json&date=" + target.In(taipei()).Format("2006/01/02")
@@ -60,7 +84,9 @@ func (c *Client) refreshDaily(ctx context.Context, target time.Time, allow map[s
 	} else {
 		rows = append(rows, parseTPExDailySnapshot(tpex, target, allow["TPEX"], tpexURL)...)
 	}
-	return c.storeDaily(target, rows, errors)
+	section := c.storeDaily(target, rows, errors)
+	flight.section = section
+	return section
 }
 
 func parseTWSEDailySnapshot(payload monthlyResponse, target time.Time, allow map[string]foundation.SecurityIdentity, sourceURL string) []foundation.TaiwanDailySnapshot {

@@ -40,11 +40,27 @@ type Client struct {
 	cashflowMu       sync.Mutex
 	cashflowSnapshot *cashflowSnapshot
 	snapshotMu       sync.RWMutex
-	dailyDays        map[string][]foundation.TaiwanDailySnapshot
-	instDays         map[string][]foundation.InstitutionalFlow
-	marginDays       map[string][]foundation.MarginTrading
-	calendar         foundation.TaiwanTradingCalendar
-	now              func() time.Time
+	dailyDays         map[string][]foundation.TaiwanDailySnapshot
+	instDays          map[string][]foundation.InstitutionalFlow
+	marginDays        map[string][]foundation.MarginTrading
+	calendar          foundation.TaiwanTradingCalendar
+	now               func() time.Time
+	twseSem           chan struct{}
+	chipFlightMu      sync.Mutex
+	chipFlights       map[string]*chipFlightCall
+	dailyFlightMu     sync.Mutex
+	dailyFlights      map[string]*dailyFlightCall
+}
+
+type chipFlightCall struct {
+	wg      sync.WaitGroup
+	payload monthlyResponse
+	err     error
+}
+
+type dailyFlightCall struct {
+	wg      sync.WaitGroup
+	section foundation.TaiwanRefreshSection
 }
 
 type Config struct {
@@ -83,6 +99,9 @@ func NewClient(config Config) *Client {
 		marginDays:        map[string][]foundation.MarginTrading{},
 		calendar:          foundation.TaiwanTradingCalendar{Holidays: config.Holidays},
 		now:               now,
+		twseSem:           make(chan struct{}, 4),
+		chipFlights:       map[string]*chipFlightCall{},
+		dailyFlights:      map[string]*dailyFlightCall{},
 	}
 }
 

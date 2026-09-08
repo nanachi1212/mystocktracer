@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"easy-stock/backend/internal/foundation"
@@ -20,13 +21,56 @@ func (c *Client) Institutional(ctx context.Context, security foundation.Security
 	if err != nil {
 		return foundation.InstitutionalHistory{}, err
 	}
+	results := make([]foundation.InstitutionalFlow, len(dates))
+	present := make([]bool, len(dates))
+
+	type task struct {
+		index int
+		date  time.Time
+	}
+	taskCh := make(chan task, len(dates))
+	for i, date := range dates {
+		taskCh <- task{index: i, date: date}
+	}
+	close(taskCh)
+
+	workers := 4
+	if len(dates) < workers {
+		workers = len(dates)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for t := range taskCh {
+				if ctx.Err() != nil {
+					return
+				}
+				row, rowErr := c.institutionalDay(ctx, security, t.date)
+				if rowErr == nil {
+					mu.Lock()
+					results[t.index] = row
+					present[t.index] = true
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
 	data := make([]foundation.InstitutionalFlow, 0, len(dates))
-	for _, date := range dates {
-		row, rowErr := c.institutionalDay(ctx, security, date)
-		if rowErr == nil {
-			data = append(data, row)
+	for i := 0; i < len(dates); i++ {
+		if present[i] {
+			data = append(data, results[i])
 		}
 	}
+
 	if len(data) == 0 {
 		return foundation.InstitutionalHistory{}, fmt.Errorf("official institutional data is unavailable for %s", security.Canonical)
 	}
@@ -43,13 +87,56 @@ func (c *Client) Margin(ctx context.Context, security foundation.SecurityIdentit
 	if err != nil {
 		return foundation.MarginHistory{}, err
 	}
+	results := make([]foundation.MarginTrading, len(dates))
+	present := make([]bool, len(dates))
+
+	type task struct {
+		index int
+		date  time.Time
+	}
+	taskCh := make(chan task, len(dates))
+	for i, date := range dates {
+		taskCh <- task{index: i, date: date}
+	}
+	close(taskCh)
+
+	workers := 4
+	if len(dates) < workers {
+		workers = len(dates)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for t := range taskCh {
+				if ctx.Err() != nil {
+					return
+				}
+				row, rowErr := c.marginDay(ctx, security, t.date)
+				if rowErr == nil {
+					mu.Lock()
+					results[t.index] = row
+					present[t.index] = true
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
 	data := make([]foundation.MarginTrading, 0, len(dates))
-	for _, date := range dates {
-		row, rowErr := c.marginDay(ctx, security, date)
-		if rowErr == nil {
-			data = append(data, row)
+	for i := 0; i < len(dates); i++ {
+		if present[i] {
+			data = append(data, results[i])
 		}
 	}
+
 	if len(data) == 0 {
 		return foundation.MarginHistory{}, fmt.Errorf("official margin data is unavailable for %s", security.Canonical)
 	}
@@ -79,9 +166,9 @@ func (c *Client) tradingDates(ctx context.Context, security foundation.SecurityI
 func (c *Client) institutionalDay(ctx context.Context, security foundation.SecurityIdentity, date time.Time) (foundation.InstitutionalFlow, error) {
 	var sourceURL string
 	if security.Exchange == "TWSE" {
-		sourceURL = "https://www.twse.com.tw/rwd/zh/fund/T86?response=json&selectType=ALLBUT0999&date=" + date.Format("20060102")
+		sourceURL = c.twseReportBaseURL + "/rwd/zh/fund/T86?response=json&selectType=ALLBUT0999&date=" + date.Format("20060102")
 	} else if security.Exchange == "TPEX" {
-		sourceURL = "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?response=json&type=Daily&sect=AL&date=" + date.Format("2006/01/02")
+		sourceURL = c.tpexReportBaseURL + "/www/zh-tw/insti/dailyTrade?response=json&type=Daily&sect=AL&date=" + date.Format("2006/01/02")
 	} else {
 		return foundation.InstitutionalFlow{}, fmt.Errorf("unsupported Taiwan exchange %q", security.Exchange)
 	}
@@ -155,9 +242,9 @@ func buildInstitutional(s foundation.SecurityIdentity, date time.Time, sourceURL
 func (c *Client) marginDay(ctx context.Context, security foundation.SecurityIdentity, date time.Time) (foundation.MarginTrading, error) {
 	var sourceURL string
 	if security.Exchange == "TWSE" {
-		sourceURL = "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?response=json&selectType=ALL&date=" + date.Format("20060102")
+		sourceURL = c.twseReportBaseURL + "/rwd/zh/marginTrading/MI_MARGN?response=json&selectType=ALL&date=" + date.Format("20060102")
 	} else if security.Exchange == "TPEX" {
-		sourceURL = "https://www.tpex.org.tw/www/zh-tw/margin/balance?response=json&date=" + date.Format("2006/01/02")
+		sourceURL = c.tpexReportBaseURL + "/www/zh-tw/margin/balance?response=json&date=" + date.Format("2006/01/02")
 	} else {
 		return foundation.MarginTrading{}, fmt.Errorf("unsupported Taiwan exchange %q", security.Exchange)
 	}
@@ -214,15 +301,52 @@ func parseMargin(s foundation.SecurityIdentity, date time.Time, sourceURL string
 
 func (c *Client) chipDay(ctx context.Context, sourceURL string) (monthlyResponse, error) {
 	c.chipMu.Lock()
-	defer c.chipMu.Unlock()
 	if cached, ok := c.chipDays[sourceURL]; ok && time.Now().Before(cached.expiresAt) {
+		c.chipMu.Unlock()
 		return cached.payload, nil
 	}
+	c.chipMu.Unlock()
+
+	c.chipFlightMu.Lock()
+	if flight, active := c.chipFlights[sourceURL]; active {
+		c.chipFlightMu.Unlock()
+		flight.wg.Wait()
+		return flight.payload, flight.err
+	}
+	flight := &chipFlightCall{}
+	flight.wg.Add(1)
+	c.chipFlights[sourceURL] = flight
+	c.chipFlightMu.Unlock()
+
+	defer func() {
+		c.chipFlightMu.Lock()
+		delete(c.chipFlights, sourceURL)
+		c.chipFlightMu.Unlock()
+		flight.wg.Done()
+	}()
+
+	isTWSE := strings.Contains(sourceURL, "twse.com.tw")
+	if isTWSE && c.twseSem != nil {
+		select {
+		case c.twseSem <- struct{}{}:
+			defer func() { <-c.twseSem }()
+		case <-ctx.Done():
+			flight.err = ctx.Err()
+			return flight.payload, flight.err
+		}
+	}
+
 	var payload monthlyResponse
 	if err := c.getJSON(ctx, sourceURL, &payload); err != nil {
-		return payload, err
+		flight.err = err
+		return flight.payload, err
 	}
+
+	c.chipMu.Lock()
 	c.chipDays[sourceURL] = chipSnapshot{payload: payload, expiresAt: time.Now().Add(6 * time.Hour)}
+	c.chipMu.Unlock()
+
+	flight.payload = payload
 	return payload, nil
 }
 func optionalLots(raw string) (*int64, error) {
