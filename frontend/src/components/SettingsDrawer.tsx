@@ -12,7 +12,6 @@ import {
 	PlugZap,
 	Plus,
 	RefreshCw,
-	QrCode,
 	Save,
 	Server,
 	ShieldCheck,
@@ -20,7 +19,7 @@ import {
 	X,
 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { AppSettings, BackendConfig, BrowserAuthStatus, LLMConnectionTestResult, LLMModelOption, LLMModelsResult, LLMProfile, ReviewAutomationProfile, RuntimeLogStatus, SecretSettingStatus, WechatServiceStatus, requestJSON } from '../lib/backend';
+import { AppSettings, BackendConfig, BrowserAuthStatus, LLMConnectionTestResult, LLMModelOption, LLMModelsResult, LLMProfile, ReviewAutomationProfile, RuntimeLogStatus, SecretSettingStatus, requestJSON } from '../lib/backend';
 import { llmLocalConnectionError, llmLocalPresets, llmProviderDefinition, llmProviders } from '../lib/llm-providers';
 import { AppUpdatePanel } from './AppUpdatePanel';
 import { HermesAgentSettingsPanel } from './HermesAgentSettingsPanel';
@@ -75,9 +74,6 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 	const [manualModel, setManualModel] = useState(true);
 	const [browserAuthStatuses, setBrowserAuthStatuses] = useState<Record<string, BrowserAuthStatus>>({});
 	const [openingBrowserProfile, setOpeningBrowserProfile] = useState('');
-	const [wechatServiceStatus, setWechatServiceStatus] = useState<WechatServiceStatus>({ available: false, configured: false, authenticated: false, state: 'starting', message: '内置微信公众号服务正在启动' });
-	const [wechatLoginURL, setWechatLoginURL] = useState('');
-	const [wechatLoginBaseline, setWechatLoginBaseline] = useState('');
 	const [runtimeLogStatus, setRuntimeLogStatus] = useState<RuntimeLogStatus | null>(null);
 	const [openingRuntimeLogs, setOpeningRuntimeLogs] = useState(false);
 	const modelFetchSequence = useRef(0);
@@ -141,35 +137,12 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		void window.aStock.getRuntimeLogStatus().then(setRuntimeLogStatus).catch(() => setRuntimeLogStatus(null));
 	}, [open]);
 
-	useEffect(() => {
-		if (!open) {
-			setWechatLoginURL('');
-			return;
-		}
-		let cancelled = false;
-		const refresh = async () => {
-			const status = await getWechatServiceStatus();
-			if (cancelled) return;
-			setWechatServiceStatus(status);
-			if (wechatLoginURL && status.authenticated && (!wechatLoginBaseline || status.expires_at !== wechatLoginBaseline)) {
-				setWechatLoginURL('');
-				setWechatLoginBaseline('');
-			}
-		};
-		void refresh();
-		const timer = window.setInterval(refresh, wechatLoginURL ? 2000 : 8000);
-		return () => {
-			cancelled = true;
-			window.clearInterval(timer);
-		};
-	}, [open, wechatLoginBaseline, wechatLoginURL]);
-
 	const configuredCount = useMemo(() => {
 		if (!settings) return 0;
 		const sharedCredentials = Object.entries(settings.credentials).filter(([key]) => key !== 'xueqiu_cookie' && key !== 'wechat_api_token').map(([, value]) => value);
 		const browserSessions = Object.values(browserAuthStatuses).filter((item) => item.configured).length;
-		return [...settings.llm_profiles.map((profile) => profile.api_key), ...sharedCredentials].filter((item) => item.configured).length + browserSessions + (wechatServiceStatus.authenticated ? 1 : 0);
-	}, [browserAuthStatuses, settings, wechatServiceStatus.authenticated]);
+		return [...settings.llm_profiles.map((profile) => profile.api_key), ...sharedCredentials].filter((item) => item.configured).length + browserSessions;
+	}, [browserAuthStatuses, settings]);
 
 	const selectedLLMProfile = useMemo(() => llmProfiles.find((profile) => profile.id === activeLLMProfileID), [activeLLMProfileID, llmProfiles]);
 
@@ -372,21 +345,6 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		}
 	};
 
-	const openWechatLogin = async () => {
-		if (!window.aStock?.openWechatLogin) {
-			setWechatServiceStatus({ available: false, configured: false, authenticated: false, state: 'error', message: '扫码登录仅在桌面应用中可用' });
-			return;
-		}
-		try {
-			const status = await window.aStock.openWechatLogin();
-			setWechatServiceStatus(status);
-			setWechatLoginBaseline(status.expires_at || '');
-			setWechatLoginURL(status.login_url || '');
-		} catch (error) {
-			setWechatServiceStatus((current) => ({ ...current, state: 'error', message: error instanceof Error ? error.message : '打开微信公众号扫码页面失败' }));
-		}
-	};
-
 	const persistSettings = async () => {
 		if (!config) throw new Error('後端尚未連線');
 		const credentials: Record<string, string> = {};
@@ -547,35 +505,6 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 			</aside>
 		</div>
 	);
-}
-
-function WechatServiceCard({ status, loginURL, onLogin, onCloseLogin }: { status: WechatServiceStatus; loginURL: string; onLogin: () => void; onCloseLogin: () => void }) {
-	const ready = status.authenticated;
-	const statusLabel = ready ? '已登录' : status.state === 'expired' ? '登录已过期' : status.state === 'starting' ? '正在启动' : status.available ? '等待扫码' : '服务异常';
-	const expiresAt = status.expires_at ? new Date(status.expires_at).toLocaleString('zh-CN', { hour12: false }) : '';
-	return <div className={`wechat-service-panel ${status.state}`}>
-		<div className="wechat-service-summary">
-			<div className="wechat-service-icon">{status.available ? ready ? <CheckCircle2 size={20} /> : <QrCode size={20} /> : <CircleAlert size={20} />}</div>
-			<span><strong>内置微信公众号服务<em>{statusLabel}</em></strong><small>{status.message}</small>{ready && expiresAt && <i>登录有效期至 {expiresAt}</i>}</span>
-			<button type="button" onClick={onLogin} disabled={!status.available || status.state === 'starting'}>{loginURL ? <LoaderCircle className="spin" size={14} /> : <QrCode size={14} />}{loginURL ? '等待扫码' : ready ? '重新扫码' : '扫码登录'}</button>
-		</div>
-		{loginURL && <div className="wechat-login-embedded">
-			<header><span><QrCode size={14} />请使用微信扫码并在手机上确认</span><button type="button" onClick={onCloseLogin}>关闭扫码</button></header>
-			<webview src={loginURL} partition="persist:a-stock-wechat-login" title="微信公众号扫码登录" />
-		</div>}
-		<p><Server size={12} />服务随 App 自动启动，扫码登录仅用于解析你粘贴的具体文章链接；登录凭据只保存在本机用户数据目录。</p>
-	</div>;
-}
-
-async function getWechatServiceStatus(): Promise<WechatServiceStatus> {
-	if (!window.aStock?.getWechatServiceStatus) {
-		return { available: false, configured: false, authenticated: false, state: 'error', message: '内置微信公众号服务仅在桌面应用中可用' };
-	}
-	try {
-		return await window.aStock.getWechatServiceStatus();
-	} catch (error) {
-		return { available: false, configured: false, authenticated: false, state: 'error', message: error instanceof Error ? error.message : '读取微信公众号服务状态失败' };
-	}
 }
 
 function ReviewProfileCard({ profile, browserAuthStatus, openingBrowser, onOpenBrowserLogin, onChange, onRemove, canRemove }: { profile: ReviewProfileDraft; browserAuthStatus?: BrowserAuthStatus; openingBrowser: boolean; onOpenBrowserLogin: () => void; onChange: (patch: Partial<ReviewProfileDraft>) => void; onRemove: () => void; canRemove: boolean }) {

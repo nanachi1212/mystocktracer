@@ -20,13 +20,6 @@ const {
 } = require('./browser-auth.cjs');
 const { createTaogubaBrowserBridge } = require('./taoguba-browser-bridge.cjs');
 const { createXueqiuBrowserBridge } = require('./xueqiu-browser-bridge.cjs');
-const {
-  readWechatServiceStatus,
-  resolveWechatPython,
-  startWechatService,
-  syncWechatServiceSource,
-  waitForWechatHealth,
-} = require('./wechat-service.cjs');
 const { resolveUserDataPath } = require('./user-data.cjs');
 const { resolveHermesRuntimeRoot } = require('./hermes-runtime-root.cjs');
 const { createUpdateBackup, resolveBackupRoot } = require('./data-protection.cjs');
@@ -72,9 +65,6 @@ let xueqiuBrowserBridge;
 let xueqiuBrowserBridgeConfig;
 let taogubaBrowserBridge;
 let taogubaBrowserBridgeConfig;
-let wechatServiceProcess;
-let wechatServiceConfig;
-let wechatServiceError = '';
 let updateManager;
 let updateCheckTimer;
 const reviewLoginWindows = new Map();
@@ -98,35 +88,6 @@ function resourcesRoot() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'resources')
     : path.join(__dirname, 'resources');
-}
-
-async function bootWechatService() {
-	desktopLogger.event('info', 'wechat-service', 'starting');
-  const bundledRoot = resourcesRoot();
-  const sourceDir = process.env.A_STOCK_WECHAT_SERVICE_SOURCE || path.join(bundledRoot, 'wechat-download-api');
-  const workDir = process.env.A_STOCK_WECHAT_SERVICE_HOME || path.join(app.getPath('userData'), 'wechat-download-api');
-  const runtimeRoot = process.env.A_STOCK_HERMES_RUNTIME_ROOT || path.join(bundledRoot, 'hermes-runtime');
-  const python = process.env.A_STOCK_WECHAT_PYTHON || resolveWechatPython(runtimeRoot);
-  syncWechatServiceSource({ sourceDir, workDir });
-
-  const port = await findFreePort('127.0.0.1', 30000, 39999);
-  const baseURL = `http://127.0.0.1:${port}`;
-  wechatServiceProcess = startWechatService({ python, workDir, port, baseURL });
-	wechatServiceProcess.stdout?.on('data', (chunk) => logChildOutput('wechat-service', 'info', chunk));
-	wechatServiceProcess.stderr?.on('data', (chunk) => logChildOutput('wechat-service', 'warn', chunk));
-	wechatServiceProcess.once('error', (error) => desktopLogger.event('error', 'wechat-service', 'process error', error));
-  wechatServiceProcess.once('exit', (code, signal) => {
-		desktopLogger.event(app.isQuitting ? 'info' : 'error', 'wechat-service', `process exited code=${code ?? 'none'} signal=${signal || 'none'} quitting=${Boolean(app.isQuitting)}`);
-    if (!app.isQuitting) {
-      wechatServiceError = `内置微信公众号服务已停止（${signal || `退出码 ${code}`}）`;
-			desktopLogger.event('error', 'wechat-service', wechatServiceError);
-    }
-  });
-  await waitForWechatHealth(baseURL);
-  wechatServiceConfig = { baseURL, workDir };
-  wechatServiceError = '';
-	desktopLogger.event('info', 'wechat-service', 'ready');
-  return wechatServiceConfig;
 }
 
 async function bootBackend() {
@@ -170,13 +131,6 @@ async function createWindow() {
   await Promise.all([
     bootXueqiuBrowserBridge(),
     bootTaogubaBrowserBridge(),
-    bootWechatService().catch((error) => {
-      wechatServiceError = error.message || String(error);
-			desktopLogger.event('error', 'wechat-service', 'startup failed', error);
-      if (wechatServiceProcess && !wechatServiceProcess.killed) wechatServiceProcess.kill();
-      wechatServiceProcess = undefined;
-      wechatServiceConfig = undefined;
-    }),
   ]);
   await bootBackend();
 	const windowIcon = path.join(__dirname, 'assets', 'easy-stock.png');
@@ -196,23 +150,8 @@ async function createWindow() {
       webviewTag: true,
     },
   });
-  window.webContents.on('will-attach-webview', (event, webPreferences, params) => {
-    let allowed = false;
-    try {
-      const source = new URL(params.src);
-      const service = wechatServiceConfig ? new URL(wechatServiceConfig.baseURL) : null;
-      allowed = Boolean(service && source.origin === service.origin && source.pathname === '/login.html');
-    } catch {
-      allowed = false;
-    }
-    if (!allowed) {
-      event.preventDefault();
-      return;
-    }
-    delete webPreferences.preload;
-    webPreferences.nodeIntegration = false;
-    webPreferences.contextIsolation = true;
-    webPreferences.sandbox = true;
+  window.webContents.on('will-attach-webview', (event) => {
+    event.preventDefault();
   });
 	window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
 		if (isMainFrame) desktopLogger.event('error', 'renderer', `load failed code=${errorCode} description=${errorDescription} path=${safeURLPath(validatedURL)}`);
@@ -276,7 +215,6 @@ async function stopRuntime() {
     xueqiuBrowserBridge?.close(),
     taogubaBrowserBridge?.close(),
     terminateChild(backendProcess),
-    terminateChild(wechatServiceProcess),
   ].filter(Boolean));
   xueqiuBrowserBridge = undefined;
   xueqiuBrowserBridgeConfig = undefined;
@@ -284,8 +222,6 @@ async function stopRuntime() {
   taogubaBrowserBridgeConfig = undefined;
   backendProcess = undefined;
   backendConfig = undefined;
-  wechatServiceProcess = undefined;
-  wechatServiceConfig = undefined;
 }
 
 function initializeUpdateManager() {
@@ -363,7 +299,6 @@ function buildRuntimeEnv(resourcesRoot) {
       A_STOCK_TAOGUBA_BROWSER_BRIDGE_URL: taogubaBrowserBridgeConfig.baseURL,
       A_STOCK_TAOGUBA_BROWSER_BRIDGE_TOKEN: taogubaBrowserBridgeConfig.token,
     } : {}),
-    ...(wechatServiceConfig ? { A_STOCK_WECHAT_API_URL: wechatServiceConfig.baseURL } : {}),
     A_STOCK_AGENT_BROWSER_WRAPPER_DIR: browserWrapperDir,
     A_STOCK_AGENT_BROWSER_REAL: browserReal,
     ...(process.env.A_STOCK_HERMES_PYTHON ? { A_STOCK_HERMES_PYTHON: process.env.A_STOCK_HERMES_PYTHON } : {}),
@@ -418,12 +353,6 @@ ipcMain.handle('runtime-log', (_event, entry = {}) => {
 	rendererLogger.event(level, feature, message);
 	return true;
 });
-ipcMain.handle('wechat-service-status', () => currentWechatServiceStatus());
-ipcMain.handle('open-wechat-login', async () => {
-  const status = await currentWechatServiceStatus();
-  if (!status.available || !status.login_url) throw new Error(status.message || '内置微信公众号服务不可用');
-  return { ...status, login_url: `${status.login_url}?embedded=1&time=${Date.now()}` };
-});
 ipcMain.handle('browser-auth-status', (_event, profileId, source = 'xueqiu') => browserAuthStatus(source, profileId));
 ipcMain.handle('open-review-source-login', (_event, source, profileId, homepageURL) => openReviewSourceLogin(source, profileId, homepageURL));
 ipcMain.handle('open-xueqiu-login', (_event, profileId, homepageURL) => openReviewSourceLogin('xueqiu', profileId, homepageURL));
@@ -453,19 +382,6 @@ ipcMain.handle('open-subscription-ai', async (_event, targetUrl) => {
 
 function browserAuthRoot() {
   return process.env.A_STOCK_BROWSER_STATE_DIR || path.join(app.getPath('userData'), 'browser-auth');
-}
-
-async function currentWechatServiceStatus() {
-  if (!wechatServiceConfig) {
-    return {
-      available: false,
-      configured: false,
-      authenticated: false,
-      state: wechatServiceError ? 'error' : 'starting',
-      message: wechatServiceError ? `内置微信公众号服务启动失败：${wechatServiceError}` : '内置微信公众号服务正在启动',
-    };
-  }
-  return readWechatServiceStatus(wechatServiceConfig.baseURL);
 }
 
 function browserAuthStatus(source, profileId) {
@@ -666,7 +582,6 @@ app.on('before-quit', () => {
   if (xueqiuBrowserBridge) void xueqiuBrowserBridge.close();
   if (taogubaBrowserBridge) void taogubaBrowserBridge.close();
   if (backendProcess && !backendProcess.killed) backendProcess.kill();
-  if (wechatServiceProcess && !wechatServiceProcess.killed) wechatServiceProcess.kill();
 });
 
 app.on('window-all-closed', () => {

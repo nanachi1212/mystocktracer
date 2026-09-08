@@ -25,7 +25,6 @@ const requiredPaths = [
 	runtimePython,
 	path.join(resourcesRoot, 'frontend', 'dist', 'index.html'),
 	path.join(resourcesRoot, 'hermes-runtime', 'runtime-manifest.json'),
-	path.join(resourcesRoot, 'wechat-download-api', 'easy-stock-wechat-runtime.json'),
 	path.join(resourcesRoot, 'agent-browser'),
 ];
 for (const requiredPath of requiredPaths) {
@@ -61,7 +60,7 @@ walk(packageRoot, (entryPath, entry) => {
 if (violations.length) {
 	throw new Error(`Release package contains local or sensitive runtime files:\n${violations.map((item) => `- ${item}`).join('\n')}`);
 }
-verifyBundledPython(runtimePython, path.join(resourcesRoot, 'wechat-download-api'));
+verifyBundledPython(runtimePython);
 console.log(`Release package verified: ${packageRoot}`);
 
 function verifyMacBundle(appPath) {
@@ -83,12 +82,12 @@ function verifyMacBundle(appPath) {
 	}
 }
 
-function verifyBundledPython(python, wechatRoot) {
-	const script = 'import sys; sys.path.insert(0, sys.argv[1]); import hermes_cli, tui_gateway, app';
+function verifyBundledPython(python) {
+	const script = 'import hermes_cli, tui_gateway';
 	// Windows executes the copied base interpreter directly, so isolated mode
 	// proves it does not resolve packages from the build runner. The macOS
 	// launcher intentionally supplies its package-local PYTHONPATH.
-	const args = platform === 'windows' ? ['-I', '-c', script, wechatRoot] : ['-c', script, wechatRoot];
+	const args = platform === 'windows' ? ['-I', '-c', script] : ['-c', script];
 	const result = spawnSync(python, args, {
 		cwd: packageRoot,
 		encoding: 'utf8',

@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 
 import { prepareHermesRuntime } from './hermes-runtime.mjs';
 import { resolvePackageResourcesDir } from './package-resources.mjs';
-import { prepareWechatRuntime } from './wechat-runtime.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(desktopRoot, '..');
@@ -26,11 +25,7 @@ fs.cpSync(path.join(repoRoot, 'frontend', 'dist'), path.join(resourcesRoot, 'fro
 prepareAgentBrowser();
 
 const manifest = prepareHermesRuntime({ runtimeRoot: path.join(resourcesRoot, 'hermes-runtime') });
-const wechatManifest = prepareWechatRuntime({
-	resourcesRoot,
-	runtimeRoot: path.join(resourcesRoot, 'hermes-runtime'),
-});
-console.log(`Desktop resources ready: Hermes ${manifest.version} (${manifest.mode}), WeChat API ${wechatManifest.revision.slice(0, 12)}`);
+console.log(`Desktop resources ready: Hermes ${manifest.version} (${manifest.mode})`);
 
 function prepareAgentBrowser() {
 	const packageRoot = path.join(repoRoot, 'node_modules', 'agent-browser');

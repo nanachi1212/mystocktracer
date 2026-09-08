@@ -58,6 +58,9 @@ test('preload exposes updater IPC calls and removes status listeners cleanly', a
   assert.deepEqual(invocations.slice(-1), [
     ['open-subscription-ai', 'https://chatgpt.com/'],
   ]);
+
+  assert.equal(exposed.getWechatServiceStatus, undefined);
+  assert.equal(exposed.openWechatLogin, undefined);
 });
 
 test('production subscription AI URL validator permits only official URLs and rejects arbitrary URLs', () => {
