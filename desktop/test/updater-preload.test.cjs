@@ -53,4 +53,30 @@ test('preload exposes updater IPC calls and removes status listeners cleanly', a
   assert.equal(received.state, 'downloaded');
   unsubscribe();
   assert.equal(listeners.has('app-update-status-changed'), false);
+
+  await exposed.openSubscriptionAI('https://chatgpt.com/');
+  assert.deepEqual(invocations.slice(-1), [
+    ['open-subscription-ai', 'https://chatgpt.com/'],
+  ]);
+});
+
+test('production subscription AI URL validator permits only official URLs and rejects arbitrary URLs', () => {
+  const { validateSubscriptionAIURL, ALLOWED_SUBSCRIPTION_AI_URLS } = require('../subscription-ai-url.cjs');
+
+  assert.equal(ALLOWED_SUBSCRIPTION_AI_URLS.size, 3);
+  assert.equal(ALLOWED_SUBSCRIPTION_AI_URLS.has('https://chatgpt.com/'), true);
+  assert.equal(ALLOWED_SUBSCRIPTION_AI_URLS.has('https://claude.ai/'), true);
+  assert.equal(ALLOWED_SUBSCRIPTION_AI_URLS.has('https://gemini.google.com/'), true);
+
+  assert.equal(validateSubscriptionAIURL('https://chatgpt.com/'), true);
+  assert.equal(validateSubscriptionAIURL('https://claude.ai/'), true);
+  assert.equal(validateSubscriptionAIURL('https://gemini.google.com/'), true);
+
+  assert.throws(() => validateSubscriptionAIURL('https://example.com/'), /不允許開啟的外部網址/);
+  assert.throws(() => validateSubscriptionAIURL('javascript:alert(1)'), /不允許開啟的外部網址/);
+  assert.throws(() => validateSubscriptionAIURL('file:///etc/passwd'), /不允許開啟的外部網址/);
+  assert.throws(() => validateSubscriptionAIURL('https://chatgpt.com/evil'), /不允許開啟的外部網址/);
+  assert.throws(() => validateSubscriptionAIURL('https://gemini.google.com.attacker.com/'), /不允許開啟的外部網址/);
+  assert.throws(() => validateSubscriptionAIURL(null), /不允許開啟的外部網址/);
+  assert.throws(() => validateSubscriptionAIURL(''), /不允許開啟的外部網址/);
 });

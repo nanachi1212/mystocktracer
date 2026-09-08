@@ -22,6 +22,7 @@ export type BackendBridge = {
   openUpdateRelease?: () => Promise<void>;
   openUpdateBackups?: () => Promise<void>;
   onUpdateStatus?: (listener: (status: AppUpdateStatus) => void) => () => void;
+  openSubscriptionAI?: (targetUrl: string) => Promise<void>;
 };
 
 export type RuntimeLogStatus = {

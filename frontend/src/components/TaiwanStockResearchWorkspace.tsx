@@ -1,8 +1,9 @@
-import { Bot, LoaderCircle, Search, Star } from 'lucide-react';
+import { Bot, Compass, LoaderCircle, Search, Star } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { BackendConfig, SecurityIdentity } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
+import { SubscriptionAIModal } from './SubscriptionAIModal';
 import { addTaiwanWatchlistSecurity, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel, type TaiwanResearchEntryContext } from '../lib/taiwan-product';
 
 export type Evidence = { status: string; freshness?: string; as_of?: string; reason?: string; data?: Record<string, unknown> };
@@ -80,6 +81,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 	// so the refreshKey retry of the already-selected symbol below preserves it); explicit null clears
 	// it for a manual search/selection, since that is not a Screener-originated navigation.
 	const [screenerContext, setScreenerContext] = useState<TaiwanResearchEntryContext | null>(null);
+	const [subscriptionAIModalOpen, setSubscriptionAIModalOpen] = useState(false);
 
 	const search = async (value = query) => {
 		if (!config || !value.trim()) return;
@@ -191,7 +193,31 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 			<EvidenceOverview intelligence={intelligence} />
 			<TaiwanResearchSnapshot fundamentals={intelligence.fundamentals} />
 			{intelligence.interpretation && <InterpretationView intelligence={intelligence} />}
-			<section className="taiwan-ai-action"><div><strong>AI 研究</strong><p>AI 只會在你按下按鈕後，依上方官方資料與確定性解讀產生摘要。</p></div><button type="button" onClick={() => void generateResearch()} disabled={researching}>{researching ? <><LoaderCircle className="spin" size={14} />產生中</> : <><Bot size={14} />產生 AI 研究摘要</>}</button></section>
+			<section className="taiwan-ai-action">
+				<div>
+					<strong>AI 研究</strong>
+					<p>可產生本機模型摘要，或複製客觀證據至 ChatGPT、Claude、Gemini 等已訂閱 AI 進行深入分析。</p>
+				</div>
+				<div className="taiwan-ai-actions-group">
+					<button
+						type="button"
+						className="taiwan-subscription-ai-btn"
+						onClick={() => setSubscriptionAIModalOpen(true)}
+					>
+						<Compass size={14} />
+						使用已訂閱的 AI
+					</button>
+					<button type="button" onClick={() => void generateResearch()} disabled={researching}>
+						{researching ? <><LoaderCircle className="spin" size={14} />產生中</> : <><Bot size={14} />產生 AI 研究摘要</>}
+					</button>
+				</div>
+			</section>
+			{subscriptionAIModalOpen && intelligence && (
+				<SubscriptionAIModal
+					intelligence={intelligence}
+					onClose={() => setSubscriptionAIModalOpen(false)}
+				/>
+			)}
 			{research && <ResearchView research={research} />}
 		</>}
 		{!intelligence && !loading && <div className="taiwan-empty-state"><strong>選擇台灣證券開始分析</strong><p>可搜尋上市或上櫃股票；原始資料載入不會呼叫 AI。</p></div>}

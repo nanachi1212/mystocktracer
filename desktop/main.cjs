@@ -33,6 +33,7 @@ const { createUpdateBackup, resolveBackupRoot } = require('./data-protection.cjs
 const { UpdateManager } = require('./update-manager.cjs');
 const { resolveUpdateFeedURL } = require('./update-feed.cjs');
 const { createRotatingLogger } = require('./runtime-logger.cjs');
+const { validateSubscriptionAIURL } = require('./subscription-ai-url.cjs');
 
 app.setName('easy-stock');
 const defaultUserDataPath = app.getPath('userData');
@@ -444,6 +445,10 @@ ipcMain.handle('app-update-open-backups', async () => {
   fs.mkdirSync(backupRoot, { recursive: true, mode: 0o700 });
   const error = await shell.openPath(backupRoot);
   if (error) throw new Error(error);
+});
+ipcMain.handle('open-subscription-ai', async (_event, targetUrl) => {
+  validateSubscriptionAIURL(targetUrl);
+  return shell.openExternal(targetUrl);
 });
 
 function browserAuthRoot() {

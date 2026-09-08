@@ -443,3 +443,12 @@ describe('M8C — ResearchView strengths/risks rendering', () => {
 		expect(strengthsOnly).not.toContain('風險證據');
 	});
 });
+
+describe('P5.3A — Subscription AI integration in TaiwanStockResearchWorkspace', () => {
+	it('contains the [使用已訂閱的 AI] button and wires SubscriptionAIModal correctly', () => {
+		const source = researchSource();
+		expect(source).toContain('使用已訂閱的 AI');
+		expect(source).toContain('setSubscriptionAIModalOpen(true)');
+		expect(source).toContain('<SubscriptionAIModal');
+	});
+});

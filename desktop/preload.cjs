@@ -21,4 +21,5 @@ contextBridge.exposeInMainWorld('aStock', {
     ipcRenderer.on('app-update-status-changed', handler);
     return () => ipcRenderer.removeListener('app-update-status-changed', handler);
   },
+  openSubscriptionAI: (targetUrl) => ipcRenderer.invoke('open-subscription-ai', targetUrl),
 });
