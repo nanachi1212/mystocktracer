@@ -620,6 +620,7 @@ func newCashflowTestClient(server *httptest.Server, now time.Time) *Client {
 	return NewClient(Config{
 		TWSEBaseURL: server.URL, TPExBaseURL: server.URL, CashflowBaseURL: server.URL,
 		HTTPClient: server.Client(), Now: func() time.Time { return now },
+		SyncCashflow: true,
 	})
 }
 
@@ -820,6 +821,7 @@ func TestCashflowPersistentCache_ColdRestartHitsDiskWithoutHTTP(t *testing.T) {
 		HTTPClient:       server.Client(),
 		CashflowCacheDir: cacheDir,
 		Now:              func() time.Time { return now },
+		SyncCashflow:     true,
 	})
 
 	rows1, freshness1, err := c1.ScreenerCashflow(context.Background(), now)
@@ -841,6 +843,7 @@ func TestCashflowPersistentCache_ColdRestartHitsDiskWithoutHTTP(t *testing.T) {
 		HTTPClient:       server.Client(),
 		CashflowCacheDir: cacheDir,
 		Now:              func() time.Time { return now },
+		SyncCashflow:     true,
 	})
 
 	rows2, freshness2, err := c2.ScreenerCashflow(context.Background(), now)
@@ -877,6 +880,7 @@ func TestCashflowPersistentCache_CorruptFileFallsBackToNetwork(t *testing.T) {
 		HTTPClient:       server.Client(),
 		CashflowCacheDir: cacheDir,
 		Now:              func() time.Time { return now },
+		SyncCashflow:     true,
 	})
 
 	rows, freshness, err := c.ScreenerCashflow(context.Background(), now)
@@ -914,6 +918,7 @@ func TestCashflowPersistentCache_SchemaVersionMismatchInvalidates(t *testing.T) 
 		HTTPClient:       server.Client(),
 		CashflowCacheDir: cacheDir,
 		Now:              func() time.Time { return now },
+		SyncCashflow:     true,
 	})
 
 	// Schema mismatch should be treated as cache miss, falling through to network

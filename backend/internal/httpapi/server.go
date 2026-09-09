@@ -440,6 +440,9 @@ func (s *Server) Close() error {
 	if s.themeRadarStore != nil {
 		closeErrors = append(closeErrors, s.themeRadarStore.Close())
 	}
+	if closer, ok := s.taiwanScreenerCashflow.(io.Closer); ok {
+		closeErrors = append(closeErrors, closer.Close())
+	}
 	return errors.Join(closeErrors...)
 }
 

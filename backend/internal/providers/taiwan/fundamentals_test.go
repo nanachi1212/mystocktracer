@@ -1707,6 +1707,7 @@ func statementTestServer(t *testing.T, twseCodes, tpexCodes []string, incomeRows
 func newStatementTestClient(server *httptest.Server) *Client {
 	return NewClient(Config{
 		TWSEBaseURL: server.URL, TPExBaseURL: server.URL, CashflowBaseURL: server.URL, HTTPClient: server.Client(),
+		SyncCashflow: true,
 	})
 }
 

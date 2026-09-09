@@ -33,24 +33,28 @@ type Client struct {
 	chipDays          map[string]chipSnapshot
 	fundMu            sync.Mutex
 	fundRows          map[string]fundSnapshot
-	// M7H — cashflowMu guards the single current cashflowSnapshot (see cashflow_xbrl.go): the whole
-	// check-cache/discover/download/parse/store sequence runs under this lock (mirroring chipDay's
-	// existing tight-locking pattern, not fundamentalsRows' looser check-then-fetch one), so concurrent
-	// cold Screener requests never each trigger their own 110-130MB archive download.
-	cashflowMu       sync.Mutex
-	cashflowSnapshot *cashflowSnapshot
-	cashflowCacheDir string // empty means no persistent cache
-	snapshotMu       sync.RWMutex
-	dailyDays         map[string][]foundation.TaiwanDailySnapshot
-	instDays          map[string][]foundation.InstitutionalFlow
-	marginDays        map[string][]foundation.MarginTrading
-	calendar          foundation.TaiwanTradingCalendar
-	now               func() time.Time
-	twseSem           chan struct{}
-	chipFlightMu      sync.Mutex
-	chipFlights       map[string]*chipFlightCall
-	dailyFlightMu     sync.Mutex
-	dailyFlights      map[string]*dailyFlightCall
+	// M7H/P5.5B.2 — cashflowMu guards cashflowSnapshot, cashflowFilling, and cashflowRetryAfter.
+	cashflowMu          sync.Mutex
+	cashflowSnapshot    *cashflowSnapshot
+	cashflowCacheDir    string // empty means no persistent cache
+	cashflowFilling     bool
+	cashflowRetryAfter  time.Time
+	cashflowFillDone    chan struct{}
+	syncCashflow        bool
+	bgCtx               context.Context
+	bgCancel            context.CancelFunc
+	closeOnce           sync.Once
+	snapshotMu          sync.RWMutex
+	dailyDays           map[string][]foundation.TaiwanDailySnapshot
+	instDays            map[string][]foundation.InstitutionalFlow
+	marginDays          map[string][]foundation.MarginTrading
+	calendar            foundation.TaiwanTradingCalendar
+	now                 func() time.Time
+	twseSem             chan struct{}
+	chipFlightMu        sync.Mutex
+	chipFlights         map[string]*chipFlightCall
+	dailyFlightMu       sync.Mutex
+	dailyFlights        map[string]*dailyFlightCall
 }
 
 type chipFlightCall struct {
@@ -75,6 +79,7 @@ type Config struct {
 	CashflowCacheDir  string // optional directory for persistent cashflow snapshot cache
 	Holidays          map[string]bool
 	Now               func() time.Time
+	SyncCashflow      bool // synchronous cashflow fill mode for tests; default false (production is always async background fill)
 }
 
 func NewClient(config Config) *Client {
@@ -86,6 +91,7 @@ func NewClient(config Config) *Client {
 	if now == nil {
 		now = time.Now
 	}
+	bgCtx, bgCancel := context.WithCancel(context.Background())
 	return &Client{
 		httpClient:        httpClient,
 		twseBaseURL:       first(config.TWSEBaseURL, defaultTWSEBaseURL),
@@ -95,6 +101,9 @@ func NewClient(config Config) *Client {
 		tpexReportBaseURL: first(config.TPExReportBaseURL, "https://www.tpex.org.tw"),
 		cashflowBaseURL:   first(config.CashflowBaseURL, defaultCashflowBaseURL),
 		cashflowCacheDir:  config.CashflowCacheDir,
+		syncCashflow:      config.SyncCashflow,
+		bgCtx:             bgCtx,
+		bgCancel:          bgCancel,
 		chipDays:          map[string]chipSnapshot{},
 		fundRows:          map[string]fundSnapshot{},
 		dailyDays:         map[string][]foundation.TaiwanDailySnapshot{},
@@ -105,6 +114,37 @@ func NewClient(config Config) *Client {
 		twseSem:           make(chan struct{}, 4),
 		chipFlights:       map[string]*chipFlightCall{},
 		dailyFlights:      map[string]*dailyFlightCall{},
+	}
+}
+
+// Close cancels any running background worker and cleans up process-owned resources.
+func (c *Client) Close() error {
+	c.closeOnce.Do(func() {
+		if c.bgCancel != nil {
+			c.bgCancel()
+		}
+	})
+	return nil
+}
+
+// AwaitCashflowFill blocks until any in-progress background cashflow fill finishes,
+// or until ctx expires. If no fill is running, it returns immediately.
+func (c *Client) AwaitCashflowFill(ctx context.Context) error {
+	c.cashflowMu.Lock()
+	if !c.cashflowFilling {
+		c.cashflowMu.Unlock()
+		return nil
+	}
+	done := c.cashflowFillDone
+	c.cashflowMu.Unlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

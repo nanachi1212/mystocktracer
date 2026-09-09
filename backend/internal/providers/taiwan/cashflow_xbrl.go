@@ -42,7 +42,7 @@ const (
 	cashflowAvailableTTL       = 7 * 24 * time.Hour
 	cashflowUnavailableTTL     = 15 * time.Minute
 	cashflowMaxArchiveBytes    = 512 << 20        // generous bound on a single quarterly archive (observed ~110-130MB).
-	cashflowArchiveHTTPTimeout = 90 * time.Second // a ~110-130MB archive routinely takes >15s; see fetchCashflowCandidateZIP.
+	cashflowArchiveHTTPTimeout = 10 * time.Minute // M7H/P5.5B.2: 10m to support slow networks (0.30 MB/s downloading ~110-130MB ZIP takes 6-7 mins).
 	cashflowOCFConcept         = "ifrs-full:CashFlowsFromUsedInOperatingActivities"
 	cashflowProfitLossConcept  = "ifrs-full:ProfitLoss"
 )
@@ -217,41 +217,87 @@ func cashflowRatio(numerator, denominator *int64) *float64 {
 }
 
 // cashflowData returns the current cash-flow snapshot, reusing a fresh cached one (available, partial,
-// or unavailable — all three are legitimate cacheable results, see cashflowUnavailableTTL) or
-// performing exactly one bounded discovery+download+parse cycle when the cache is stale/empty.
-// cashflowMu is held across the entire sequence (mirroring chipDay's existing tight-locking pattern in
-// chip.go, not fundamentalsRows' looser check-then-fetch one), so concurrent cold callers never each
-// trigger a duplicate 110-130MB download — they serialize and then all reuse the one result.
-//
-// Persistent cache: when CashflowCacheDir is configured, a successful network result is saved to disk
-// as JSON, and on cold start the disk cache is checked before falling through to the network path.
+// cashflowData returns the current cash-flow snapshot. If a valid cache exists (in memory or on disk),
+// it returns immediately. On a cache miss, it triggers a single background fill worker (governed by the
+// process lifecycle, not caller request context) if not already running and not in failure cooldown,
+// and immediately returns an unavailable snapshot so the caller is never blocked for minutes.
+// In test mode (SyncCashflow: true), it synchronously waits for the fill worker to finish.
 func (c *Client) cashflowData(ctx context.Context, now time.Time) (*cashflowSnapshot, error) {
 	c.cashflowMu.Lock()
-	defer c.cashflowMu.Unlock()
 	if c.cashflowSnapshot != nil && now.Before(c.cashflowSnapshot.ExpiresAt) {
-		return c.cashflowSnapshot, nil
+		snap := c.cashflowSnapshot
+		c.cashflowMu.Unlock()
+		return snap, nil
 	}
 	// Cold start: try disk cache before expensive network fetch.
 	if c.cashflowSnapshot == nil {
 		if cached := c.loadCashflowCache(now); cached != nil {
 			c.cashflowSnapshot = cached
+			c.cashflowMu.Unlock()
 			return cached, nil
 		}
 	}
-	snapshot, err := c.discoverAndParseCashflow(ctx, now)
-	if err != nil {
-		// Fatal/local failure (context cancellation, Directory() dependency failure, temp-file resource
-		// failure) — never cache this as "official source unavailable"; propagate the real error.
-		return nil, err
+
+	// Cache miss: trigger background fill if not already running and not in failure cooldown.
+	if !c.cashflowFilling && !now.Before(c.cashflowRetryAfter) {
+		c.cashflowFilling = true
+		c.cashflowFillDone = make(chan struct{})
+		go c.runBackgroundCashflowFill(now)
 	}
-	if snapshot.Status == "unavailable" {
-		snapshot.ExpiresAt = now.Add(cashflowUnavailableTTL)
+
+	syncWait := c.syncCashflow
+	doneCh := c.cashflowFillDone
+	c.cashflowMu.Unlock()
+
+	if syncWait && doneCh != nil {
+		select {
+		case <-doneCh:
+			c.cashflowMu.Lock()
+			snap := c.cashflowSnapshot
+			c.cashflowMu.Unlock()
+			if snap != nil {
+				return snap, nil
+			}
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	return &cashflowSnapshot{Status: "unavailable"}, nil
+}
+
+// runBackgroundCashflowFill executes the discovery, download, parsing, and caching of quarterly
+// cash-flow data in the background using the process-owned bgCtx. It deduplicates via cashflowFilling
+// and respects failure cooldown on errors.
+func (c *Client) runBackgroundCashflowFill(now time.Time) {
+	ctx := c.bgCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	curTime := now
+	if c.now != nil {
+		curTime = c.now()
+	}
+
+	snapshot, err := c.discoverAndParseCashflow(ctx, curTime)
+
+	c.cashflowMu.Lock()
+	defer c.cashflowMu.Unlock()
+
+	if err != nil || snapshot == nil || snapshot.Status == "unavailable" {
+		c.cashflowRetryAfter = curTime.Add(cashflowUnavailableTTL)
 	} else {
-		snapshot.ExpiresAt = now.Add(cashflowAvailableTTL)
+		snapshot.ExpiresAt = curTime.Add(cashflowAvailableTTL)
+		c.cashflowSnapshot = snapshot
+		c.cashflowRetryAfter = time.Time{}
+		c.saveCashflowCache(snapshot)
 	}
-	c.cashflowSnapshot = snapshot
-	c.saveCashflowCache(snapshot)
-	return snapshot, nil
+
+	c.cashflowFilling = false
+	if c.cashflowFillDone != nil {
+		close(c.cashflowFillDone)
+	}
 }
 
 // discoverAndParseCashflow performs the bounded discovery+download+parse cycle: fetch t203sb02, take
