@@ -521,3 +521,66 @@ describe('M8D — no new dependency, no polling, no CSS beyond the documented mi
 		expect(source).toContain('formatTaiwanCashFlowTWD');
 	});
 });
+
+describe('P5.6 — ETF applicability differentiation in WatchlistSummaryPanel', () => {
+	it('A. regular stock (security_type = stock) renders valuation, balance sheet, and cash flow', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation(), statement: summaryStatement() }} onRetry={() => {}} securityType="stock" />);
+		expect(html).toContain('估值');
+		expect(html).toContain('本益比 18.5');
+		expect(html).toContain('資產負債');
+		expect(html).toContain('負債比 30.94%');
+		expect(html).toContain('現金流量');
+		expect(html).toContain('營業活動現金流量');
+		expect(html).not.toContain('ETF 不適用一般公司的資產負債表與營業現金流指標。');
+	});
+
+	it('B. ETF (security_type = etf) replaces wall of corporate "—" with clear applicability note', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: null, statement: null }} onRetry={() => {}} securityType="etf" />);
+		expect(html).not.toContain('負債比 —');
+		expect(html).not.toContain('資產負債表期間 —');
+		expect(html).not.toContain('營業活動現金流量 —');
+		expect(html).not.toContain('現金流量期間 —');
+		expect(html).toContain('ETF 不適用一般公司的資產負債表與營業現金流指標。');
+	});
+
+	it('C. ETF retains valuation block when legitimate valuation data exists', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: summaryValuation({ pe: 21.3, pb: 2.8 }), statement: null }} onRetry={() => {}} securityType="etf" />);
+		expect(html).toContain('估值');
+		expect(html).toContain('本益比 21.3');
+		expect(html).toContain('股價淨值比 2.8');
+		expect(html).toContain('ETF 不適用一般公司的資產負債表與營業現金流指標。');
+		expect(html).not.toContain('負債比 —');
+		expect(html).not.toContain('營業活動現金流量 —');
+	});
+
+	it('D. ETF never fakes debt_ratio as 0% or operating_cash_flow as 0', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: null, statement: null }} onRetry={() => {}} securityType="etf" />);
+		expect(html).not.toContain('負債比 0%');
+		expect(html).not.toContain('0 億元');
+	});
+
+	it('E. ETF applicability is not treated as an error state', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: null, statement: null }} onRetry={() => {}} securityType="etf" />);
+		expect(html).not.toContain('market-partial-warning');
+		expect(html).not.toContain('個股摘要載入失敗');
+		expect(html).not.toContain('重試');
+	});
+
+	it('F. regular stock with truly missing/unavailable data still renders — without misapplying ETF note', () => {
+		const html = renderToStaticMarkup(<WatchlistSummaryPanel summary={{ status: 'available', valuation: null, statement: null }} onRetry={() => {}} securityType="stock" />);
+		expect(html).toContain('負債比 —');
+		expect(html).toContain('營業活動現金流量 —');
+		expect(html).not.toContain('ETF 不適用一般公司的資產負債表與營業現金流指標。');
+	});
+
+	it('G. ETF differentiation relies strictly on security_type, never on symbol code or name heuristic', () => {
+		const etfSecurity = security({ code: '0050', name: '元大台灣50', security_type: 'etf' });
+		const htmlETF = renderToStaticMarkup(<WatchlistRow security={etfSecurity} quote={quote()} busy={false} onOpen={() => {}} onRemove={() => {}} expanded={true} summary={{ status: 'available', valuation: null, statement: null }} />);
+		expect(htmlETF).toContain('ETF 不適用一般公司的資產負債表與營業現金流指標。');
+
+		const pseudoStock = security({ code: '0050X', name: '假裝ETF實為股票', security_type: 'stock' });
+		const htmlStock = renderToStaticMarkup(<WatchlistRow security={pseudoStock} quote={quote()} busy={false} onOpen={() => {}} onRemove={() => {}} expanded={true} summary={{ status: 'available', valuation: null, statement: null }} />);
+		expect(htmlStock).toContain('負債比 —');
+		expect(htmlStock).not.toContain('ETF 不適用一般公司的資產負債表與營業現金流指標。');
+	});
+});

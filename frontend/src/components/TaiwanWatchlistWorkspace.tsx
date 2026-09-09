@@ -204,12 +204,34 @@ function fiscalPeriodLabel(year?: number, quarter?: number): string {
 // truthful qualifier next to the value — it is never silently upgraded to a plain value, and never
 // downgraded to "unavailable" when a real value is present. Purely factual labels only — no
 // financial-scoring language (便宜/昂貴/健康/危險/值得買/值得賣) anywhere here.
-export function WatchlistSummaryPanel({ summary, onRetry }: { summary?: WatchlistSummary; onRetry: () => void }) {
+// P5.6 — ETF applicability differentiation: when securityType === 'etf' (from canonical
+// security.security_type, never guessed), corporate balance sheet and operating cash flow domains
+// are not applicable. Instead of rendering a wall of confusing "—" placeholders, display a truthful,
+// clear applicability note explaining that corporate financial statements do not apply to ETFs.
+export function WatchlistSummaryPanel({ summary, onRetry, securityType }: { summary?: WatchlistSummary; onRetry: () => void; securityType?: string }) {
 	if (!summary || summary.status === 'loading') {
 		return <div className="taiwan-watchlist-summary taiwan-loading"><LoaderCircle className="spin" size={14} />正在讀取個股摘要</div>;
 	}
 	if (summary.status === 'error') {
 		return <div className="taiwan-watchlist-summary market-partial-warning">{summary.error}<button type="button" className="taiwan-watchlist-toggle" onClick={onRetry}>重試</button></div>;
+	}
+	const isETF = securityType === 'etf';
+	if (isETF) {
+		const valuation = summary.valuation;
+		const hasValuation = valuation && (valuation.pe != null || valuation.pb != null || valuation.data_date);
+		return <div className="taiwan-watchlist-summary taiwan-detail-grid">
+			{hasValuation ? (
+				<article><span>估值</span>
+					<small>本益比 {formatTaiwanPlainNumber(valuation?.pe)}</small>
+					<small>股價淨值比 {formatTaiwanPlainNumber(valuation?.pb)}</small>
+					<small>資料日期 {valuation?.data_date || '—'}</small>
+				</article>
+			) : null}
+			<article style={hasValuation ? { gridColumn: 'span 2' } : { gridColumn: '1 / -1' }}>
+				<span>ETF 財務說明</span>
+				<small>ETF 不適用一般公司的資產負債表與營業現金流指標。</small>
+			</article>
+		</div>;
 	}
 	const valuation = summary.valuation;
 	const statement = summary.statement;
@@ -254,6 +276,6 @@ export function WatchlistRow({ security, quote, busy, onOpen, onRemove, expanded
 			: <div className="taiwan-watchlist-quote"><span>報價暫時無法取得</span></div>}
 		<button type="button" className="taiwan-watchlist-toggle" aria-expanded={expanded} onClick={onToggleSummary}>{expanded ? '收合摘要' : '展開摘要'}</button>
 		<button type="button" className="taiwan-watchlist-remove" onClick={onRemove} disabled={busy}>{busy ? <LoaderCircle className="spin" size={14} /> : <Trash2 size={14} />}移除自選</button>
-		{expanded && <WatchlistSummaryPanel summary={summary} onRetry={onRetrySummary} />}
+		{expanded && <WatchlistSummaryPanel summary={summary} onRetry={onRetrySummary} securityType={security.security_type} />}
 	</article>;
 }
