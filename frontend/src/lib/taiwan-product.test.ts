@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
 	buildTaiwanScreenerContext, buildTaiwanScreenerMatchReason, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, formatTaiwanRatio, formatTaiwanRevenueTWD, formatTaiwanTWD, resolveTaiwanWorkspace, runScopedRequest,
-	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanMarketDetailNavigation, taiwanResearchPath,
+	taiwanComponentList, taiwanDefaultWorkspace, taiwanFinancialsStatusLabel, taiwanIntelligenceCorePath, taiwanIntelligencePath, taiwanMarketPath, taiwanPrimaryNavigation, taiwanMarketDetailNavigation, taiwanResearchPath,
 	taiwanScreenerDefaultFilters, taiwanScreenerHasBalanceCriteria, taiwanScreenerHasCashflowCriteria, taiwanScreenerHasDividendCriteria, taiwanScreenerHasFinancialsCriteria, taiwanScreenerHasRevenueCriteria, taiwanScreenerHasValuationCriteria,
 	taiwanScreenerMatchReasonSuffix, taiwanScreenerPath, taiwanScreenerSortOptions, taiwanStatusLabel, validateTaiwanScreenerFilters, type TaiwanScreenerFilters, type TaiwanScreenerSecurity,
 	createTaiwanWatchlistBackup, mergeTaiwanWatchlistBackup, parseTaiwanWatchlistBackup,
@@ -226,9 +226,10 @@ describe('Taiwan-first product shell', () => {
 		expect(taiwanMarketPath('market-breadth', 'combined')).toBe('/api/v1/tw/market-breadth?scope=combined');
 		expect(taiwanMarketPath('market-emotion', 'twse')).toBe('/api/v1/tw/market-emotion?scope=twse');
 		expect(taiwanMarketPath('industry-radar', 'tpex')).toBe('/api/v1/tw/industry-radar?scope=tpex');
+		expect(taiwanIntelligenceCorePath('2330.TWSE')).toBe('/api/v1/tw/stocks/2330.TWSE/intelligence/core');
 		expect(taiwanIntelligencePath('2330.TWSE')).toBe('/api/v1/tw/stocks/2330.TWSE/intelligence');
 		expect(taiwanResearchPath('6488.TPEX')).toBe('/api/v1/tw/stocks/6488.TPEX/research');
-		const contracts = [taiwanIntelligencePath('2330.TWSE'), taiwanResearchPath('2330.TWSE')].join(' ');
+		const contracts = [taiwanIntelligenceCorePath('2330.TWSE'), taiwanIntelligencePath('2330.TWSE'), taiwanResearchPath('2330.TWSE')].join(' ');
 		expect(contracts).not.toContain('/api/v1/stocks/ai-analysis');
 		expect(contracts).not.toContain('/api/v1/ai/ws');
 	});

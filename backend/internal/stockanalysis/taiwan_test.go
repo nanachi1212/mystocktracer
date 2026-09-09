@@ -37,6 +37,29 @@ func TestTaiwanStockIntelligencePreservesEvidenceAndContexts(t *testing.T) {
 	}
 }
 
+func TestTaiwanStockIntelligenceCorePreservesIdentityQuoteAndPriceHistory(t *testing.T) {
+	identity := foundation.SecurityIdentity{Canonical: "2330.TWSE", Code: "2330", Name: "台積電", Exchange: "TWSE", Currency: "TWD", Timezone: "Asia/Taipei", Type: foundation.SecurityTypeStock, Industry: "24"}
+	meta := foundation.SourceMeta{Source: "twse:official", SourceURL: "official", TradeDate: "2026-08-31", Freshness: "current", Status: "official_close", FetchedAt: time.Unix(1, 0)}
+	quote := foundation.Quote{Symbol: identity.Canonical, Price: 100, Change: 2, Meta: meta}
+	lines := make([]foundation.KLine, 21)
+	for i := range lines {
+		lines[i] = foundation.KLine{Symbol: identity.Canonical, Time: time.Date(2026, 8, i+1, 0, 0, 0, 0, time.UTC), Close: float64(80 + i), Meta: meta}
+	}
+	got := NewTaiwanStockIntelligenceCore(identity, &quote, lines, "2026-08-31")
+	if got.ModelVersion != TaiwanStockIntelligenceVersion || got.Symbol != "2330.TWSE" || got.Identity.Name != "台積電" {
+		t.Fatalf("identity/version mismatch: %+v", got)
+	}
+	if got.Quote.Data.Price != 100 || got.Quote.TargetLatestCompletedTradingDate != "2026-08-31" {
+		t.Fatalf("quote mismatch: %+v", got.Quote)
+	}
+	if got.PriceHistory.Return5D == nil || got.PriceHistory.Return20D == nil || got.PriceHistory.AvailableWindow != 21 {
+		t.Fatalf("price history mismatch: %+v", got.PriceHistory)
+	}
+	if !reflect.DeepEqual(got, NewTaiwanStockIntelligenceCore(identity, &quote, lines, "2026-08-31")) {
+		t.Fatal("core not deterministic")
+	}
+}
+
 func TestTaiwanReturnRequiresNPlusOneCompletedCloses(t *testing.T) {
 	lines := make([]foundation.KLine, 20)
 	for i := range lines {

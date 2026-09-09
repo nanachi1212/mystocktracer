@@ -67,6 +67,29 @@ func (fixedTaiwanIntelligence) StockIntelligence(_ context.Context, canonical st
 	return stockanalysis.TaiwanStockIntelligence{ModelVersion: stockanalysis.TaiwanStockIntelligenceVersion, Symbol: canonical, Interpretation: &interpretation}, nil
 }
 
+func (fixedTaiwanIntelligence) StockIntelligenceCore(_ context.Context, canonical string, _ time.Time) (stockanalysis.TaiwanStockIntelligenceCore, error) {
+	if canonical != "2330.TWSE" {
+		return stockanalysis.TaiwanStockIntelligenceCore{}, fmt.Errorf("unknown canonical Taiwan security %q", canonical)
+	}
+	return stockanalysis.TaiwanStockIntelligenceCore{
+		ModelVersion: stockanalysis.TaiwanStockIntelligenceVersion,
+		Symbol:       canonical,
+		Identity: stockanalysis.TaiwanIdentityEvidence{
+			CanonicalSymbol: canonical,
+			Code:            "2330",
+			Name:            "台積電",
+			Exchange:        "TWSE",
+			Currency:        "TWD",
+		},
+		Quote: stockanalysis.TaiwanQuoteEvidence{
+			TaiwanEvidenceStatus: stockanalysis.TaiwanEvidenceStatus{Status: "available"},
+		},
+		PriceHistory: stockanalysis.TaiwanPriceHistoryEvidence{
+			TaiwanEvidenceStatus: stockanalysis.TaiwanEvidenceStatus{Status: "available"},
+		},
+	}, nil
+}
+
 func TestTaiwanMarketBreadthScopesAndValidation(t *testing.T) {
 	server := NewServer(Config{TaiwanBreadth: fixedTaiwanBreadth{}})
 	for _, test := range []struct{ scope, want string }{{"twse", `"scope":"TWSE"`}, {"tpex", `"scope":"TPEX"`}, {"combined", `"scope":"COMBINED"`}} {
@@ -124,6 +147,23 @@ func TestTaiwanStockIntelligenceRequiresCanonicalIdentity(t *testing.T) {
 	}
 	response = httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/stocks/2330/intelligence", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("raw code status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestTaiwanStockIntelligenceCoreRequiresCanonicalIdentity(t *testing.T) {
+	server := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}})
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/stocks/2330.TWSE/intelligence/core", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"model_version":"taiwan_stock_intelligence_v1"`) || !strings.Contains(response.Body.String(), `"quote"`) || !strings.Contains(response.Body.String(), `"price_history_summary"`) {
+		t.Fatalf("core status=%d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), `"market_context"`) || strings.Contains(response.Body.String(), `"fundamentals"`) {
+		t.Fatalf("core must not contain full sections: body=%s", response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/tw/stocks/2330/intelligence/core", nil))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("raw code status=%d body=%s", response.Code, response.Body.String())
 	}

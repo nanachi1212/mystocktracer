@@ -22,6 +22,7 @@ export function resolveTaiwanWorkspace(hash: string) {
 
 export const taiwanMarketPath = (kind: 'market-breadth' | 'market-emotion' | 'industry-radar', scope: TaiwanScope) => `/api/v1/tw/${kind}?scope=${scope}`;
 export const taiwanIntelligencePath = (symbol: string) => `/api/v1/tw/stocks/${encodeURIComponent(symbol)}/intelligence`;
+export const taiwanIntelligenceCorePath = (symbol: string) => `/api/v1/tw/stocks/${encodeURIComponent(symbol)}/intelligence/core`;
 export const taiwanResearchPath = (symbol: string) => `/api/v1/tw/stocks/${encodeURIComponent(symbol)}/research`;
 export const taiwanWatchlistPath = () => '/api/v1/tw/watchlist';
 export const taiwanWatchlistRemovePath = (canonical: string) => `/api/v1/tw/watchlist/${encodeURIComponent(canonical)}`;

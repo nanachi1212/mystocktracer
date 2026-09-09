@@ -80,6 +80,36 @@ type TaiwanIndustryContextEvidence struct {
 	TaxonomyStatus string                 `json:"taxonomy_status,omitempty"`
 }
 
+type TaiwanStockIntelligenceCore struct {
+	ModelVersion string                     `json:"model_version"`
+	Symbol       string                     `json:"symbol"`
+	Identity     TaiwanIdentityEvidence     `json:"identity"`
+	Quote        TaiwanQuoteEvidence        `json:"quote"`
+	PriceHistory TaiwanPriceHistoryEvidence `json:"price_history_summary"`
+}
+
+func NewTaiwanStockIntelligenceCore(identity foundation.SecurityIdentity, quote *foundation.Quote, lines []foundation.KLine, targetLatestTradingDate string) TaiwanStockIntelligenceCore {
+	result := TaiwanStockIntelligenceCore{
+		ModelVersion: TaiwanStockIntelligenceVersion,
+		Symbol:       identity.Canonical,
+		Identity: TaiwanIdentityEvidence{
+			CanonicalSymbol:     identity.Canonical,
+			Code:                identity.Code,
+			Name:                identity.Name,
+			Exchange:            identity.Exchange,
+			Currency:            identity.Currency,
+			Timezone:            identity.Timezone,
+			SecurityType:        identity.Type,
+			IndustryCode:        identity.Industry,
+			ClassificationBasis: "current_reference",
+		},
+	}
+	result.Quote = quoteEvidence(quote)
+	result.Quote.TargetLatestCompletedTradingDate = targetLatestTradingDate
+	result.PriceHistory = historyEvidence(lines, 20)
+	return result
+}
+
 type TaiwanStockIntelligence struct {
 	ModelVersion    string                        `json:"model_version"`
 	Symbol          string                        `json:"symbol"`

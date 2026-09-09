@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { InterpretationView, ResearchView, ScreenerEntryContext, TaiwanResearchSnapshot, type Component, type Intelligence, type Research, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
+import { InterpretationView, ResearchView, ScreenerEntryContext, TaiwanResearchSnapshot, type Component, type Intelligence, type IntelligenceCore, type Research, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
 import type { TaiwanResearchEntryContext } from '../lib/taiwan-product';
 import { TaiwanStockResearchErrorBoundary } from './TaiwanStockResearchErrorBoundary';
 
@@ -450,5 +450,43 @@ describe('P5.3A — Subscription AI integration in TaiwanStockResearchWorkspace'
 		expect(source).toContain('使用已訂閱的 AI');
 		expect(source).toContain('setSubscriptionAIModalOpen(true)');
 		expect(source).toContain('<SubscriptionAIModal');
+	});
+});
+
+describe('P5.5C.1 — Two-Stage Progressive Loading in TaiwanStockResearchWorkspace', () => {
+	it('defines IntelligenceCore compatible with minimal quote, price_history, and identity', () => {
+		const core: IntelligenceCore = {
+			model_version: 'taiwan_stock_intelligence_core_v1',
+			symbol: '2330.TWSE',
+			identity: { canonical_symbol: '2330.TWSE', code: '2330', name: '台積電', exchange: 'TWSE', currency: 'TWD', security_type: 'stock' },
+			quote: { status: 'available', data: { price: 950, change_percent: 1.5 } },
+			price_history_summary: { status: 'available', return_5d_percent: 2.1, return_20d_percent: 5.3 },
+		};
+		expect(core.symbol).toBe('2330.TWSE');
+		expect(core.quote.data?.price).toBe(950);
+	});
+
+	it('select() triggers two-stage fetch with core first paint before full intelligence', () => {
+		const source = researchSource();
+		expect(source).toContain('taiwanIntelligenceCorePath(security.canonical)');
+		expect(source).toContain('taiwanIntelligencePath(security.canonical)');
+		const coreIndex = source.indexOf('taiwanIntelligenceCorePath(security.canonical)');
+		const fullIndex = source.indexOf('taiwanIntelligencePath(security.canonical)');
+		expect(coreIndex).toBeGreaterThan(-1);
+		expect(fullIndex).toBeGreaterThan(coreIndex);
+	});
+
+	it('maintains runScopedRequest selectRequestID guard across the two stages to prevent stale races', () => {
+		const source = researchSource();
+		expect(source).toContain('await runScopedRequest(selectRequestID, async () => {');
+		expect(source).toContain('setCoreData(null)');
+		expect(source).toContain('setIntelligence(null)');
+	});
+
+	it('renders displayData (coreData or intelligence) prioritizing header and quote while isolating full error', () => {
+		const source = researchSource();
+		expect(source).toContain('const displayData = intelligence ?? coreData;');
+		expect(source).toContain('{fullError && <div className="market-partial-warning"');
+		expect(source).toContain('{fullLoading && !intelligence && <div className="taiwan-loading"');
 	});
 });

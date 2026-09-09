@@ -12,6 +12,42 @@ import (
 	"easy-stock/backend/internal/stockanalysis"
 )
 
+func (c *Client) StockIntelligenceCore(ctx context.Context, canonical string, now time.Time) (stockanalysis.TaiwanStockIntelligenceCore, error) {
+	identities, err := c.intelligenceDirectory(ctx, canonical)
+	if err != nil {
+		return stockanalysis.TaiwanStockIntelligenceCore{}, err
+	}
+	canonical = strings.TrimSpace(canonical)
+	var identity *foundation.SecurityIdentity
+	for i := range identities {
+		if identities[i].Canonical == canonical {
+			item := identities[i]
+			identity = &item
+			break
+		}
+	}
+	if identity == nil {
+		return stockanalysis.TaiwanStockIntelligenceCore{}, fmt.Errorf("unknown canonical Taiwan security %q", canonical)
+	}
+
+	target := c.calendar.LatestCompleted(now, marketCutoffHour, marketCutoffMinute)
+	targetDate := target.In(taipei()).Format("2006-01-02")
+
+	quote, quoteErr := c.Quote(ctx, *identity)
+	lines, lineErr := c.KLine(ctx, *identity, 22)
+	var quotePtr *foundation.Quote
+	if quoteErr == nil {
+		quotePtr = &quote
+	}
+	if lineErr != nil {
+		lines = nil
+	} else {
+		lines = completedIntelligenceLines(lines, target)
+	}
+
+	return stockanalysis.NewTaiwanStockIntelligenceCore(*identity, quotePtr, lines, targetDate), nil
+}
+
 func (c *Client) StockIntelligence(ctx context.Context, canonical string, now time.Time) (stockanalysis.TaiwanStockIntelligence, error) {
 	identities, err := c.intelligenceDirectory(ctx, canonical)
 	if err != nil {

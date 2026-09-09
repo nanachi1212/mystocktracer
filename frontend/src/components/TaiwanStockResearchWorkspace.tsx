@@ -4,10 +4,17 @@ import type { FormEvent } from 'react';
 import type { BackendConfig, SecurityIdentity } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
 import { SubscriptionAIModal } from './SubscriptionAIModal';
-import { addTaiwanWatchlistSecurity, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel, type TaiwanResearchEntryContext } from '../lib/taiwan-product';
+import { addTaiwanWatchlistSecurity, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligenceCorePath, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel, type TaiwanResearchEntryContext } from '../lib/taiwan-product';
 
 export type Evidence = { status: string; freshness?: string; as_of?: string; reason?: string; data?: Record<string, unknown> };
 export type Component = { state: string; status: string; freshness?: string; as_of?: string; reasons: string[] };
+export type IntelligenceCore = {
+	model_version: string;
+	symbol: string;
+	identity: { canonical_symbol: string; code: string; name: string; exchange: string; currency: string; security_type: string; industry_name?: string };
+	quote: Evidence & { target_latest_completed_trading_date?: string; data?: { price: number; change_percent: number; meta?: { trade_date?: string; is_realtime?: boolean } } };
+	price_history_summary: Evidence & { return_5d_percent: number | null; return_20d_percent: number | null; latest_bar_date?: string };
+};
 // M8A — the single-security valuation/statement shapes actually returned inside
 // fundamentals.data.valuation / fundamentals.data.financial_statement, reusing the exact existing
 // backend field names verbatim (never renamed, never rescaled here). Every metric stays nullable —
@@ -58,10 +65,14 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 	const [matches, setMatches] = useState<SecurityIdentity[]>([]);
 	const [selected, setSelected] = useState<SecurityIdentity | null>(null);
 	const [intelligence, setIntelligence] = useState<Intelligence | null>(null);
+	const [coreData, setCoreData] = useState<IntelligenceCore | null>(null);
 	const [research, setResearch] = useState<Research | null>(null);
 	const [loading, setLoading] = useState(false);
+	const [coreLoading, setCoreLoading] = useState(false);
+	const [fullLoading, setFullLoading] = useState(false);
 	const [researching, setResearching] = useState(false);
 	const [error, setError] = useState('');
+	const [fullError, setFullError] = useState('');
 	const selectRequestID = useRef(0);
 	const selectedRef = useRef<SecurityIdentity | null>(null);
 	useEffect(() => { selectedRef.current = selected; }, [selected]);
@@ -109,14 +120,51 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 		void runScopedRequest(watchlistCheckID, () => isTaiwanSecurityWatchlisted(config, security.canonical), {
 			onSuccess: (saved) => setInWatchlist(saved),
 		});
-		// Clear the previous selection's data immediately so a still-loading new symbol never
-		// renders under the old symbol's heading/evidence — and drop a stale response if the
-		// user has since selected another symbol (last-wins by selection order, not arrival order).
-		await runScopedRequest(selectRequestID, () => requestJSON<{ data: Intelligence }>(config, taiwanIntelligencePath(security.canonical)), {
-			onStart: () => { setIntelligence(null); setResearch(null); setLoading(true); setError(''); },
-			onSuccess: (payload) => setIntelligence(payload.data),
-			onError: (reason) => { setIntelligence(null); setError(taiwanErrorMessage(reason, '台灣個股分析資料載入失敗')); },
-			onSettle: () => setLoading(false),
+
+		// P5.5C.1 Two-Stage Progressive Loading:
+		// Stage 1 (Fast Core): fetch Quote + PriceHistory + Identity (~1-2s).
+		// Stage 2 (Full Intelligence): fetch complete intelligence (Market, Fundamentals, Institutional, Margin).
+		// runScopedRequest guarantees last-wins ordering and cancellation of stale updates.
+		await runScopedRequest(selectRequestID, async () => {
+			let coreSettled = false;
+			try {
+				const corePayload = await requestJSON<{ data: IntelligenceCore }>(config, taiwanIntelligenceCorePath(security.canonical));
+				setCoreData(corePayload.data);
+				setCoreLoading(false);
+				coreSettled = true;
+			} catch (reason) {
+				// If Core fails, we still allow Stage 2 to attempt or set the main error if both fail.
+				setCoreLoading(false);
+			}
+
+			try {
+				const fullPayload = await requestJSON<{ data: Intelligence }>(config, taiwanIntelligencePath(security.canonical));
+				setIntelligence(fullPayload.data);
+				setFullError('');
+			} catch (reason) {
+				if (coreSettled) {
+					setFullError(taiwanErrorMessage(reason, '暫時無法取得完整分析資料（市場與籌碼面）'));
+				} else {
+					setIntelligence(null);
+					setError(taiwanErrorMessage(reason, '台灣個股分析資料載入失敗'));
+				}
+			}
+		}, {
+			onStart: () => {
+				setIntelligence(null);
+				setCoreData(null);
+				setResearch(null);
+				setLoading(true);
+				setCoreLoading(true);
+				setFullLoading(true);
+				setError('');
+				setFullError('');
+			},
+			onSettle: () => {
+				setLoading(false);
+				setCoreLoading(false);
+				setFullLoading(false);
+			},
 		});
 	};
 
@@ -179,48 +227,56 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 		if (!externalSymbolRequest) void search('2330');
 	}, [config, refreshKey, externalSymbolRequest]);
 	const submit = (event: FormEvent) => { event.preventDefault(); void search(); };
+	const displayData = intelligence ?? coreData;
+
 	return <div className="taiwan-product-workspace taiwan-stock-research">
 		<form className="market-filter" onSubmit={submit}><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="輸入 2330、台積電、2330.TWSE 或 6488.TPEX" aria-label="台灣證券名稱或代碼" /></label><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : '搜尋'}</button></form>
 		{error && <div className="market-partial-warning">{error}</div>}
 		{matches.length > 1 && <div className="taiwan-search-results">{matches.map((item) => <button type="button" key={item.canonical} onClick={() => void select(item, null)}><strong>{item.code} {item.name}</strong><span>{item.exchange} · {taiwanSecurityTypeLabel(item.security_type)}</span></button>)}</div>}
 		{selected && inWatchlist !== null && <div><button type="button" className={`taiwan-watchlist-toggle${inWatchlist ? ' saved' : ''}`} onClick={() => void toggleWatchlist()} disabled={watchlistBusy}>{watchlistBusy ? <LoaderCircle className="spin" size={14} /> : <Star size={14} />}{inWatchlist ? '移除自選' : '加入自選'}</button>{watchlistError && <span className="taiwan-watchlist-toggle-error">{watchlistError}</span>}</div>}
-		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取官方個股資料</div>}
-		{intelligence && <>
+		{!displayData && loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取官方個股資料</div>}
+		{displayData && <>
 			{screenerContext && <ScreenerEntryContext context={screenerContext} />}
-			<section className="taiwan-stock-heading"><div><span>{intelligence.identity.exchange} · {taiwanSecurityTypeLabel(intelligence.identity.security_type)} · {intelligence.identity.currency}</span><h2>{intelligence.identity.name} {intelligence.identity.code}</h2><small>{intelligence.identity.canonical_symbol}{intelligence.identity.industry_name ? ` · ${intelligence.identity.industry_name}` : ''}</small></div>{intelligence.quote.data && <div><strong>{intelligence.quote.data.price.toLocaleString('zh-TW')}</strong><em className={intelligence.quote.data.change_percent > 0 ? 'up' : intelligence.quote.data.change_percent < 0 ? 'down' : 'flat'}>{formatTaiwanPercent(intelligence.quote.data.change_percent, true)}</em></div>}</section>
-			<section className="taiwan-status-card"><div><span className={`taiwan-status ${intelligence.quote.status}`}>{taiwanStatusLabel(intelligence.quote.status)}</span><span>{taiwanStatusLabel(intelligence.quote.freshness)}</span></div><small>資料日期 {intelligence.quote.as_of || intelligence.quote.data?.meta?.trade_date || '未提供'} · 最新完成交易日 {intelligence.quote.target_latest_completed_trading_date || '未提供'}</small></section>
-			<section className="taiwan-detail-grid"><article><span>5 日收盤報酬</span><strong>{formatTaiwanPercent(intelligence.price_history_summary.return_5d_percent, true)}</strong><small>{intelligence.price_history_summary.latest_bar_date || '資料不足'}</small></article><article><span>20 日收盤報酬</span><strong>{formatTaiwanPercent(intelligence.price_history_summary.return_20d_percent, true)}</strong></article><article><span>市場狀態</span><strong>{taiwanStatusLabel(intelligence.market_context.state)}</strong><small>資料信心 {taiwanStatusLabel(intelligence.market_context.confidence)}</small></article></section>
-			<EvidenceOverview intelligence={intelligence} />
-			<TaiwanResearchSnapshot fundamentals={intelligence.fundamentals} />
-			{intelligence.interpretation && <InterpretationView intelligence={intelligence} />}
-			<section className="taiwan-ai-action">
-				<div>
-					<strong>AI 研究</strong>
-					<p>可產生本機模型摘要，或複製客觀證據至 ChatGPT、Claude、Gemini 等已訂閱 AI 進行深入分析。</p>
-				</div>
-				<div className="taiwan-ai-actions-group">
-					<button
-						type="button"
-						className="taiwan-subscription-ai-btn"
-						onClick={() => setSubscriptionAIModalOpen(true)}
-					>
-						<Compass size={14} />
-						使用已訂閱的 AI
-					</button>
-					<button type="button" onClick={() => void generateResearch()} disabled={researching}>
-						{researching ? <><LoaderCircle className="spin" size={14} />產生中</> : <><Bot size={14} />產生 AI 研究摘要</>}
-					</button>
-				</div>
-			</section>
-			{subscriptionAIModalOpen && intelligence && (
-				<SubscriptionAIModal
-					intelligence={intelligence}
-					onClose={() => setSubscriptionAIModalOpen(false)}
-				/>
-			)}
-			{research && <ResearchView research={research} />}
+			<section className="taiwan-stock-heading"><div><span>{displayData.identity.exchange} · {taiwanSecurityTypeLabel(displayData.identity.security_type)} · {displayData.identity.currency}</span><h2>{displayData.identity.name} {displayData.identity.code}</h2><small>{displayData.identity.canonical_symbol}{displayData.identity.industry_name ? ` · ${displayData.identity.industry_name}` : ''}</small></div>{displayData.quote.data && <div><strong>{displayData.quote.data.price.toLocaleString('zh-TW')}</strong><em className={displayData.quote.data.change_percent > 0 ? 'up' : displayData.quote.data.change_percent < 0 ? 'down' : 'flat'}>{formatTaiwanPercent(displayData.quote.data.change_percent, true)}</em></div>}</section>
+			<section className="taiwan-status-card"><div><span className={`taiwan-status ${displayData.quote.status}`}>{taiwanStatusLabel(displayData.quote.status)}</span><span>{taiwanStatusLabel(displayData.quote.freshness)}</span></div><small>資料日期 {displayData.quote.as_of || displayData.quote.data?.meta?.trade_date || '未提供'} · 最新完成交易日 {displayData.quote.target_latest_completed_trading_date || '未提供'}</small></section>
+			<section className="taiwan-detail-grid"><article><span>5 日收盤報酬</span><strong>{formatTaiwanPercent(displayData.price_history_summary.return_5d_percent, true)}</strong><small>{displayData.price_history_summary.latest_bar_date || '資料不足'}</small></article><article><span>20 日收盤報酬</span><strong>{formatTaiwanPercent(displayData.price_history_summary.return_20d_percent, true)}</strong></article><article><span>市場狀態</span><strong>{intelligence ? taiwanStatusLabel(intelligence.market_context.state) : (fullLoading ? '載入中…' : '—')}</strong><small>資料信心 {intelligence ? taiwanStatusLabel(intelligence.market_context.confidence) : (fullLoading ? '計算中…' : '—')}</small></article></section>
+
+			{fullError && <div className="market-partial-warning" style={{ marginTop: '12px' }}>{fullError}</div>}
+			{fullLoading && !intelligence && <div className="taiwan-loading" style={{ margin: '20px 0' }}><LoaderCircle className="spin" size={16} />正在載入市場廣度、法人與基本面分析…</div>}
+
+			{intelligence && <>
+				<EvidenceOverview intelligence={intelligence} />
+				<TaiwanResearchSnapshot fundamentals={intelligence.fundamentals} />
+				{intelligence.interpretation && <InterpretationView intelligence={intelligence} />}
+				<section className="taiwan-ai-action">
+					<div>
+						<strong>AI 研究</strong>
+						<p>可產生本機模型摘要，或複製客觀證據至 ChatGPT、Claude、Gemini 等已訂閱 AI 進行深入分析。</p>
+					</div>
+					<div className="taiwan-ai-actions-group">
+						<button
+							type="button"
+							className="taiwan-subscription-ai-btn"
+							onClick={() => setSubscriptionAIModalOpen(true)}
+						>
+							<Compass size={14} />
+							使用已訂閱的 AI
+						</button>
+						<button type="button" onClick={() => void generateResearch()} disabled={researching}>
+							{researching ? <><LoaderCircle className="spin" size={14} />產生中</> : <><Bot size={14} />產生 AI 研究摘要</>}
+						</button>
+					</div>
+				</section>
+				{subscriptionAIModalOpen && (
+					<SubscriptionAIModal
+						intelligence={intelligence}
+						onClose={() => setSubscriptionAIModalOpen(false)}
+					/>
+				)}
+				{research && <ResearchView research={research} />}
+			</>}
 		</>}
-		{!intelligence && !loading && <div className="taiwan-empty-state"><strong>選擇台灣證券開始分析</strong><p>可搜尋上市或上櫃股票；原始資料載入不會呼叫 AI。</p></div>}
+		{!displayData && !loading && <div className="taiwan-empty-state"><strong>選擇台灣證券開始分析</strong><p>可搜尋上市或上櫃股票；原始資料載入不會呼叫 AI。</p></div>}
 	</div>;
 }
 

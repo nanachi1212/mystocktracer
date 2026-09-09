@@ -167,6 +167,7 @@ type TaiwanIndustryRadarProvider interface {
 
 type TaiwanStockIntelligenceProvider interface {
 	StockIntelligence(ctx context.Context, canonical string, now time.Time) (stockanalysis.TaiwanStockIntelligence, error)
+	StockIntelligenceCore(ctx context.Context, canonical string, now time.Time) (stockanalysis.TaiwanStockIntelligenceCore, error)
 }
 
 type TaiwanFundamentalsProvider interface {

@@ -474,6 +474,52 @@ func TestCompletedIntelligenceLinesExcludeUnfinishedFutureBar(t *testing.T) {
 	}
 }
 
+func TestStockIntelligenceCoreDoesNotCallSlowDomains(t *testing.T) {
+	var mu sync.Mutex
+	calledPaths := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calledPaths[r.URL.Path]++
+		mu.Unlock()
+		switch r.URL.Path {
+		case "/opendata/t187ap03_L":
+			_, _ = w.Write([]byte(`[{"公司代號":"2330","公司簡稱":"台積電","產業別":"24"}]`))
+		case "/opendata/t187ap47_L":
+			_, _ = w.Write([]byte(`[]`))
+		case "/exchangeReport/STOCK_DAY":
+			_, _ = w.Write([]byte(`{"stat":"OK","data":[["115/08/29","100","100","100","100","0","0","0","0"],["115/08/30","100","100","100","101","0","0","0","0"],["115/08/31","100","100","100","102","0","0","0","0"]]}`))
+		default:
+			http.Error(w, "slow domain unexpected", http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{
+		TWSEBaseURL:       server.URL,
+		TPExBaseURL:       server.URL,
+		TWSEReportBaseURL: server.URL,
+		TPExReportBaseURL: server.URL,
+		FinMindURL:        server.URL + "/finmind",
+		CashflowBaseURL:   server.URL + "/cashflow",
+	})
+
+	core, err := client.StockIntelligenceCore(context.Background(), "2330.TWSE", time.Date(2026, 9, 1, 18, 0, 0, 0, time.FixedZone("Asia/Taipei", 8*60*60)))
+	if err != nil {
+		t.Fatalf("StockIntelligenceCore failed: %v", err)
+	}
+	if core.Symbol != "2330.TWSE" || core.Identity.Name != "台積電" {
+		t.Fatalf("unexpected core identity: %+v", core.Identity)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for p := range calledPaths {
+		if strings.Contains(p, "MI_INDEX") || strings.Contains(p, "dailyQuotes") || strings.Contains(p, "finmind") || strings.Contains(p, "cashflow") {
+			t.Fatalf("slow domain called: %s", p)
+		}
+	}
+}
+
 func liveString(value *string) string {
 	if value == nil {
 		return "unavailable"
