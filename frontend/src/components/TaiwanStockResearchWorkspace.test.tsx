@@ -4,7 +4,7 @@ import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { InterpretationView, ResearchView, ScreenerEntryContext, TaiwanResearchSnapshot, type Component, type Intelligence, type IntelligenceCore, type Research, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
-import type { TaiwanResearchEntryContext } from '../lib/taiwan-product';
+import { runScopedRequest, type TaiwanResearchEntryContext } from '../lib/taiwan-product';
 import { TaiwanStockResearchErrorBoundary } from './TaiwanStockResearchErrorBoundary';
 
 const root = path.resolve(__dirname, '../../..');
@@ -488,5 +488,334 @@ describe('P5.5C.1 — Two-Stage Progressive Loading in TaiwanStockResearchWorksp
 		expect(source).toContain('const displayData = intelligence ?? coreData;');
 		expect(source).toContain('{fullError && <div className="market-partial-warning"');
 		expect(source).toContain('{fullLoading && !intelligence && <div className="taiwan-loading"');
+	});
+
+	it('TaiwanStockResearchWorkspace source includes per-stage token guards and onSuccess handler', () => {
+		const source = researchSource();
+		expect(source).toContain('const requestID = selectRequestID.current;');
+		const guardMatches = source.match(/if \(requestID !== selectRequestID\.current\) return;/g);
+		expect(guardMatches?.length).toBe(4);
+		expect(source).toContain('onSuccess: () => {},');
+	});
+});
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+	promise.catch(() => {});
+	return { promise, resolve, reject };
+}
+
+describe('P5.5C.1 — Two-Stage Async Race & Lifecycle Behavior', () => {
+	const createSampleCore = (symbol: string, code: string, name: string): IntelligenceCore => ({
+		model_version: 'taiwan_stock_intelligence_core_v1',
+		symbol,
+		identity: { canonical_symbol: symbol, code, name, exchange: 'TWSE', currency: 'TWD', security_type: 'stock' },
+		quote: { status: 'available', data: { price: 100, change_percent: 1.0 } },
+		price_history_summary: { status: 'available', return_5d_percent: 2.0, return_20d_percent: 4.0 },
+	});
+
+	const createSampleFull = (symbol: string, code: string, name: string): Intelligence => ({
+		model_version: 'taiwan_stock_intelligence_v1',
+		symbol,
+		identity: { canonical_symbol: symbol, code, name, exchange: 'TWSE', currency: 'TWD', security_type: 'stock' },
+		quote: { status: 'available', data: { price: 100, change_percent: 1.0 } },
+		price_history_summary: { status: 'available', return_5d_percent: 2.0, return_20d_percent: 4.0 },
+		fundamentals: { status: 'available' },
+		institutional: { status: 'available' },
+		margin: { status: 'available' },
+		market_context: { status: 'available', state: 'active', confidence: 'high' },
+		industry_context: { status: 'available' },
+	});
+
+	interface WorkspaceState {
+		selected: string | null;
+		coreData: IntelligenceCore | null;
+		intelligence: Intelligence | null;
+		loading: boolean;
+		coreLoading: boolean;
+		fullLoading: boolean;
+		error: string;
+		fullError: string;
+	}
+
+	const createSelectRunner = () => {
+		const selectRequestID = { current: 0 };
+		const state: WorkspaceState = {
+			selected: null,
+			coreData: null,
+			intelligence: null,
+			loading: false,
+			coreLoading: false,
+			fullLoading: false,
+			error: '',
+			fullError: '',
+		};
+
+		const select = async (
+			canonical: string,
+			fetchCore: () => Promise<IntelligenceCore>,
+			fetchFull: () => Promise<Intelligence>,
+		) => {
+			state.selected = canonical;
+			await runScopedRequest(selectRequestID, async () => {
+				const requestID = selectRequestID.current;
+				let coreSettled = false;
+				try {
+					const corePayload = await fetchCore();
+					if (requestID !== selectRequestID.current) return;
+					state.coreData = corePayload;
+					state.coreLoading = false;
+					coreSettled = true;
+				} catch {
+					if (requestID !== selectRequestID.current) return;
+					state.coreLoading = false;
+				}
+
+				try {
+					const fullPayload = await fetchFull();
+					if (requestID !== selectRequestID.current) return;
+					state.intelligence = fullPayload;
+					state.fullError = '';
+				} catch (reason) {
+					if (requestID !== selectRequestID.current) return;
+					if (coreSettled) {
+						state.fullError = '暫時無法取得完整分析資料（市場與籌碼面）';
+					} else {
+						state.intelligence = null;
+						state.error = '台灣個股分析資料載入失敗';
+					}
+				}
+			}, {
+				onStart: () => {
+					state.intelligence = null;
+					state.coreData = null;
+					state.loading = true;
+					state.coreLoading = true;
+					state.fullLoading = true;
+					state.error = '';
+					state.fullError = '';
+				},
+				onSuccess: () => {},
+				onSettle: () => {
+					state.loading = false;
+					state.coreLoading = false;
+					state.fullLoading = false;
+				},
+			});
+		};
+
+		return {
+			state,
+			select,
+			selectRequestID,
+		};
+	};
+
+	it('Behavior 1: Stock A Core late resolve does not overwrite Stock B data', async () => {
+		const runner = createSelectRunner();
+		const coreA = deferred<IntelligenceCore>();
+		const fullA = deferred<Intelligence>();
+		const coreB = deferred<IntelligenceCore>();
+		const fullB = deferred<Intelligence>();
+
+		const runA = runner.select('2330.TWSE', () => coreA.promise, () => fullA.promise);
+		expect(runner.state.loading).toBe(true);
+		expect(runner.state.selected).toBe('2330.TWSE');
+
+		// Switch rapidly to Stock B
+		const runB = runner.select('2454.TWSE', () => coreB.promise, () => fullB.promise);
+		expect(runner.state.selected).toBe('2454.TWSE');
+
+		// B's Core resolves first
+		coreB.resolve(createSampleCore('2454.TWSE', '2454', '聯發科'));
+		await Promise.resolve();
+		expect(runner.state.coreData?.identity.code).toBe('2454');
+
+		// A's Core resolves late
+		coreA.resolve(createSampleCore('2330.TWSE', '2330', '台積電'));
+		await Promise.resolve();
+		// Must remain 2454, not overwritten by 2330
+		expect(runner.state.coreData?.identity.code).toBe('2454');
+
+		// Finish B's Full
+		fullB.resolve(createSampleFull('2454.TWSE', '2454', '聯發科'));
+		await runB;
+		expect(runner.state.intelligence?.identity.code).toBe('2454');
+
+		// Finish A's Full late
+		fullA.resolve(createSampleFull('2330.TWSE', '2330', '台積電'));
+		await runA;
+		expect(runner.state.intelligence?.identity.code).toBe('2454');
+	});
+
+	it('Behavior 2: Stock A Full late resolve does not overwrite Stock B data', async () => {
+		const runner = createSelectRunner();
+		const coreA = deferred<IntelligenceCore>();
+		const fullA = deferred<Intelligence>();
+		const coreB = deferred<IntelligenceCore>();
+		const fullB = deferred<Intelligence>();
+
+		const runA = runner.select('2330.TWSE', () => coreA.promise, () => fullA.promise);
+		coreA.resolve(createSampleCore('2330.TWSE', '2330', '台積電'));
+		await Promise.resolve();
+
+		// Now A has Core, but Full is still pending. Switch to B.
+		const runB = runner.select('2454.TWSE', () => coreB.promise, () => fullB.promise);
+		coreB.resolve(createSampleCore('2454.TWSE', '2454', '聯發科'));
+		await Promise.resolve();
+
+		// A's Full late resolves
+		fullA.resolve(createSampleFull('2330.TWSE', '2330', '台積電'));
+		await Promise.resolve();
+		// B's display must not be polluted by A's full intelligence
+		expect(runner.state.intelligence).toBeNull();
+		expect(runner.state.coreData?.identity.code).toBe('2454');
+
+		fullB.resolve(createSampleFull('2454.TWSE', '2454', '聯發科'));
+		await runB;
+		await runA;
+		expect(runner.state.intelligence?.identity.code).toBe('2454');
+	});
+
+	it('Behavior 3A: Stale request Core rejection does not contaminate current UI with errors', async () => {
+		const runner = createSelectRunner();
+		const coreA = deferred<IntelligenceCore>();
+		const fullA = deferred<Intelligence>();
+		const coreB = deferred<IntelligenceCore>();
+		const fullB = deferred<Intelligence>();
+
+		const runA = runner.select('2330.TWSE', () => coreA.promise, () => fullA.promise);
+		const runB = runner.select('2454.TWSE', () => coreB.promise, () => fullB.promise);
+
+		coreB.resolve(createSampleCore('2454.TWSE', '2454', '聯發科'));
+		fullB.resolve(createSampleFull('2454.TWSE', '2454', '聯發科'));
+		await runB;
+
+		// A throws late rejection on core
+		coreA.reject(new Error('2330 core timeout'));
+		await runA;
+
+		// Must have no error on B
+		expect(runner.state.error).toBe('');
+		expect(runner.state.fullError).toBe('');
+		expect(runner.state.intelligence?.identity.code).toBe('2454');
+	});
+
+	it('Behavior 3B: Stale request Full rejection does not contaminate current UI with errors', async () => {
+		const runner = createSelectRunner();
+		const coreA = deferred<IntelligenceCore>();
+		const fullA = deferred<Intelligence>();
+		const coreB = deferred<IntelligenceCore>();
+		const fullB = deferred<Intelligence>();
+
+		const runA = runner.select('2330.TWSE', () => coreA.promise, () => fullA.promise);
+		// A's core succeeds before switch
+		coreA.resolve(createSampleCore('2330.TWSE', '2330', '台積電'));
+		await Promise.resolve();
+
+		const runB = runner.select('2454.TWSE', () => coreB.promise, () => fullB.promise);
+		coreB.resolve(createSampleCore('2454.TWSE', '2454', '聯發科'));
+		fullB.resolve(createSampleFull('2454.TWSE', '2454', '聯發科'));
+		await runB;
+
+		// A's full throws late rejection
+		fullA.reject(new Error('2330 full fetch aborted'));
+		await runA;
+
+		// Must have no error on B
+		expect(runner.state.error).toBe('');
+		expect(runner.state.fullError).toBe('');
+		expect(runner.state.intelligence?.identity.code).toBe('2454');
+	});
+
+	it('Behavior 4: Stage 1 Core First Paint while Stage 2 Full is pending', async () => {
+		const runner = createSelectRunner();
+		const core = deferred<IntelligenceCore>();
+		const full = deferred<Intelligence>();
+
+		const run = runner.select('2330.TWSE', () => core.promise, () => full.promise);
+		expect(runner.state.coreLoading).toBe(true);
+		expect(runner.state.fullLoading).toBe(true);
+		expect(runner.state.coreData).toBeNull();
+
+		// Core resolves
+		core.resolve(createSampleCore('2330.TWSE', '2330', '台積電'));
+		await Promise.resolve();
+
+		// Core is ready (First Paint), while Full is still loading in background
+		expect(runner.state.coreLoading).toBe(false);
+		expect(runner.state.coreData?.identity.code).toBe('2330');
+		expect(runner.state.fullLoading).toBe(true);
+		expect(runner.state.intelligence).toBeNull();
+
+		// Full settles
+		full.resolve(createSampleFull('2330.TWSE', '2330', '台積電'));
+		await run;
+		expect(runner.state.fullLoading).toBe(false);
+		expect(runner.state.intelligence?.identity.code).toBe('2330');
+	});
+
+	it('Behavior 5: Core success + Full fail retains Core data and isolates fullError', async () => {
+		const runner = createSelectRunner();
+		const core = deferred<IntelligenceCore>();
+		const full = deferred<Intelligence>();
+
+		const run = runner.select('2330.TWSE', () => core.promise, () => full.promise);
+		core.resolve(createSampleCore('2330.TWSE', '2330', '台積電'));
+		await Promise.resolve();
+
+		full.reject(new Error('Full intelligence provider unavailable'));
+		await run;
+
+		// Core data is preserved for First Paint displayData
+		expect(runner.state.coreData?.identity.code).toBe('2330');
+		expect(runner.state.intelligence).toBeNull();
+		// Isolated fullError shown, main error NOT triggered
+		expect(runner.state.fullError).toBe('暫時無法取得完整分析資料（市場與籌碼面）');
+		expect(runner.state.error).toBe('');
+		expect(runner.state.loading).toBe(false);
+	});
+
+	it('Behavior 6: Core fail + Full success gracefully recovers via full intelligence', async () => {
+		const runner = createSelectRunner();
+		const core = deferred<IntelligenceCore>();
+		const full = deferred<Intelligence>();
+
+		const run = runner.select('2330.TWSE', () => core.promise, () => full.promise);
+		// Core fails
+		core.reject(new Error('Core quote unavailable'));
+		await Promise.resolve();
+		expect(runner.state.coreLoading).toBe(false);
+		expect(runner.state.coreData).toBeNull();
+
+		// Full succeeds
+		full.resolve(createSampleFull('2330.TWSE', '2330', '台積電'));
+		await run;
+
+		// intelligence is available, displayData = intelligence ?? coreData resolves to intelligence
+		expect(runner.state.intelligence?.identity.code).toBe('2330');
+		expect(runner.state.error).toBe('');
+		expect(runner.state.fullError).toBe('');
+		expect(runner.state.loading).toBe(false);
+	});
+
+	it('Behavior 7: Both Core and Full fail triggers main error', async () => {
+		const runner = createSelectRunner();
+		const core = deferred<IntelligenceCore>();
+		const full = deferred<Intelligence>();
+
+		const run = runner.select('2330.TWSE', () => core.promise, () => full.promise);
+		core.reject(new Error('Core timeout'));
+		await Promise.resolve();
+
+		full.reject(new Error('Full timeout'));
+		await run;
+
+		expect(runner.state.coreData).toBeNull();
+		expect(runner.state.intelligence).toBeNull();
+		expect(runner.state.error).toBe('台灣個股分析資料載入失敗');
+		expect(runner.state.loading).toBe(false);
 	});
 });

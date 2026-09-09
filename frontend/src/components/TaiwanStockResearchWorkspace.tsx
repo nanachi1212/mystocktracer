@@ -126,22 +126,27 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 		// Stage 2 (Full Intelligence): fetch complete intelligence (Market, Fundamentals, Institutional, Margin).
 		// runScopedRequest guarantees last-wins ordering and cancellation of stale updates.
 		await runScopedRequest(selectRequestID, async () => {
+			const requestID = selectRequestID.current;
 			let coreSettled = false;
 			try {
 				const corePayload = await requestJSON<{ data: IntelligenceCore }>(config, taiwanIntelligenceCorePath(security.canonical));
+				if (requestID !== selectRequestID.current) return;
 				setCoreData(corePayload.data);
 				setCoreLoading(false);
 				coreSettled = true;
 			} catch (reason) {
+				if (requestID !== selectRequestID.current) return;
 				// If Core fails, we still allow Stage 2 to attempt or set the main error if both fail.
 				setCoreLoading(false);
 			}
 
 			try {
 				const fullPayload = await requestJSON<{ data: Intelligence }>(config, taiwanIntelligencePath(security.canonical));
+				if (requestID !== selectRequestID.current) return;
 				setIntelligence(fullPayload.data);
 				setFullError('');
 			} catch (reason) {
+				if (requestID !== selectRequestID.current) return;
 				if (coreSettled) {
 					setFullError(taiwanErrorMessage(reason, '暫時無法取得完整分析資料（市場與籌碼面）'));
 				} else {
@@ -160,6 +165,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 				setError('');
 				setFullError('');
 			},
+			onSuccess: () => {},
 			onSettle: () => {
 				setLoading(false);
 				setCoreLoading(false);
