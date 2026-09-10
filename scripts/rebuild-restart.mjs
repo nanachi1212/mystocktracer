@@ -31,6 +31,119 @@ const files = {
   frontendLog: path.join(runtimeDir, "frontend.log"),
 };
 
+export const DEFAULT_BROWSER_MODE = "incognito";
+export const ALLOWED_BROWSER_MODES = new Set(["incognito", "normal", "none"]);
+
+export function resolveBrowserMode(value = process.env.A_STOCK_BROWSER_MODE) {
+  if (value === undefined || value === null) {
+    return DEFAULT_BROWSER_MODE;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return DEFAULT_BROWSER_MODE;
+  }
+  if (ALLOWED_BROWSER_MODES.has(normalized)) {
+    return normalized;
+  }
+  return DEFAULT_BROWSER_MODE;
+}
+
+export function getBrowserLaunchPlan(targetUrl, mode = resolveBrowserMode()) {
+  if (mode === "none") {
+    return { action: "none", mode };
+  }
+  const args = [];
+  if (mode === "incognito") {
+    args.push("--incognito");
+  }
+  args.push("--new-window", targetUrl);
+  return { action: "open", mode, args };
+}
+
+export function findChromeBinary({
+  env = process.env,
+  existsSync: exists = existsSync,
+  whereLookup = () => capture("where.exe", ["chrome.exe"]),
+} = {}) {
+  const candidates = [];
+  if (process.platform === "win32") {
+    if (env.ProgramFiles) {
+      candidates.push(path.join(env.ProgramFiles, "Google", "Chrome", "Application", "chrome.exe"));
+    }
+    if (env["ProgramFiles(x86)"]) {
+      candidates.push(path.join(env["ProgramFiles(x86)"], "Google", "Chrome", "Application", "chrome.exe"));
+    }
+    if (env.LOCALAPPDATA) {
+      candidates.push(path.join(env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"));
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (candidate && exists(candidate)) {
+      return candidate;
+    }
+  }
+
+  if (process.platform === "win32") {
+    try {
+      const whereResult = whereLookup();
+      if (whereResult) {
+        const first = whereResult.split(/\r?\n/)[0]?.trim();
+        if (first && exists(first)) {
+          return first;
+        }
+      }
+    } catch {
+      // ignore lookup failures
+    }
+  }
+
+  return null;
+}
+
+export function launchBrowser({
+  url = frontendUrl,
+  mode = resolveBrowserMode(),
+  logger = log,
+  chromeFinder = findChromeBinary,
+  spawner = spawn,
+} = {}) {
+  const plan = getBrowserLaunchPlan(url, mode);
+  if (plan.action === "none") {
+    logger("browser auto-open disabled");
+    return { opened: false, reason: "disabled" };
+  }
+
+  const chromePath = chromeFinder();
+  if (!chromePath) {
+    logger(`Chrome not found; open manually:\n${url}`);
+    return { opened: false, reason: "not_found" };
+  }
+
+  if (plan.mode === "incognito") {
+    logger("opening frontend in Chrome incognito mode");
+    logger(`frontend: ${url}`);
+  } else {
+    logger("opening frontend in Chrome normal mode");
+    logger(`frontend: ${url}`);
+  }
+
+  try {
+    const child = spawner(chromePath, plan.args, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false,
+    });
+    if (child?.unref) {
+      child.unref();
+    }
+    return { opened: true, mode: plan.mode };
+  } catch (error) {
+    logger(`Failed to open browser (${error.message}); open manually:\n${url}`);
+    return { opened: false, reason: "error", error };
+  }
+}
+
 function log(message) {
   console.log(`[easy-stock] ${message}`);
 }
@@ -341,15 +454,23 @@ async function restart() {
   log(`backend:  ${backendUrl}`);
   log(`frontend: ${frontendUrl}`);
   log(`logs:     ${runtimeDir}`);
+
+  launchBrowser({ url: frontendUrl });
 }
 
-try {
-  if (process.argv.includes("--build-backend-only")) {
-    buildBackend();
-  } else {
-    await restart();
+export { restart, buildBackend, buildFrontend };
+
+const isDirectExecution = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isDirectExecution) {
+  try {
+    if (process.argv.includes("--build-backend-only")) {
+      buildBackend();
+    } else {
+      await restart();
+    }
+  } catch (error) {
+    console.error(`[easy-stock] ${error.message}`);
+    process.exitCode = 1;
   }
-} catch (error) {
-  console.error(`[easy-stock] ${error.message}`);
-  process.exitCode = 1;
 }
