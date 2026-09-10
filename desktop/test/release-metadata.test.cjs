@@ -118,3 +118,56 @@ test('separates user downloads from internal updater assets', () => {
     'latest.yml',
   ].sort());
 });
+
+test('electron-builder package files includes subscription-ai-url.cjs and all direct runtime modules', () => {
+  const electronBuilderScript = fs.readFileSync(path.resolve(__dirname, '..', 'scripts', 'electron-builder.mjs'), 'utf8');
+  assert.match(electronBuilderScript, /'subscription-ai-url\.cjs'/);
+
+  const mainScript = fs.readFileSync(path.resolve(__dirname, '..', 'main.cjs'), 'utf8');
+  const directRequires = [...mainScript.matchAll(/require\(['"]\.\/([^'"]+\.cjs)['"]\)/g)].map((m) => m[1]);
+
+  for (const moduleName of directRequires) {
+    assert.match(
+      electronBuilderScript,
+      new RegExp(`'${moduleName.replace('.', '\\.')}'`),
+      `electron-builder.mjs should include direct runtime dependency: ${moduleName}`,
+    );
+  }
+});
+
+test('release package verifier detects missing runtime modules in app.asar', async () => {
+  const { verifyAppAsar } = await import('../scripts/verify-release-package.mjs');
+
+  const dummyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-asar-test-'));
+  const resourcesDir = path.join(dummyDir, 'resources');
+  fs.mkdirSync(resourcesDir, { recursive: true });
+
+  const asarPath = path.join(resourcesDir, 'app.asar');
+
+  // Build a dummy asar with subscription-ai-url.cjs missing
+  const headerObj = {
+    files: {
+      'main.cjs': { size: 10, offset: '0' },
+      'preload.cjs': { size: 10, offset: '10' },
+    },
+  };
+  const headerJson = JSON.stringify(headerObj);
+  const headerBuf = Buffer.from(headerJson, 'utf8');
+
+  const sizeBuf = Buffer.alloc(16);
+  sizeBuf.writeUInt32LE(4, 0);
+  sizeBuf.writeUInt32LE(headerBuf.length + 8, 4);
+  sizeBuf.writeUInt32LE(headerBuf.length + 4, 8);
+  sizeBuf.writeUInt32LE(headerBuf.length, 12);
+
+  fs.writeFileSync(asarPath, Buffer.concat([sizeBuf, headerBuf]));
+
+  assert.throws(
+    () => verifyAppAsar(dummyDir, 'windows'),
+    (err) => {
+      assert.match(err.message, /Packaged app\.asar is missing required local runtime modules/);
+      assert.match(err.message, /subscription-ai-url\.cjs/);
+      return true;
+    },
+  );
+});

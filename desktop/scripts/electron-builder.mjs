@@ -62,6 +62,7 @@ const config = {
     'update-feed.cjs',
     'update-manager.cjs',
     'user-data.cjs',
+    'subscription-ai-url.cjs',
     'xueqiu-browser-bridge.cjs',
     'package.json',
     '!dist{,/**/*}',
