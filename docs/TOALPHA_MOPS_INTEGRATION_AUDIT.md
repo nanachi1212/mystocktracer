@@ -1,4 +1,4 @@
-﻿# ToAlpha MOPS integration audit
+# ToAlpha MOPS integration audit
 
 Audit date: 2026-09-16
 ToAlpha documentation reviewed: [ToAlpha MOPS MCP](https://toalpha.tw/mcp/mops), last updated 2026-09-15
