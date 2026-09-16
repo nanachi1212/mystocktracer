@@ -56,6 +56,26 @@
 .taiwan-evidence-overview { display: grid; gap: 10px; }
 .taiwan-evidence-overview h3 { margin: 3px 0; }
 .taiwan-evidence-overview p { margin: 0; color: var(--muted); line-height: 1.5; }
+.taiwan-corporate-events { display: grid; gap: 10px; }
+.taiwan-corporate-events > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.taiwan-corporate-events h3 { margin: 3px 0; }
+.taiwan-event-provenance { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.taiwan-event-status { padding: 4px 7px; border-radius: 4px; background: #edf1f3; color: #5d707c; font-size: 9px; white-space: nowrap; }
+.taiwan-event-status.available { background: #e8f5ee; color: #25704e; }
+.taiwan-event-status.partial, .taiwan-event-status.stale { background: #fff3d9; color: #8a6518; }
+.taiwan-event-status.unavailable { background: #faeae6; color: #a64232; }
+.taiwan-event-list { display: grid; gap: 8px; }
+.taiwan-event-list article { display: grid; gap: 7px; padding: 11px 12px; border: 1px solid #dce3e7; border-radius: 6px; background: #fff; }
+.taiwan-event-list article > header, .taiwan-event-list article > footer { display: flex; justify-content: space-between; gap: 10px; }
+.taiwan-event-list article > header > div { display: grid; gap: 3px; }
+.taiwan-event-list article strong { color: #263e4e; font-size: 11px; }
+.taiwan-event-list article small, .taiwan-event-list article span, .taiwan-event-list article footer { color: #7b8993; font-size: 9px; }
+.taiwan-event-list article p { margin: 0; color: #536876; font-size: 10px; line-height: 1.6; }
+.taiwan-event-list article a { color: #17679b; font-weight: 700; }
+.taiwan-watchlist-event { padding: 4px 7px; border-radius: 4px; background: #edf1f3; color: #5d707c; font-size: 9px; white-space: nowrap; }
+.taiwan-watchlist-event.available { background: #e8f5ee; color: #25704e; }
+.taiwan-watchlist-event.partial, .taiwan-watchlist-event.stale { background: #fff3d9; color: #8a6518; }
+.taiwan-watchlist-event.unavailable { background: #faeae6; color: #a64232; }
 .taiwan-interpretation > header { display: flex; justify-content: space-between; }
 .taiwan-interpretation h3 { margin: 3px 0; }
 .taiwan-interpretation ul, .taiwan-research-result ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
@@ -6733,7 +6753,7 @@ a:focus-visible {
 .taiwan-watchlist-backup-actions { display: flex; gap: 8px; }
 .taiwan-watchlist-backup-actions button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; }
 .taiwan-watchlist-backup-actions button:disabled { opacity: .6; cursor: not-allowed; }
-.taiwan-watchlist-row { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.taiwan-watchlist-row { display: grid; grid-template-columns: 1fr auto auto auto auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
 /* M8D — the row's own grid has no mechanism for a full-width sub-panel; this lets the on-demand
    intelligence summary span the entire row (below the identity/quote/actions line) instead of
    trying to occupy a 5th column. */

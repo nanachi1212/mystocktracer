@@ -27,6 +27,7 @@ import (
 	"easy-stock/backend/internal/providers/sina"
 	"easy-stock/backend/internal/providers/taiwan"
 	"easy-stock/backend/internal/providers/tencent"
+	"easy-stock/backend/internal/providers/toalpha"
 	"easy-stock/backend/internal/review"
 	"easy-stock/backend/internal/runtimelog"
 	"easy-stock/backend/internal/sector"
@@ -65,6 +66,7 @@ type Server struct {
 	taiwanEmotion               TaiwanEmotionProvider
 	taiwanIndustryRadar         TaiwanIndustryRadarProvider
 	taiwanIntelligence          TaiwanStockIntelligenceProvider
+	taiwanCorporateEvents       TaiwanCorporateEventsProvider
 	taiwanFundamentals          TaiwanFundamentalsProvider
 	hotStockProvider            HotStockProvider
 	marketOverview              MarketOverviewProvider
@@ -149,9 +151,16 @@ func NewServer(config any) *Server {
 	if cfg.StockDirectory == nil {
 		cfg.StockDirectory = eastMoneyClient
 	}
+	if cfg.TaiwanCorporateEvents == nil {
+		cfg.TaiwanCorporateEvents = toalpha.NewClient(toalpha.Config{
+			Enabled: cfg.ToAlphaMOPSEnabled, Endpoint: cfg.ToAlphaMOPSEndpoint,
+			Timeout: cfg.ToAlphaMOPSTimeout, Retries: 1,
+		})
+	}
 	if cfg.TaiwanDirectory == nil || cfg.TaiwanMarket == nil || cfg.TaiwanChip == nil || cfg.TaiwanFundamentals == nil || cfg.TaiwanSnapshot == nil || cfg.TaiwanBreadth == nil || cfg.TaiwanScreener == nil || cfg.TaiwanScreenerInstitutional == nil || cfg.TaiwanScreenerMargin == nil || cfg.TaiwanScreenerRevenue == nil || cfg.TaiwanScreenerValuation == nil || cfg.TaiwanScreenerDividends == nil || cfg.TaiwanScreenerFinancials == nil || cfg.TaiwanScreenerBalance == nil || cfg.TaiwanEmotion == nil || cfg.TaiwanIndustryRadar == nil || cfg.TaiwanIntelligence == nil {
 		taiwanClient := taiwan.NewClient(taiwan.Config{
 			CashflowCacheDir: cfg.TaiwanCashflowCacheDir,
+			CorporateEvents:  cfg.TaiwanCorporateEvents,
 		})
 		if cfg.TaiwanDirectory == nil {
 			cfg.TaiwanDirectory = taiwanClient
@@ -371,6 +380,7 @@ func NewServer(config any) *Server {
 		taiwanEmotion:               cfg.TaiwanEmotion,
 		taiwanIndustryRadar:         cfg.TaiwanIndustryRadar,
 		taiwanIntelligence:          cfg.TaiwanIntelligence,
+		taiwanCorporateEvents:       cfg.TaiwanCorporateEvents,
 		taiwanFundamentals:          cfg.TaiwanFundamentals,
 		hotStockProvider:            cfg.HotStocks,
 		marketOverview:              cfg.MarketOverview,
@@ -572,6 +582,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/tw/stocks/{symbol}/intelligence", s.taiwanStockIntelligenceHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/stocks/{symbol}/intelligence/core", s.taiwanStockIntelligenceCoreHandler)
 	s.mux.HandleFunc("POST /api/v1/tw/stocks/{symbol}/research", s.taiwanStockResearchHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/stocks/{symbol}/corporate-events", s.taiwanCorporateEventsHandler)
+	s.mux.HandleFunc("POST /api/v1/tw/corporate-events/sync", s.taiwanCorporateEventSyncHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/fundamentals", s.taiwanFundamentalsHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/watchlist", s.taiwanWatchlistListHandler)
 	s.mux.HandleFunc("POST /api/v1/tw/watchlist", s.taiwanWatchlistAddHandler)

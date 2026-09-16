@@ -30,6 +30,16 @@ export type TaiwanStatementData = {
 	cashflow_fiscal_year?: number; cashflow_fiscal_quarter?: number;
 	operating_cash_flow: number | null; cash_flow_to_net_income: number | null;
 };
+export type TaiwanCorporateEvent = {
+	event_id: string; symbol: string; title: string; category?: string; detail?: string;
+	published_at?: string; event_time?: string; provider: string; source: string; source_url?: string;
+	retrieved_at: string; status: string; stale: boolean; partial: boolean; reason?: string;
+	classification_source?: string; important?: boolean;
+};
+export type TaiwanCorporateEventFeed = {
+	status: string; provider: string; source: string; source_url?: string; retrieved_at?: string;
+	as_of?: string; stale: boolean; partial: boolean; reason?: string; events: TaiwanCorporateEvent[];
+};
 export type Intelligence = {
 	model_version: string; symbol: string;
 	identity: { canonical_symbol: string; code: string; name: string; exchange: string; currency: string; security_type: string; industry_name?: string };
@@ -39,17 +49,18 @@ export type Intelligence = {
 	institutional: Evidence; margin: Evidence;
 	market_context: Evidence & { state?: string; confidence?: string; advance_ratio?: number | null; advancing_amount_ratio?: number | null };
 	industry_context: Evidence & { taxonomy_status?: string; industry?: { industry_name: string; relative_breadth: number | null; relative_capital: number | null } };
+	corporate_events?: TaiwanCorporateEventFeed;
 	interpretation?: { model_version: string; components: Record<string, Component>; data_quality: { available_components: string[] | null; indeterminate_components: string[] | null; unavailable_components: string[] | null; stale_components: string[] | null; partial_components: string[] | null } };
 };
 export type ResearchSection = { text: string; evidence_keys: string[] };
 // M8C — strengths/risks are evidence-grounded, currently-favorable/risk observations distinct from
-// the six fixed domain sections above; reuses the exact same ResearchSection shape (text +
+// the seven fixed domain sections above; reuses the exact same ResearchSection shape (text +
 // evidence_keys), and both arrays may legitimately be empty (the AI never manufactures an entry
 // merely to populate them).
 export type Research = { status: string; model_version: string; generated_at?: string; headline?: string; summary?: string; sections: Record<string, ResearchSection>; strengths: ResearchSection[]; risks: ResearchSection[]; conflicts: string[]; data_limitations: string[]; research_notes: string[]; reason?: string };
 
 const componentLabels: Record<string, string> = { price: '價格', market: '市場', price_market_relationship: '個股與市場關係', industry: '產業', institutional: '法人', margin: '融資融券', fundamentals: '基本面' };
-const researchLabels: Record<string, string> = { price: '價格', market: '市場', industry: '產業', institutional: '法人', margin: '融資融券', fundamentals: '基本面' };
+const researchLabels: Record<string, string> = { price: '價格', market: '市場', industry: '產業', institutional: '法人', margin: '融資融券', fundamentals: '基本面', corporate_events: '公司事件' };
 
 // M6C: an optional request from outside this workspace (a Watchlist row click) to load one exact
 // canonical Taiwan security. `token` is a strictly increasing nonce, not just the canonical string
@@ -254,6 +265,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 				<EvidenceOverview intelligence={intelligence} />
 				<TaiwanResearchSnapshot fundamentals={intelligence.fundamentals} />
 				{intelligence.interpretation && <InterpretationView intelligence={intelligence} />}
+				<CorporateEventsView feed={intelligence.corporate_events} />
 				<section className="taiwan-ai-action">
 					<div>
 						<strong>AI 研究</strong>
@@ -284,6 +296,26 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 		</>}
 		{!displayData && !loading && <div className="taiwan-empty-state"><strong>選擇台灣證券開始分析</strong><p>可搜尋上市或上櫃股票；原始資料載入不會呼叫 AI。</p></div>}
 	</div>;
+}
+
+const corporateEventStatusLabels: Record<string, string> = {
+	available: '可用', no_events: '目前無公告', not_queried: '未查詢', partial: '部分資料', stale: '資料較舊', unavailable: '暫時無法取得',
+	unsupported: '不支援',
+};
+
+export function CorporateEventsView({ feed }: { feed?: TaiwanCorporateEventFeed }) {
+	const status = feed?.status || 'not_queried';
+	const events = feed?.events || [];
+	return <section className="taiwan-corporate-events">
+		<header><div><span>第三方補充證據</span><h3>公開資訊觀測站重大訊息</h3></div><strong className={`taiwan-event-status ${status}`}>{corporateEventStatusLabels[status] || status}</strong></header>
+		<p className="taiwan-event-provenance">ToAlpha MOPS 為補充來源，不取代本專案的官方台股主資料。{feed?.as_of ? ` 來源更新 ${feed.as_of}` : ''}</p>
+		{feed?.reason && <div className="market-partial-warning">{feed.reason}</div>}
+		{events.length > 0 ? <div className="taiwan-event-list">{events.map((event) => <article key={event.event_id}>
+			<header><div><strong>{event.title || '標題未提供'}</strong><small>{event.published_at ? new Date(event.published_at).toLocaleString('zh-TW') : '公告時間未提供'}</small></div><span>{event.category || '未分類'}</span></header>
+			{event.detail && <p>{event.detail}</p>}
+			<footer><span>{event.partial ? '部分資料' : '補充證據'}{event.stale ? ' · 資料較舊' : ''}</span>{event.source_url && <a href={event.source_url} target="_blank" rel="noreferrer">查看來源</a>}</footer>
+		</article>)}</div> : <div className="taiwan-empty-state"><strong>{corporateEventStatusLabels[status] || status}</strong><p>{status === 'no_events' ? '查詢範圍內未找到公告。' : '公告資料與其他研究證據分開顯示，不會將查詢失敗當成無公告。'}</p></div>}
+	</section>;
 }
 
 // M8B — a small, secondary provenance block shown only when this Research page was opened via a

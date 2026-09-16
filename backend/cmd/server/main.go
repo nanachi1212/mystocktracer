@@ -90,21 +90,23 @@ func main() {
 		HermesHome: hermesHome,
 	})
 	server := httpapi.NewServer(httpapi.Config{
-		Token:                os.Getenv("A_STOCK_TOKEN"),
-		ReviewDBPath:         reviewDBPath,
-		PortfolioDBPath:      portfolioDBPath,
-		RemoteDailyReviewURL: os.Getenv("A_STOCK_DAILY_REVIEW_BASE_URL"),
-		MarketEmotionDBPath:  marketEmotionDBPath,
-		ThemeRadarDBPath:     themeRadarDBPath,
-		WatchlistDBPath:      watchlistDBPath,
-		DuanxianxiaBaseURL:   os.Getenv("A_STOCK_DUANXIANXIA_BASE_URL"),
-		WeChatAPIURL:         os.Getenv("A_STOCK_WECHAT_API_URL"),
-		SettingsPath:         settingsPath,
-		HermesGateway:        hermesGateway,
+		Token:                  os.Getenv("A_STOCK_TOKEN"),
+		ReviewDBPath:           reviewDBPath,
+		PortfolioDBPath:        portfolioDBPath,
+		RemoteDailyReviewURL:   os.Getenv("A_STOCK_DAILY_REVIEW_BASE_URL"),
+		MarketEmotionDBPath:    marketEmotionDBPath,
+		ThemeRadarDBPath:       themeRadarDBPath,
+		WatchlistDBPath:        watchlistDBPath,
+		DuanxianxiaBaseURL:     os.Getenv("A_STOCK_DUANXIANXIA_BASE_URL"),
+		WeChatAPIURL:           os.Getenv("A_STOCK_WECHAT_API_URL"),
+		SettingsPath:           settingsPath,
+		HermesGateway:          hermesGateway,
 		MasteryLibrary:         masteryLibrary,
 		Logger:                 log.Default(),
 		StrictPersistence:      true,
 		TaiwanCashflowCacheDir: cashflowCacheDir,
+		ToAlphaMOPSEnabled:     envBool("A_STOCK_TOALPHA_MOPS_ENABLED"),
+		ToAlphaMOPSEndpoint:    os.Getenv("A_STOCK_TOALPHA_MOPS_ENDPOINT"),
 	})
 	if err := server.StartupError(); err != nil {
 		log.Fatalf("persistent data startup failed: %v", err)
@@ -129,6 +131,11 @@ func main() {
 	if err := server.Close(); err != nil {
 		log.Printf("close persistent data: %v", err)
 	}
+}
+
+func envBool(name string) bool {
+	value := strings.TrimSpace(os.Getenv(name))
+	return value == "1" || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
 }
 
 func runtimeVersion() string {

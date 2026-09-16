@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { InterpretationView, ResearchView, ScreenerEntryContext, TaiwanResearchSnapshot, type Component, type Intelligence, type IntelligenceCore, type Research, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
+import { CorporateEventsView, InterpretationView, ResearchView, ScreenerEntryContext, TaiwanResearchSnapshot, type Component, type Intelligence, type IntelligenceCore, type Research, type TaiwanCorporateEventFeed, type TaiwanStatementData, type TaiwanValuationData } from './TaiwanStockResearchWorkspace';
 import { runScopedRequest, type TaiwanResearchEntryContext } from '../lib/taiwan-product';
 import { TaiwanStockResearchErrorBoundary } from './TaiwanStockResearchErrorBoundary';
 
@@ -441,6 +441,31 @@ describe('M8C — ResearchView strengths/risks rendering', () => {
 		const strengthsOnly = renderToStaticMarkup(<ResearchView research={researchResult({ strengths: [{ text: '正向觀察。', evidence_keys: ['fundamentals.data.valuation.pe'] }] })} />);
 		expect(strengthsOnly).toContain('支持性證據');
 		expect(strengthsOnly).not.toContain('風險證據');
+	});
+});
+
+describe('ToAlpha MOPS — provenance-safe corporate event rendering', () => {
+	const feed = (overrides: Partial<TaiwanCorporateEventFeed> = {}): TaiwanCorporateEventFeed => ({
+		status: 'available', provider: 'toalpha', source: 'mops_material_information', stale: false, partial: false,
+		events: [{ event_id: 'mops:twse:2330:2026-09-16:1', symbol: '2330.TWSE', title: '重大訊息測試', category: '財報營收', detail: '公告內容', published_at: '2026-09-16T09:30:00+08:00', provider: 'toalpha', source: 'mops_material_information', source_url: 'https://mops.example/event', retrieved_at: '2026-09-16T02:00:00Z', status: 'available', stale: false, partial: false, classification_source: 'third_party_enrichment' }],
+		...overrides,
+	});
+
+	it('renders third-party provenance, event content, and a safely isolated external link without AI', () => {
+		const html = renderToStaticMarkup(<CorporateEventsView feed={feed()} />);
+		expect(html).toContain('第三方補充證據');
+		expect(html).toContain('不取代本專案的官方台股主資料');
+		expect(html).toContain('重大訊息測試');
+		expect(html).toContain('target="_blank"');
+		expect(html).toContain('rel="noreferrer"');
+	});
+
+	it('keeps no-events, unavailable, stale, and partial states explicit', () => {
+		expect(renderToStaticMarkup(<CorporateEventsView feed={feed({ status: 'no_events', events: [] })} />)).toContain('目前無公告');
+		expect(renderToStaticMarkup(<CorporateEventsView feed={feed({ status: 'unavailable', events: [], reason: 'timeout' })} />)).toContain('暫時無法取得');
+		expect(renderToStaticMarkup(<CorporateEventsView feed={feed({ status: 'unsupported', events: [] })} />)).toContain('不支援');
+		expect(renderToStaticMarkup(<CorporateEventsView feed={feed({ status: 'stale', stale: true, events: [] })} />)).toContain('資料較舊');
+		expect(renderToStaticMarkup(<CorporateEventsView feed={feed({ status: 'partial', partial: true })} />)).toContain('部分資料');
 	});
 });
 
