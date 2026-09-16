@@ -1,7 +1,7 @@
-# ToAlpha MOPS integration audit
+﻿# ToAlpha MOPS integration audit
 
-Audit date: 2026-09-16  
-ToAlpha documentation reviewed: [ToAlpha MOPS MCP](https://toalpha.tw/mcp/mops), last updated 2026-09-15  
+Audit date: 2026-09-16
+ToAlpha documentation reviewed: [ToAlpha MOPS MCP](https://toalpha.tw/mcp/mops), last updated 2026-09-15
 TWstock reference reviewed: `nanachi1212/TWstockfor_tick-stock-panel` `main` at `fd79b634c17f76144bac5828708603eb65784684`
 
 ## Decision
