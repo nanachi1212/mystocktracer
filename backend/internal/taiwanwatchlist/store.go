@@ -94,6 +94,29 @@ func (s *Store) migrate(ctx context.Context) error {
 		);
 		CREATE INDEX IF NOT EXISTS taiwan_seen_corporate_events_lookup
 			ON taiwan_seen_corporate_events(canonical, provider, first_seen_at DESC);
+		CREATE TABLE IF NOT EXISTS taiwan_corporate_event_alerts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			canonical TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			event_id TEXT NOT NULL,
+			security_name TEXT NOT NULL,
+			title TEXT NOT NULL,
+			category TEXT NOT NULL DEFAULT '',
+			published_at TEXT NOT NULL DEFAULT '',
+			source TEXT NOT NULL,
+			source_url TEXT NOT NULL DEFAULT '',
+			retrieved_at TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL,
+			stale INTEGER NOT NULL DEFAULT 0,
+			partial INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL,
+			read_at TEXT NOT NULL DEFAULT '',
+			UNIQUE (canonical, provider, event_id)
+		);
+		CREATE INDEX IF NOT EXISTS taiwan_corporate_event_alerts_order
+			ON taiwan_corporate_event_alerts(published_at DESC, created_at DESC, id DESC);
+		CREATE INDEX IF NOT EXISTS taiwan_corporate_event_alerts_unread
+			ON taiwan_corporate_event_alerts(read_at, id DESC);
 	`)
 	if err != nil {
 		return fmt.Errorf("migrate taiwan watchlist database: %w", err)

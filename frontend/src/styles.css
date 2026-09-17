@@ -6750,6 +6750,27 @@ a:focus-visible {
 .taiwan-search-results button { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; text-align: left; cursor: pointer; }
 .taiwan-search-results span { color: #7b8797; font-size: 9px; }
 .taiwan-watchlist-list { display: grid; gap: 8px; }
+.taiwan-alert-center { position: relative; display: grid; gap: 8px; }
+.taiwan-alert-trigger { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); cursor: pointer; }
+.taiwan-alert-badge { min-width: 20px; padding: 2px 5px; border-radius: 999px; background: #c73b36; color: #fff; font-size: 10px; text-align: center; }
+.taiwan-alert-panel { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
+.taiwan-alert-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.taiwan-alert-panel > header > div { display: flex; align-items: center; gap: 8px; }
+.taiwan-alert-panel > header > div:first-child { display: grid; gap: 2px; }
+.taiwan-alert-panel > header small { color: var(--muted); }
+.taiwan-alert-panel button, .taiwan-alert-item footer a { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: inherit; font-size: 10px; text-decoration: none; cursor: pointer; }
+.taiwan-alert-panel button:disabled { opacity: .55; cursor: not-allowed; }
+.taiwan-alert-list { display: grid; gap: 8px; }
+.taiwan-alert-item { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-left: 3px solid #cbd5df; border-radius: 8px; background: #fff; }
+.taiwan-alert-item.unread { border-left-color: #c73b36; }
+.taiwan-alert-item.read { opacity: .76; }
+.taiwan-alert-heading, .taiwan-alert-item footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.taiwan-alert-heading > div { display: flex; align-items: baseline; gap: 6px; }
+.taiwan-alert-heading span, .taiwan-alert-heading time, .taiwan-alert-item footer > span { color: var(--muted); font-size: 10px; }
+.taiwan-alert-item h3 { margin: 0; font-size: 13px; }
+.taiwan-alert-meta { display: flex; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: 10px; }
+.taiwan-alert-meta span, .taiwan-alert-meta em { padding: 3px 6px; border-radius: 5px; background: #eef2f5; font-style: normal; }
+.taiwan-alert-meta em { background: #fff3d9; color: #8a6518; }
 .taiwan-watchlist-backup-actions { display: flex; gap: 8px; }
 .taiwan-watchlist-backup-actions button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; }
 .taiwan-watchlist-backup-actions button:disabled { opacity: .6; cursor: not-allowed; }
@@ -6769,7 +6790,10 @@ a:focus-visible {
 .taiwan-watchlist-toggle:disabled { opacity: 0.6; cursor: not-allowed; }
 .taiwan-watchlist-toggle.saved { border-color: var(--up); color: var(--up); }
 .taiwan-watchlist-toggle-error { color: #9b6a25; font-size: 8px; }
-@media (max-width: 900px) { .taiwan-watchlist-row { grid-template-columns: 1fr; justify-items: start; } .taiwan-watchlist-quote { justify-items: start; text-align: left; } }
+@media (max-width: 900px) { .taiwan-watchlist-row { grid-template-columns: 1fr; justify-items: start; } .taiwan-watchlist-quote { justify-items: start; text-align: left; } .taiwan-alert-panel > header, .taiwan-alert-heading, .taiwan-alert-item footer { align-items: flex-start; flex-direction: column; } }
+
+.settings-toggle { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; }
+.settings-toggle input { width: 16px; height: 16px; }
 .taiwan-chip-panel { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .taiwan-chip-panel > header { display:flex; justify-content:space-between; align-items:end; padding:12px 14px; border-bottom:1px solid var(--line-soft); }
 .taiwan-chip-panel h3 { margin:0; }.taiwan-chip-panel header span,.taiwan-chip-panel header small { color:#7b8797; font-size:8px; }

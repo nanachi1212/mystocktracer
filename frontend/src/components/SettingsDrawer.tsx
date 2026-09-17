@@ -1,5 +1,6 @@
 import {
 	Bot,
+	Bell,
 	CheckCircle2,
 	CircleAlert,
 	Eye,
@@ -62,6 +63,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 	const [responseTimeoutSeconds, setResponseTimeoutSeconds] = useState(defaultResponseTimeoutSeconds);
 	const [reviewSource, setReviewSource] = useState<ReviewSource>('xueqiu');
 	const [reviewProfiles, setReviewProfiles] = useState<ReviewProfileDraft[]>([]);
+	const [corporateEventAlertsEnabled, setCorporateEventAlertsEnabled] = useState(true);
 	const [secrets, setSecrets] = useState<Record<SecretKey, string>>(emptySecrets);
 	const [clearSecrets, setClearSecrets] = useState<Set<SecretKey>>(new Set());
 	const [state, setState] = useState<'idle' | 'loading' | 'saving' | 'saved' | 'error'>('idle');
@@ -113,6 +115,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 				setClearProfileKeys(new Set());
 				const profiles = toProfileDrafts(payload.data.review_automation?.profiles || []);
 				setReviewProfiles(profiles);
+				setCorporateEventAlertsEnabled(payload.data.taiwan_alerts?.corporate_events_enabled !== false);
 				void refreshBrowserAuthStatuses(profiles);
 				setSecrets(emptySecrets());
 				setClearSecrets(new Set());
@@ -358,7 +361,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		const payload = await requestJSON<{ data: AppSettings }>(config, '/api/v1/settings', {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ llm: { response_timeout_seconds: responseTimeoutSeconds }, llm_profiles: modelProfiles, active_llm_profile_id: activeLLMProfileID, credentials, review_automation: { profiles: reviewProfiles.map((profile) => ({ id: profile.id, source: profile.source, name: profile.name.trim(), base_url: profile.source === 'wechat' ? '' : profile.base_url.trim(), credential: profile.source === 'wechat' ? undefined : profile.credential_value.trim() || undefined, clear_credential: profile.source === 'wechat' || profile.clear_credential, sync_hour: profile.sync_hour, auto_analyze: profile.auto_analyze, enabled: profile.enabled })) }, clear_secrets: [...clearSecrets].filter((key) => key !== 'llm_api_key').concat('wechat_api_token') }),
+			body: JSON.stringify({ llm: { response_timeout_seconds: responseTimeoutSeconds }, llm_profiles: modelProfiles, active_llm_profile_id: activeLLMProfileID, credentials, review_automation: { profiles: reviewProfiles.map((profile) => ({ id: profile.id, source: profile.source, name: profile.name.trim(), base_url: profile.source === 'wechat' ? '' : profile.base_url.trim(), credential: profile.source === 'wechat' ? undefined : profile.credential_value.trim() || undefined, clear_credential: profile.source === 'wechat' || profile.clear_credential, sync_hour: profile.sync_hour, auto_analyze: profile.auto_analyze, enabled: profile.enabled })) }, taiwan_alerts: { corporate_events_enabled: corporateEventAlertsEnabled }, clear_secrets: [...clearSecrets].filter((key) => key !== 'llm_api_key').concat('wechat_api_token') }),
 		});
 		setSettings(payload.data);
 		const savedProfiles = normalizeLLMProfiles(payload.data);
@@ -370,6 +373,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		setClearProfileKeys(new Set());
 		const savedReviewProfiles = toProfileDrafts(payload.data.review_automation?.profiles || []);
 		setReviewProfiles(savedReviewProfiles);
+		setCorporateEventAlertsEnabled(payload.data.taiwan_alerts?.corporate_events_enabled !== false);
 		void refreshBrowserAuthStatuses(savedReviewProfiles);
 		setSecrets(emptySecrets());
 		setClearSecrets(new Set());
@@ -484,6 +488,11 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 						   Taiwan-first users. Hidden from this settings drawer per P1C audit — the
 						   underlying state, fetch, and save logic are left intact (not deleted) so the backend
 						   settings contract and any future multi-market UI are unaffected. */}
+
+						<section className="settings-section">
+							<div className="settings-section-title"><Bell size={18} /><div><h3>台股事件提醒</h3><p>控制新公司公告是否加入本機提醒中心；關閉後仍可查看公告，也不會刪除既有提醒。</p></div></div>
+							<label className="settings-toggle"><input type="checkbox" checked={corporateEventAlertsEnabled} onChange={(event) => setCorporateEventAlertsEnabled(event.target.checked)} /><span>建立新的公司事件提醒</span></label>
+						</section>
 
 						<AppUpdatePanel />
 

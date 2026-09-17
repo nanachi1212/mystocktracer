@@ -23,6 +23,13 @@ type CorporateEventSyncResult struct {
 // eligible events. The first successful observation creates a baseline; an
 // unavailable provider never mutates the previous successful state.
 func (s *Store) ApplyCorporateEvents(ctx context.Context, canonical string, feed foundation.TaiwanCorporateEventFeed, syncedAt time.Time) (CorporateEventSyncResult, error) {
+	return s.ApplyCorporateEventsWithPreference(ctx, canonical, feed, syncedAt, true)
+}
+
+// ApplyCorporateEventsWithPreference keeps provider observation state moving
+// while allowing the product-level inbox to be disabled. Events observed while
+// disabled remain seen, so re-enabling cannot backfill a burst of old alerts.
+func (s *Store) ApplyCorporateEventsWithPreference(ctx context.Context, canonical string, feed foundation.TaiwanCorporateEventFeed, syncedAt time.Time, alertsEnabled bool) (CorporateEventSyncResult, error) {
 	canonical = strings.ToUpper(strings.TrimSpace(canonical))
 	provider := strings.TrimSpace(feed.Provider)
 	result := CorporateEventSyncResult{Canonical: canonical, Provider: provider, Status: feed.Status, NewEvents: []foundation.TaiwanCorporateEvent{}}
@@ -54,6 +61,10 @@ func (s *Store) ApplyCorporateEvents(ctx context.Context, canonical string, feed
 		return result, fmt.Errorf("read corporate event state: %w", err)
 	}
 	lastSuccessful := parseTime(lastRaw)
+	securityName := canonical
+	if err := tx.QueryRowContext(ctx, `SELECT name FROM taiwan_watchlist WHERE canonical=?`, canonical).Scan(&securityName); err != nil && err != sql.ErrNoRows {
+		return result, fmt.Errorf("read corporate event security name: %w", err)
+	}
 	for _, event := range feed.Events {
 		if strings.TrimSpace(event.ID) == "" {
 			continue
@@ -74,6 +85,19 @@ func (s *Store) ApplyCorporateEvents(ctx context.Context, canonical string, feed
 			}
 			if !baseline && event.PublishedAt != nil && event.PublishedAt.After(lastSuccessful) {
 				result.NewEvents = append(result.NewEvents, event)
+				if alertsEnabled && !event.Stale && !event.Partial {
+					status := event.Status
+					if status == "" {
+						status = feed.Status
+					}
+					if _, err := tx.ExecContext(ctx, `INSERT INTO taiwan_corporate_event_alerts
+						(canonical,provider,event_id,security_name,title,category,published_at,source,source_url,retrieved_at,status,stale,partial,created_at,read_at)
+						VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, '') ON CONFLICT(canonical,provider,event_id) DO NOTHING`,
+						canonical, provider, event.ID, securityName, event.Title, event.Category, publishedAt,
+						event.Source, event.SourceURL, formatTime(event.RetrievedAt), status, event.Stale, event.Partial, formatTime(syncedAt)); err != nil {
+						return result, fmt.Errorf("save corporate event alert: %w", err)
+					}
+				}
 			}
 		}
 	}
