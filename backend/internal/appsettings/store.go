@@ -79,7 +79,12 @@ type Values struct {
 	Credentials        Credentials      `json:"credentials"`
 	ReviewAutomation   ReviewAutomation `json:"review_automation"`
 	BrokerCommission   BrokerCommission `json:"broker_commission,omitempty"`
+	TaiwanAlerts       TaiwanAlerts     `json:"taiwan_alerts"`
 	UpdatedAt          time.Time        `json:"updated_at,omitempty"`
+}
+
+type TaiwanAlerts struct {
+	CorporateEventsEnabled bool `json:"corporate_events_enabled"`
 }
 
 type BrokerCommission struct {
@@ -212,7 +217,7 @@ func llmFromProfile(profile LLMProfile, responseTimeoutSeconds int) LLM {
 }
 
 func defaultValues() Values {
-	return Values{ReviewAutomation: ReviewAutomation{Profiles: []ReviewSourceProfile{
+	return Values{TaiwanAlerts: TaiwanAlerts{CorporateEventsEnabled: true}, ReviewAutomation: ReviewAutomation{Profiles: []ReviewSourceProfile{
 		{ID: "wechat-default", Source: "wechat", Name: "微信公众号默认配置", SyncHour: 7, AutoAnalyze: true, Enabled: true},
 		{ID: "xueqiu-default", Source: "xueqiu", Name: "雪球默认配置", BaseURL: "https://xueqiu.com", SyncHour: 7, AutoAnalyze: true, Enabled: true},
 		{ID: "taoguba-default", Source: "taoguba", Name: "淘股吧默认配置", BaseURL: "https://www.tgb.cn", SyncHour: 7, AutoAnalyze: true, Enabled: true},

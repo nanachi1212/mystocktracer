@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { BackendConfig, Quote } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
 import { chunkTaiwanSymbols, createTaiwanWatchlistBackup, fetchTaiwanWatchlist, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, mergeTaiwanWatchlistBackup, parseTaiwanWatchlistBackup, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanIntelligencePath, taiwanSecurityTypeLabel, type TaiwanWatchlistSecurity } from '../lib/taiwan-product';
+import { TaiwanEventAlertCenter } from './TaiwanEventAlertCenter';
 
 type QuoteLookup = Record<string, Quote>;
 type WatchlistEventSyncItem = {
@@ -79,6 +80,7 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 	const [securities, setSecurities] = useState<TaiwanWatchlistSecurity[]>([]);
 	const [quotes, setQuotes] = useState<QuoteLookup>({});
 	const [eventItems, setEventItems] = useState<WatchlistEventLookup>({});
+	const [alertRefreshKey, setAlertRefreshKey] = useState(0);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
 	const [removingSymbol, setRemovingSymbol] = useState<string | null>(null);
@@ -119,7 +121,7 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 			return { list, quoteMap, eventMap };
 		}, {
 			onStart: () => { setLoading(true); setError(''); },
-			onSuccess: ({ list, quoteMap, eventMap }) => { setSecurities(list); setQuotes(quoteMap); setEventItems(eventMap); },
+			onSuccess: ({ list, quoteMap, eventMap }) => { setSecurities(list); setQuotes(quoteMap); setEventItems(eventMap); setAlertRefreshKey((current) => current + 1); },
 			onError: (reason) => { setSecurities([]); setQuotes({}); setEventItems({}); setError(taiwanErrorMessage(reason, '自選股清單載入失敗')); },
 			onSettle: () => setLoading(false),
 		});
@@ -200,13 +202,14 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 				const list = await fetchTaiwanWatchlist(config);
 				const canonicals = list.map((item) => item.canonical);
 				const [quoteMap, eventMap] = await Promise.all([fetchWatchlistQuotes(config, canonicals), fetchWatchlistCorporateEvents(config, canonicals)]);
-				setSecurities(list); setQuotes(quoteMap); setEventItems(eventMap);
+				setSecurities(list); setQuotes(quoteMap); setEventItems(eventMap); setAlertRefreshKey((current) => current + 1);
 			}
 		} catch (reason) { setError(taiwanErrorMessage(reason, '匯入自選股失敗')); }
 		finally { setBackupBusy(false); }
 	};
 
 	return <div className="taiwan-product-workspace taiwan-watchlist-workspace">
+		<TaiwanEventAlertCenter config={config} refreshKey={alertRefreshKey} />
 		<div className="taiwan-watchlist-backup-actions"><button type="button" onClick={exportBackup} disabled={loading}><Download size={14} />匯出 JSON</button><button type="button" onClick={() => fileInputRef.current?.click()} disabled={!config || backupBusy}><Upload size={14} />匯入 JSON</button><input ref={fileInputRef} type="file" accept="application/json,.json" onChange={(event) => void importBackup(event)} hidden /></div>
 		{loading && <div className="taiwan-loading"><LoaderCircle className="spin" size={18} />正在讀取自選股清單</div>}
 		{error && <div className="market-partial-warning">{error}</div>}

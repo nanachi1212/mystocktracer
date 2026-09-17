@@ -39,6 +39,9 @@ type settingsView struct {
 	ReviewAutomation struct {
 		Profiles []reviewSourceProfileView `json:"profiles"`
 	} `json:"review_automation"`
+	TaiwanAlerts struct {
+		CorporateEventsEnabled bool `json:"corporate_events_enabled"`
+	} `json:"taiwan_alerts"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
@@ -108,6 +111,9 @@ type settingsUpdateRequest struct {
 	ReviewAutomation struct {
 		Profiles *[]reviewSourceProfileUpdate `json:"profiles"`
 	} `json:"review_automation"`
+	TaiwanAlerts struct {
+		CorporateEventsEnabled *bool `json:"corporate_events_enabled"`
+	} `json:"taiwan_alerts"`
 }
 
 func (s *Server) settingsGet(w http.ResponseWriter, r *http.Request) {
@@ -242,6 +248,9 @@ func (s *Server) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 				profiles = append(profiles, appsettings.ReviewSourceProfile{ID: id, Source: strings.TrimSpace(input.Source), Name: strings.TrimSpace(input.Name), BaseURL: strings.TrimRight(strings.TrimSpace(input.BaseURL), "/"), Credential: credential, SyncHour: input.SyncHour, AutoAnalyze: input.AutoAnalyze, Enabled: input.Enabled})
 			}
 			values.ReviewAutomation.Profiles = profiles
+		}
+		if request.TaiwanAlerts.CorporateEventsEnabled != nil {
+			values.TaiwanAlerts.CorporateEventsEnabled = *request.TaiwanAlerts.CorporateEventsEnabled
 		}
 		return nil
 	})
@@ -452,6 +461,7 @@ func (s *Server) buildSettingsView(values appsettings.Values) settingsView {
 	for _, profile := range values.ReviewAutomation.Profiles {
 		view.ReviewAutomation.Profiles = append(view.ReviewAutomation.Profiles, reviewSourceProfileView{ID: profile.ID, Source: profile.Source, Name: profile.Name, BaseURL: profile.BaseURL, Credential: secretStatus(profile.Credential), SyncHour: profile.SyncHour, AutoAnalyze: profile.AutoAnalyze, Enabled: profile.Enabled})
 	}
+	view.TaiwanAlerts.CorporateEventsEnabled = values.TaiwanAlerts.CorporateEventsEnabled
 	return view
 }
 

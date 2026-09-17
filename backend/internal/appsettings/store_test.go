@@ -76,3 +76,41 @@ func TestStorePersistsBrokerSpecificCommissionWithoutInventingDefault(t *testing
 		t.Fatalf("commission = %+v, %v", values.BrokerCommission, err)
 	}
 }
+
+func TestTaiwanCorporateEventAlertPreferenceDefaultsEnabledAndPersists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !store.Snapshot().TaiwanAlerts.CorporateEventsEnabled {
+		t.Fatal("corporate-event alerts must default enabled for backward-compatible change detection")
+	}
+	if _, err := store.Update(func(values *Values) error {
+		values.TaiwanAlerts.CorporateEventsEnabled = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Snapshot().TaiwanAlerts.CorporateEventsEnabled {
+		t.Fatal("disabled corporate-event alert preference did not persist")
+	}
+}
+
+func TestLegacySettingsWithoutTaiwanAlertsKeepSafeDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"llm":{"provider":"custom"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !store.Snapshot().TaiwanAlerts.CorporateEventsEnabled {
+		t.Fatal("legacy settings unexpectedly disabled Taiwan alerts")
+	}
+}

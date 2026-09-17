@@ -94,6 +94,9 @@ export type AppSettings = {
 	review_automation: {
 		profiles: ReviewAutomationProfile[];
 	};
+	taiwan_alerts: {
+		corporate_events_enabled: boolean;
+	};
 	updated_at?: string;
 };
 

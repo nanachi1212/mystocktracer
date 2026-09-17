@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -61,6 +62,29 @@ func TestSettingsAPIStoresSecretsWithoutReturningThem(t *testing.T) {
 	server.ServeHTTP(getRec, getReq)
 	if getRec.Code != http.StatusOK || strings.Contains(getRec.Body.String(), "sk-private") {
 		t.Fatalf("GET settings leaked or failed: status=%d body=%s", getRec.Code, getRec.Body.String())
+	}
+}
+
+func TestSettingsAPIPersistsTaiwanCorporateEventAlertPreference(t *testing.T) {
+	store, err := appsettings.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(Config{SettingsStore: store})
+	defer server.Close()
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(`{"taiwan_alerts":{"corporate_events_enabled":false}}`)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Data settingsView `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data.TaiwanAlerts.CorporateEventsEnabled || store.Snapshot().TaiwanAlerts.CorporateEventsEnabled {
+		t.Fatalf("Taiwan alert preference did not update: %+v", payload.Data.TaiwanAlerts)
 	}
 }
 

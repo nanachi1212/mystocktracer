@@ -53,6 +53,14 @@ func TestOldSchemaMigrationPreservesWatchlistAndEventStateAcrossRestart(t *testi
 	if err != nil || result.Baseline || len(result.NewEvents) != 0 {
 		t.Fatalf("restarted state = %+v, %v", result, err)
 	}
+	newTime := t0.Add(2 * time.Hour)
+	if _, err := store.ApplyCorporateEvents(t.Context(), "2330.TWSE", eventFeed(event("new-after-migration", &newTime)), t0.Add(3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.ListAlerts(t.Context(), AlertFilterAll, 10, 0)
+	if err != nil || len(page.Alerts) != 1 || page.Alerts[0].SecurityName != "台積電" {
+		t.Fatalf("migrated alert inbox = %+v, %v", page, err)
+	}
 }
 
 func TestCorporateEventChangeDetectionAndPersistence(t *testing.T) {

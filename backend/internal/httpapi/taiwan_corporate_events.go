@@ -112,6 +112,10 @@ func (s *Server) taiwanCorporateEventSyncHandler(w http.ResponseWriter, r *http.
 	var firstErr error
 	var errMu sync.Mutex
 	sem := make(chan struct{}, 3)
+	alertsEnabled := true
+	if s.settingsStore != nil {
+		alertsEnabled = s.settingsStore.Snapshot().TaiwanAlerts.CorporateEventsEnabled
+	}
 	var wg sync.WaitGroup
 	for _, symbol := range symbols {
 		symbol := symbol
@@ -125,7 +129,7 @@ func (s *Server) taiwanCorporateEventSyncHandler(w http.ResponseWriter, r *http.
 				return
 			}
 			feed := s.taiwanCorporateEvents.CorporateEvents(ctx, symbol, 90, 12)
-			change, err := s.watchlistStore.ApplyCorporateEvents(ctx, symbol, feed, time.Now().UTC())
+			change, err := s.watchlistStore.ApplyCorporateEventsWithPreference(ctx, symbol, feed, time.Now().UTC(), alertsEnabled)
 			if err != nil {
 				errMu.Lock()
 				if firstErr == nil {
