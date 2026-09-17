@@ -4,6 +4,7 @@ import type { FormEvent } from 'react';
 import type { BackendConfig, SecurityIdentity } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
 import { SubscriptionAIModal } from './SubscriptionAIModal';
+import { TaiwanResearchHistory, type ResearchHistoryRecord } from './TaiwanResearchHistory';
 import { addTaiwanWatchlistSecurity, formatTaiwanBookValuePerShare, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, isTaiwanSecurityWatchlisted, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanComponentList, taiwanErrorMessage, taiwanIntelligenceCorePath, taiwanIntelligencePath, taiwanReasonLabel, taiwanResearchPath, taiwanSecurityTypeLabel, taiwanStatusLabel, type TaiwanResearchEntryContext } from '../lib/taiwan-product';
 
 export type Evidence = { status: string; freshness?: string; as_of?: string; reason?: string; data?: Record<string, unknown> };
@@ -78,6 +79,8 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 	const [intelligence, setIntelligence] = useState<Intelligence | null>(null);
 	const [coreData, setCoreData] = useState<IntelligenceCore | null>(null);
 	const [research, setResearch] = useState<Research | null>(null);
+	const [researchHistoryRefreshKey, setResearchHistoryRefreshKey] = useState(0);
+	const [researchViewLabel, setResearchViewLabel] = useState('');
 	const [loading, setLoading] = useState(false);
 	const [coreLoading, setCoreLoading] = useState(false);
 	const [fullLoading, setFullLoading] = useState(false);
@@ -170,6 +173,7 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 				setIntelligence(null);
 				setCoreData(null);
 				setResearch(null);
+				setResearchViewLabel('');
 				setLoading(true);
 				setCoreLoading(true);
 				setFullLoading(true);
@@ -202,12 +206,18 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 	};
 	const generateResearch = async () => {
 		if (!config || !selected) return;
-		setResearching(true); setError('');
+		setResearching(true); setError(''); setResearchViewLabel('');
 		try {
-			const payload = await requestJSON<{ data: { intelligence: Intelligence; ai_research: Research } }>(config, taiwanResearchPath(selected.canonical), { method: 'POST' });
+			const runID = crypto.randomUUID();
+			const payload = await requestJSON<{ data: { intelligence: Intelligence; ai_research: Research; history_run_id?: string } }>(config, taiwanResearchPath(selected.canonical), { method: 'POST', headers: { 'X-Research-Run-ID': runID } });
 			setIntelligence(payload.data.intelligence); setResearch(payload.data.ai_research);
+			if (payload.data.history_run_id) { setResearchViewLabel('最新研究'); setResearchHistoryRefreshKey((current) => current + 1); }
 		} catch (reason) { setError(taiwanErrorMessage(reason, 'AI 研究目前無法使用')); }
 		finally { setResearching(false); }
+	};
+	const openHistoricalResearch = (record: ResearchHistoryRecord) => {
+		setResearch(record.research_result);
+		setResearchViewLabel(`研究歷史 · ${new Date(record.created_at).toLocaleString('zh-TW', { hour12: false })}`);
 	};
 	// Preserve the initial default (2330) on first load, but a later refresh (refreshKey change)
 	// must retry whatever the user currently has selected rather than silently resetting to 2330.
@@ -291,7 +301,8 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 						onClose={() => setSubscriptionAIModalOpen(false)}
 					/>
 				)}
-				{research && <ResearchView research={research} />}
+				<TaiwanResearchHistory config={config} canonical={selected?.canonical || displayData.identity.canonical_symbol} refreshKey={researchHistoryRefreshKey} onOpenResearch={openHistoricalResearch} />
+				{research && <>{researchViewLabel && <div className="taiwan-research-view-label">{researchViewLabel}</div>}<ResearchView research={research} /></>}
 			</>}
 		</>}
 		{!displayData && !loading && <div className="taiwan-empty-state"><strong>選擇台灣證券開始分析</strong><p>可搜尋上市或上櫃股票；原始資料載入不會呼叫 AI。</p></div>}

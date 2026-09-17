@@ -7495,3 +7495,34 @@ a:focus-visible {
 		justify-content: center;
 	}
 }
+
+.taiwan-research-history { margin: 18px 0; }
+.taiwan-research-history-trigger { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; background: var(--surface); color: var(--text); cursor: pointer; }
+.taiwan-research-history-trigger span { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #175ea9; color: #fff; font-size: 11px; text-align: center; }
+.taiwan-research-history-panel { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 14px; }
+.taiwan-research-history-panel > header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.taiwan-research-history-panel > header small { display: block; margin-top: 4px; color: var(--muted); }
+.taiwan-research-history-panel > header > div:last-child { display: flex; gap: 8px; }
+.taiwan-research-history-panel button { display: inline-flex; align-items: center; gap: 5px; }
+.taiwan-research-history-list { display: grid; gap: 10px; }
+.taiwan-research-history-list > article { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fff; }
+.taiwan-research-history-list > article.active { border-color: #175ea9; }
+.taiwan-research-history-list article header, .taiwan-research-history-list article footer { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.taiwan-research-history-list article header div { display: grid; gap: 3px; }
+.taiwan-research-history-list article time, .taiwan-research-history-list article small, .taiwan-research-history-list article p { color: var(--muted); font-size: 12px; }
+.taiwan-research-history-list article footer { justify-content: flex-start; margin-top: 10px; }
+.taiwan-research-comparison { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+.taiwan-comparison-summary div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.taiwan-comparison-summary span { border-radius: 999px; padding: 4px 8px; background: #f1f5f9; font-size: 12px; }
+.taiwan-comparison-domains { display: grid; gap: 8px; margin-top: 12px; }
+.taiwan-comparison-domains > article { border: 1px solid var(--line); border-radius: 9px; padding: 10px; }
+.taiwan-comparison-domains article header { display: flex; justify-content: space-between; gap: 8px; }
+.taiwan-comparison-domains ul, .taiwan-comparison-assumptions ul { margin: 8px 0 0; padding-left: 18px; }
+.taiwan-comparison-domains li { margin: 6px 0; }
+.taiwan-comparison-domains li span, .taiwan-comparison-domains li small { display: block; color: var(--muted); }
+.taiwan-comparison-assumptions { margin-top: 14px; }
+.taiwan-comparison-assumptions li { display: flex; justify-content: space-between; gap: 12px; margin: 7px 0; }
+.taiwan-comparison-events { margin-top: 14px; }
+.taiwan-comparison-events p { margin: 6px 0; color: var(--muted); }
+.taiwan-research-history-more { margin-top: 10px; }
+.taiwan-research-view-label { margin: 10px 0 -8px; color: var(--muted); font-size: 12px; }

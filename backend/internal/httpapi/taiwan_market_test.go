@@ -63,8 +63,13 @@ func (fixedTaiwanIntelligence) StockIntelligence(_ context.Context, canonical st
 	if canonical != "2330.TWSE" {
 		return stockanalysis.TaiwanStockIntelligence{}, fmt.Errorf("unknown canonical Taiwan security %q", canonical)
 	}
-	interpretation := stockanalysis.CalculateTaiwanStockInterpretation(stockanalysis.TaiwanStockIntelligence{Symbol: canonical})
-	return stockanalysis.TaiwanStockIntelligence{ModelVersion: stockanalysis.TaiwanStockIntelligenceVersion, Symbol: canonical, Interpretation: &interpretation}, nil
+	result := stockanalysis.TaiwanStockIntelligence{ModelVersion: stockanalysis.TaiwanStockIntelligenceVersion, Symbol: canonical,
+		Identity:        stockanalysis.TaiwanIdentityEvidence{CanonicalSymbol: canonical, Code: "2330", Name: "台積電", Exchange: "TWSE", Currency: "TWD", SecurityType: foundation.SecurityTypeStock},
+		CorporateEvents: foundation.TaiwanCorporateEventFeed{Status: foundation.TaiwanCorporateEventsNotQueried, Events: []foundation.TaiwanCorporateEvent{}},
+	}
+	interpretation := stockanalysis.CalculateTaiwanStockInterpretation(result)
+	result.Interpretation = &interpretation
+	return result, nil
 }
 
 func (fixedTaiwanIntelligence) StockIntelligenceCore(_ context.Context, canonical string, _ time.Time) (stockanalysis.TaiwanStockIntelligenceCore, error) {
