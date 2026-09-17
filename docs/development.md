@@ -153,6 +153,7 @@ Electron 桌面模式
 | 变量 | 说明 |
 | --- | --- |
 | `A_STOCK_SETTINGS_PATH` | 设置文件路径 |
+| `A_STOCK_TAIWAN_PORTFOLIO_DB` | 台股持倉 SQLite 路徑；未設定時使用應用資料目錄下的 `taiwan-portfolio.db` |
 | `A_STOCK_REVIEW_DB` | 复盘文章 SQLite 路径 |
 | `A_STOCK_MARKET_EMOTION_DB` | 市场情绪历史 SQLite 路径 |
 | `A_STOCK_THEME_RADAR_DB` | 趋势题材与短线侠快照 SQLite 路径 |

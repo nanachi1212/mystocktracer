@@ -7526,3 +7526,54 @@ a:focus-visible {
 .taiwan-comparison-events p { margin: 6px 0; color: var(--muted); }
 .taiwan-research-history-more { margin-top: 10px; }
 .taiwan-research-view-label { margin: 10px 0 -8px; color: var(--muted); font-size: 12px; }
+
+.taiwan-portfolio-workspace { padding: 20px; display: grid; gap: 16px; }
+.taiwan-portfolio-message { display: flex; align-items: center; gap: 8px; border-radius: 10px; padding: 10px 13px; font-size: 13px; }
+.taiwan-portfolio-message.error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; }
+.taiwan-portfolio-message.success { color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; }
+.taiwan-portfolio-message button { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.taiwan-portfolio-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.taiwan-portfolio-overview article { display: grid; gap: 5px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.taiwan-portfolio-overview span, .taiwan-portfolio-overview small { color: var(--muted); font-size: 12px; }
+.taiwan-portfolio-overview strong { font-size: 20px; }
+.taiwan-portfolio-overview .up, .taiwan-portfolio-row .up { color: #b91c1c; }
+.taiwan-portfolio-overview .down, .taiwan-portfolio-row .down { color: #047857; }
+.taiwan-portfolio-concentration { border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px; background: var(--surface); }
+.taiwan-portfolio-concentration header, .taiwan-portfolio-concentration div { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.taiwan-portfolio-concentration header { margin-bottom: 9px; }
+.taiwan-portfolio-concentration div span { border-radius: 999px; padding: 5px 9px; background: #f1f5f9; font-size: 12px; }
+.taiwan-portfolio-concentration p { margin: 0; color: var(--muted); font-size: 13px; }
+.taiwan-portfolio-layout { display: grid; grid-template-columns: minmax(270px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.taiwan-portfolio-form, .taiwan-portfolio-holdings { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 15px; }
+.taiwan-portfolio-form > header, .taiwan-portfolio-holdings > header, .taiwan-portfolio-form > header div, .taiwan-portfolio-holdings > header div { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+.taiwan-portfolio-form > header button { display: inline-flex; align-items: center; gap: 5px; }
+.taiwan-portfolio-form label { display: grid; gap: 6px; margin-top: 13px; color: var(--muted); font-size: 12px; }
+.taiwan-portfolio-form input, .taiwan-portfolio-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: #fff; color: var(--text); box-sizing: border-box; }
+.taiwan-portfolio-form textarea { min-height: 68px; resize: vertical; }
+.taiwan-portfolio-search { display: flex; gap: 7px; }
+.taiwan-portfolio-search button, .taiwan-portfolio-save { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.taiwan-portfolio-matches { display: grid; margin-top: 7px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.taiwan-portfolio-matches button { display: flex; justify-content: space-between; gap: 8px; padding: 9px; border: 0; border-bottom: 1px solid var(--line); background: #fff; text-align: left; }
+.taiwan-portfolio-matches button:last-child { border-bottom: 0; }
+.taiwan-portfolio-selected { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; padding: 8px; border-radius: 8px; background: #eff6ff; font-size: 12px; }
+.taiwan-portfolio-save { width: 100%; margin-top: 14px; padding: 10px; border: 0; border-radius: 8px; background: #175ea9; color: #fff; }
+.taiwan-portfolio-save:disabled { opacity: .55; }
+.taiwan-portfolio-holdings { display: grid; gap: 11px; }
+.taiwan-portfolio-holdings > header { margin-bottom: 2px; }
+.taiwan-portfolio-row { border: 1px solid var(--line); border-radius: 10px; padding: 13px; }
+.taiwan-portfolio-row > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.taiwan-portfolio-row > header div { display: grid; gap: 3px; }
+.taiwan-portfolio-row > header span, .taiwan-portfolio-row > p { color: var(--muted); font-size: 12px; }
+.taiwan-portfolio-row > header em { border-radius: 999px; padding: 4px 8px; font-size: 11px; font-style: normal; background: #f1f5f9; }
+.taiwan-portfolio-row > header em.available { color: #166534; background: #dcfce7; }
+.taiwan-portfolio-row > header em.stale { color: #92400e; background: #fef3c7; }
+.taiwan-portfolio-values { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 9px; margin-top: 12px; }
+.taiwan-portfolio-values span { display: grid; gap: 3px; }
+.taiwan-portfolio-values small { color: var(--muted); font-size: 11px; }
+.taiwan-portfolio-values strong { font-size: 13px; overflow-wrap: anywhere; }
+.taiwan-portfolio-values i { display: block; font-size: 11px; font-style: normal; }
+.taiwan-portfolio-row footer { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.taiwan-portfolio-row footer button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.taiwan-portfolio-row footer button.danger { color: #b91c1c; }
+@media (max-width: 1000px) { .taiwan-portfolio-overview { grid-template-columns: repeat(2, 1fr); } .taiwan-portfolio-layout { grid-template-columns: 1fr; } .taiwan-portfolio-values { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px) { .taiwan-portfolio-workspace { padding: 12px; } .taiwan-portfolio-overview { grid-template-columns: 1fr; } .taiwan-portfolio-values { grid-template-columns: repeat(2, 1fr); } }

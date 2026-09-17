@@ -32,6 +32,7 @@ import (
 	"easy-stock/backend/internal/runtimelog"
 	"easy-stock/backend/internal/sector"
 	"easy-stock/backend/internal/strategy/inflection"
+	"easy-stock/backend/internal/taiwanportfolio"
 	"easy-stock/backend/internal/taiwanwatchlist"
 )
 
@@ -82,6 +83,7 @@ type Server struct {
 	reviewStore                 *review.Store
 	portfolioStore              *portfolioinspection.Store
 	watchlistStore              *taiwanwatchlist.Store
+	taiwanPortfolioStore        *taiwanportfolio.Store
 	portfolioInspection         *portfolioinspection.Service
 	portfolioExpectation        *portfolioinspection.ExpectationService
 	reviewImporter              ReviewImporter
@@ -296,6 +298,17 @@ func NewServer(config any) *Server {
 			cfg.WatchlistStore, _ = taiwanwatchlist.OpenStore(":memory:")
 		}
 	}
+	if cfg.TaiwanPortfolioStore == nil {
+		store, err := taiwanportfolio.OpenStore(cfg.TaiwanPortfolioDBPath)
+		if err == nil {
+			cfg.TaiwanPortfolioStore = store
+		} else if cfg.StrictPersistence {
+			startupErrors = append(startupErrors, fmt.Errorf("open Taiwan portfolio database: %w", err))
+			cfg.TaiwanPortfolioStore, _ = taiwanportfolio.OpenStore(":memory:")
+		} else {
+			cfg.TaiwanPortfolioStore, _ = taiwanportfolio.OpenStore(":memory:")
+		}
+	}
 	if cfg.ReviewHTTP == nil {
 		cfg.ReviewHTTP = &http.Client{Timeout: 90 * time.Second}
 	}
@@ -395,6 +408,7 @@ func NewServer(config any) *Server {
 		reviewStore:                 cfg.ReviewStore,
 		portfolioStore:              cfg.PortfolioStore,
 		watchlistStore:              cfg.WatchlistStore,
+		taiwanPortfolioStore:        cfg.TaiwanPortfolioStore,
 		reviewImporter:              cfg.ReviewImporter,
 		wechatAPIURL:                strings.TrimSpace(cfg.WeChatAPIURL),
 		settingsStore:               cfg.SettingsStore,
@@ -446,6 +460,9 @@ func (s *Server) Close() error {
 	}
 	if s.watchlistStore != nil {
 		closeErrors = append(closeErrors, s.watchlistStore.Close())
+	}
+	if s.taiwanPortfolioStore != nil {
+		closeErrors = append(closeErrors, s.taiwanPortfolioStore.Close())
 	}
 	if s.themeRadarStore != nil {
 		closeErrors = append(closeErrors, s.themeRadarStore.Close())
@@ -594,6 +611,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/tw/watchlist", s.taiwanWatchlistListHandler)
 	s.mux.HandleFunc("POST /api/v1/tw/watchlist", s.taiwanWatchlistAddHandler)
 	s.mux.HandleFunc("DELETE /api/v1/tw/watchlist/{symbol}", s.taiwanWatchlistRemoveHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/portfolio", s.taiwanPortfolioListHandler)
+	s.mux.HandleFunc("POST /api/v1/tw/portfolio", s.taiwanPortfolioAddHandler)
+	s.mux.HandleFunc("PUT /api/v1/tw/portfolio/{symbol}", s.taiwanPortfolioUpdateHandler)
+	s.mux.HandleFunc("DELETE /api/v1/tw/portfolio/{symbol}", s.taiwanPortfolioDeleteHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/portfolio/summary", s.taiwanPortfolioSummaryHandler)
 	s.mux.HandleFunc("GET /api/v1/stocks/hot-ranks", s.hotStockRanksHandler)
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections", s.portfolioInspectionList)
 	s.mux.HandleFunc("POST /api/v1/portfolio-inspections", s.portfolioInspectionCreate)

@@ -1,4 +1,4 @@
-import { Download, LoaderCircle, Trash2, Upload } from 'lucide-react';
+import { Download, LoaderCircle, Trash2, Upload, WalletCards } from 'lucide-react';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { BackendConfig, Quote } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
@@ -76,7 +76,7 @@ async function fetchWatchlistSummary(config: BackendConfig, canonical: string): 
 	return { status: 'available', valuation: data?.valuation ?? null, statement: data?.financial_statement ?? null };
 }
 
-export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }: { config: BackendConfig | null; refreshKey: number; onOpenResearch: (canonical: string) => void }) {
+export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch, onAddPortfolio = () => {} }: { config: BackendConfig | null; refreshKey: number; onOpenResearch: (canonical: string) => void; onAddPortfolio?: (canonical: string) => void }) {
 	const [securities, setSecurities] = useState<TaiwanWatchlistSecurity[]>([]);
 	const [quotes, setQuotes] = useState<QuoteLookup>({});
 	const [eventItems, setEventItems] = useState<WatchlistEventLookup>({});
@@ -217,6 +217,7 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 		{securities.length > 0 && <div className="taiwan-watchlist-list">{securities.map((item) => (
 			<WatchlistRow key={item.canonical} security={item} quote={quotes[item.canonical]} busy={removingSymbol === item.canonical}
 				onOpen={() => onOpenResearch(item.canonical)} onRemove={() => void remove(item.canonical)}
+				onAddPortfolio={() => onAddPortfolio(item.canonical)}
 				expanded={expanded.has(item.canonical)} summary={summaries[item.canonical]}
 				eventItem={eventItems[item.canonical]}
 				onToggleSummary={() => toggleSummary(item.canonical)} onRetrySummary={() => retrySummary(item.canonical)} />
@@ -298,8 +299,9 @@ export function WatchlistSummaryPanel({ summary, onRetry, securityType }: { summ
 // passing them) — existing call sites and tests are unaffected. The toggle is its own sibling
 // <button>, never nested inside the identity button, so it can never also trigger Research
 // navigation, and the identity button's own onOpen/Research-navigation behavior is unchanged.
-export function WatchlistRow({ security, quote, busy, onOpen, onRemove, expanded = false, summary, eventItem, onToggleSummary = () => {}, onRetrySummary = () => {} }: {
+export function WatchlistRow({ security, quote, busy, onOpen, onRemove, onAddPortfolio = () => {}, expanded = false, summary, eventItem, onToggleSummary = () => {}, onRetrySummary = () => {} }: {
 	security: TaiwanWatchlistSecurity; quote?: Quote; busy: boolean; onOpen: () => void; onRemove: () => void;
+	onAddPortfolio?: () => void;
 	expanded?: boolean; summary?: WatchlistSummary; eventItem?: WatchlistEventSyncItem; onToggleSummary?: () => void; onRetrySummary?: () => void;
 }) {
 	const newEventCount = eventItem?.change.new_events.length || 0;
@@ -310,6 +312,7 @@ export function WatchlistRow({ security, quote, busy, onOpen, onRemove, expanded
 			: <div className="taiwan-watchlist-quote"><span>報價暫時無法取得</span></div>}
 		{eventItem && <span className={`taiwan-watchlist-event ${eventItem.feed.status}`}>{newEventCount > 0 ? `新增公告 ${newEventCount} 則` : eventItem.feed.status === 'no_events' ? '目前無公告' : eventItem.feed.status === 'available' ? `公告 ${eventItem.feed.events.length} 則` : eventItem.feed.status === 'partial' ? '公告部分可用' : eventItem.feed.status === 'stale' ? '公告資料較舊' : eventItem.feed.status === 'unsupported' ? '不支援公告查詢' : eventItem.feed.status === 'not_queried' ? '公告未查詢' : '公告暫時無法取得'}</span>}
 		<button type="button" className="taiwan-watchlist-toggle" aria-expanded={expanded} onClick={onToggleSummary}>{expanded ? '收合摘要' : '展開摘要'}</button>
+		<button type="button" className="taiwan-watchlist-toggle" onClick={onAddPortfolio}><WalletCards size={14} />加入持倉</button>
 		<button type="button" className="taiwan-watchlist-remove" onClick={onRemove} disabled={busy}>{busy ? <LoaderCircle className="spin" size={14} /> : <Trash2 size={14} />}移除自選</button>
 		{expanded && <WatchlistSummaryPanel summary={summary} onRetry={onRetrySummary} securityType={security.security_type} />}
 	</article>;
