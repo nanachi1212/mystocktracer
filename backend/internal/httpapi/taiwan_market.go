@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -11,6 +13,7 @@ import (
 	"easy-stock/backend/internal/foundation"
 	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/stockanalysis"
+	"easy-stock/backend/internal/taiwanwatchlist"
 )
 
 func (s *Server) taiwanSecurity(ctxQuery string, r *http.Request) (foundation.SecurityIdentity, error) {
@@ -294,6 +297,11 @@ func (s *Server) taiwanStockResearchHandler(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "canonical Taiwan symbol is required")
 		return
 	}
+	runID, err := researchRunID(r.Header.Get("X-Research-Run-ID"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 	intelligence, err := s.taiwanIntelligence.StockIntelligence(ctx, symbol, time.Now())
@@ -305,8 +313,54 @@ func (s *Server) taiwanStockResearchHandler(w http.ResponseWriter, r *http.Reque
 	if value, ok := s.hermesGateway.(hermes.IsolatedPrompter); ok {
 		prompter = value
 	}
-	research := stockanalysis.GenerateTaiwanResearch(ctx, prompter, intelligence, time.Now())
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"intelligence": intelligence, "ai_research": research}})
+	research := stockanalysis.GenerateTaiwanResearch(ctx, prompter, intelligence, time.Now().UTC())
+	data := map[string]any{"intelligence": intelligence, "ai_research": research}
+	if research.Status == "available" {
+		if s.watchlistStore == nil {
+			writeError(w, http.StatusServiceUnavailable, "Taiwan research history storage is unavailable")
+			return
+		}
+		payload := stockanalysis.BuildTaiwanResearchPayload(intelligence)
+		metadata := stockanalysis.BuildTaiwanResearchHistoryMetadata(intelligence, payload)
+		evidenceJSON, evidenceErr := json.Marshal(payload)
+		researchJSON, researchErr := json.Marshal(research)
+		provenanceJSON, provenanceErr := json.Marshal(metadata.Provenance)
+		validityJSON, validityErr := json.Marshal(metadata.Validity)
+		if err := errors.Join(evidenceErr, researchErr, provenanceErr, validityErr); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to encode Taiwan research history")
+			return
+		}
+		provider, model := "", ""
+		if s.settingsStore != nil {
+			settings := s.settingsStore.Snapshot()
+			provider, model = settings.LLM.Provider, settings.LLM.Model
+		}
+		createdAt := time.Now().UTC()
+		if research.GeneratedAt != nil {
+			createdAt = research.GeneratedAt.UTC()
+		}
+		saved, inserted, err := s.watchlistStore.SaveResearchHistory(ctx, taiwanwatchlist.ResearchHistoryRecord{
+			RunID: runID, Canonical: intelligence.Symbol, SecurityName: intelligence.Identity.Name, CreatedAt: createdAt,
+			EvidenceAsOf: metadata.EvidenceAsOf, ResearchVersion: research.ModelVersion, PayloadVersion: payload.ResearchVersion,
+			ModelProvider: provider, ModelName: model, EvidenceSnapshot: evidenceJSON, ResearchResult: researchJSON,
+			Provenance: provenanceJSON, Validity: validityJSON, Completeness: metadata.Validity.Completeness,
+			Stale: metadata.Validity.Stale, Partial: metadata.Validity.Partial,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save Taiwan research history")
+			return
+		}
+		if !inserted {
+			var persisted stockanalysis.TaiwanAIResearch
+			if err := json.Unmarshal(saved.ResearchResult, &persisted); err != nil {
+				writeError(w, http.StatusInternalServerError, "saved Taiwan research history is invalid")
+				return
+			}
+			data["ai_research"] = persisted
+		}
+		data["history_run_id"] = runID
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 func (s *Server) taiwanFundamentalsHandler(w http.ResponseWriter, r *http.Request) {
