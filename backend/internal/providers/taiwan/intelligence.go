@@ -65,6 +65,21 @@ func (c *Client) StockIntelligence(ctx context.Context, canonical string, now ti
 	if identity == nil {
 		return stockanalysis.TaiwanStockIntelligence{}, fmt.Errorf("unknown canonical Taiwan security %q", canonical)
 	}
+	eventFeed := foundation.TaiwanCorporateEventFeed{
+		Status: foundation.TaiwanCorporateEventsNotQueried, Provider: foundation.TaiwanCorporateEventProviderToAlpha,
+		Source: foundation.TaiwanCorporateEventSourceMOPS, Reason: "corporate-event enrichment is not configured",
+		Events: []foundation.TaiwanCorporateEvent{},
+	}
+	eventCh := make(chan foundation.TaiwanCorporateEventFeed, 1)
+	if identity.Type != foundation.SecurityTypeStock {
+		eventFeed.Status = foundation.TaiwanCorporateEventsUnsupported
+		eventFeed.Reason = "corporate events are supported only for Taiwan stocks"
+		eventCh <- eventFeed
+	} else if c.corporateEvents != nil {
+		go func() { eventCh <- c.corporateEvents.CorporateEvents(ctx, canonical, 90, 12) }()
+	} else {
+		eventCh <- eventFeed
+	}
 
 	// One shared bulk snapshot supplies breadth, emotion, and industry context.
 	target := c.calendar.LatestCompleted(now, marketCutoffHour, marketCutoffMinute)
@@ -102,7 +117,9 @@ func (c *Client) StockIntelligence(ctx context.Context, canonical string, now ti
 	if identity.Exchange == "TPEX" {
 		breadthScope, emotionScope, radarScope = breadth.TPEX, emotion.TPEX, radar.TPEX
 	}
-	return stockanalysis.NewTaiwanStockIntelligence(*identity, quotePtr, lines, fundamentalsPtr, institutionalPtr, marginPtr, breadthScope, emotionScope, radarScope), nil
+	result := stockanalysis.NewTaiwanStockIntelligence(*identity, quotePtr, lines, fundamentalsPtr, institutionalPtr, marginPtr, breadthScope, emotionScope, radarScope)
+	result.CorporateEvents = <-eventCh
+	return result, nil
 }
 
 func (c *Client) intelligenceMarketContext(ctx context.Context, identities []foundation.SecurityIdentity, target, now time.Time) (foundation.TaiwanMarketBreadth, marketemotion.TaiwanMarketEmotion, sector.TaiwanIndustryRadar) {

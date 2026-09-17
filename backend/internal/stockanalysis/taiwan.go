@@ -111,17 +111,18 @@ func NewTaiwanStockIntelligenceCore(identity foundation.SecurityIdentity, quote 
 }
 
 type TaiwanStockIntelligence struct {
-	ModelVersion    string                        `json:"model_version"`
-	Symbol          string                        `json:"symbol"`
-	Identity        TaiwanIdentityEvidence        `json:"identity"`
-	Quote           TaiwanQuoteEvidence           `json:"quote"`
-	PriceHistory    TaiwanPriceHistoryEvidence    `json:"price_history_summary"`
-	Fundamentals    TaiwanFundamentalsEvidence    `json:"fundamentals"`
-	Institutional   TaiwanInstitutionalEvidence   `json:"institutional"`
-	Margin          TaiwanMarginEvidence          `json:"margin"`
-	MarketContext   TaiwanMarketContextEvidence   `json:"market_context"`
-	IndustryContext TaiwanIndustryContextEvidence `json:"industry_context"`
-	Interpretation  *TaiwanStockInterpretation    `json:"interpretation,omitempty"`
+	ModelVersion    string                              `json:"model_version"`
+	Symbol          string                              `json:"symbol"`
+	Identity        TaiwanIdentityEvidence              `json:"identity"`
+	Quote           TaiwanQuoteEvidence                 `json:"quote"`
+	PriceHistory    TaiwanPriceHistoryEvidence          `json:"price_history_summary"`
+	Fundamentals    TaiwanFundamentalsEvidence          `json:"fundamentals"`
+	Institutional   TaiwanInstitutionalEvidence         `json:"institutional"`
+	Margin          TaiwanMarginEvidence                `json:"margin"`
+	MarketContext   TaiwanMarketContextEvidence         `json:"market_context"`
+	IndustryContext TaiwanIndustryContextEvidence       `json:"industry_context"`
+	CorporateEvents foundation.TaiwanCorporateEventFeed `json:"corporate_events"`
+	Interpretation  *TaiwanStockInterpretation          `json:"interpretation,omitempty"`
 }
 
 func NewTaiwanStockIntelligence(identity foundation.SecurityIdentity, quote *foundation.Quote, lines []foundation.KLine, fundamentals *foundation.TaiwanFundamentals, institutional *foundation.InstitutionalHistory, margin *foundation.MarginHistory, breadth foundation.TaiwanBreadthScope, emotion marketemotion.TaiwanEmotionScope, radar sector.TaiwanIndustryScope) TaiwanStockIntelligence {
@@ -135,6 +136,7 @@ func NewTaiwanStockIntelligence(identity foundation.SecurityIdentity, quote *fou
 	result.Margin = marginEvidence(margin)
 	result.MarketContext = TaiwanMarketContextEvidence{TaiwanEvidenceStatus: TaiwanEvidenceStatus{Status: breadth.Status, Freshness: breadth.Freshness, AsOf: stringValue(breadth.AsOf), Source: "M2A/M2B Taiwan market context"}, Scope: identity.Exchange, AdvanceRatio: breadth.AdvanceRatio, AdvancingAmountRatio: breadth.AdvancingAmountRatio, State: emotion.State, Confidence: emotion.Confidence}
 	result.IndustryContext = TaiwanIndustryContextEvidence{TaiwanEvidenceStatus: TaiwanEvidenceStatus{Status: "unavailable", Freshness: radar.Freshness, AsOf: stringValue(radar.AsOf), Source: "M3 Taiwan industry radar"}, TaxonomyStatus: radar.TaxonomyStatus}
+	result.CorporateEvents = foundation.TaiwanCorporateEventFeed{Status: foundation.TaiwanCorporateEventsNotQueried, Provider: foundation.TaiwanCorporateEventProviderToAlpha, Source: foundation.TaiwanCorporateEventSourceMOPS, Reason: "corporate-event enrichment was not queried", Events: []foundation.TaiwanCorporateEvent{}}
 	if identity.Type != foundation.SecurityTypeStock {
 		result.IndustryContext.Reason = "industry context is not applicable to non-stock security types"
 	} else {

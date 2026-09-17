@@ -141,6 +141,8 @@ Electron 桌面模式
 | --- | --- | --- |
 | `A_STOCK_ADDR` | `127.0.0.1:20081` | 后端监听地址 |
 | `A_STOCK_TOKEN` | 空 | 可选的本机 API Bearer Token |
+| `A_STOCK_TOALPHA_MOPS_ENABLED` | `false` | 是否啟用 ToAlpha MOPS 重大訊息補充。僅 `1` / `true` / `yes` 會啟用 |
+| `A_STOCK_TOALPHA_MOPS_ENDPOINT` | `https://toalpha.tw/mcp/mops` | 可選 MCP Streamable HTTP endpoint 覆寫，主要用於測試 |
 | `A_STOCK_FRONTEND_HOST` | `127.0.0.1` | `npm run restart` 使用的前端地址 |
 | `A_STOCK_FRONTEND_PORT` | `20073` | `npm run restart` 使用的前端端口 |
 | `VITE_A_STOCK_BACKEND_URL` | `http://127.0.0.1:20081` | 前端连接的后端地址 |

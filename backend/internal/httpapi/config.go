@@ -170,6 +170,10 @@ type TaiwanStockIntelligenceProvider interface {
 	StockIntelligenceCore(ctx context.Context, canonical string, now time.Time) (stockanalysis.TaiwanStockIntelligenceCore, error)
 }
 
+type TaiwanCorporateEventsProvider interface {
+	CorporateEvents(ctx context.Context, canonical string, days, limit int) foundation.TaiwanCorporateEventFeed
+}
+
 type TaiwanFundamentalsProvider interface {
 	Fundamentals(ctx context.Context, security foundation.SecurityIdentity, months int) (foundation.TaiwanFundamentals, error)
 }
@@ -229,6 +233,7 @@ type Config struct {
 	TaiwanEmotion               TaiwanEmotionProvider
 	TaiwanIndustryRadar         TaiwanIndustryRadarProvider
 	TaiwanIntelligence          TaiwanStockIntelligenceProvider
+	TaiwanCorporateEvents       TaiwanCorporateEventsProvider
 	TaiwanFundamentals          TaiwanFundamentalsProvider
 	HotStocks                   HotStockProvider
 	MarketOverview              MarketOverviewProvider
@@ -256,6 +261,9 @@ type Config struct {
 	Logger                      *log.Logger
 	StrictPersistence           bool
 	TaiwanCashflowCacheDir      string
+	ToAlphaMOPSEnabled          bool
+	ToAlphaMOPSEndpoint         string
+	ToAlphaMOPSTimeout          time.Duration
 }
 
 func normalizeConfig(value any) Config {

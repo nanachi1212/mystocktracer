@@ -34,27 +34,32 @@ type Client struct {
 	fundMu            sync.Mutex
 	fundRows          map[string]fundSnapshot
 	// M7H/P5.5B.2 — cashflowMu guards cashflowSnapshot, cashflowFilling, and cashflowRetryAfter.
-	cashflowMu          sync.Mutex
-	cashflowSnapshot    *cashflowSnapshot
-	cashflowCacheDir    string // empty means no persistent cache
-	cashflowFilling     bool
-	cashflowRetryAfter  time.Time
-	cashflowFillDone    chan struct{}
-	syncCashflow        bool
-	bgCtx               context.Context
-	bgCancel            context.CancelFunc
-	closeOnce           sync.Once
-	snapshotMu          sync.RWMutex
-	dailyDays           map[string][]foundation.TaiwanDailySnapshot
-	instDays            map[string][]foundation.InstitutionalFlow
-	marginDays          map[string][]foundation.MarginTrading
-	calendar            foundation.TaiwanTradingCalendar
-	now                 func() time.Time
-	twseSem             chan struct{}
-	chipFlightMu        sync.Mutex
-	chipFlights         map[string]*chipFlightCall
-	dailyFlightMu       sync.Mutex
-	dailyFlights        map[string]*dailyFlightCall
+	cashflowMu         sync.Mutex
+	cashflowSnapshot   *cashflowSnapshot
+	cashflowCacheDir   string // empty means no persistent cache
+	cashflowFilling    bool
+	cashflowRetryAfter time.Time
+	cashflowFillDone   chan struct{}
+	syncCashflow       bool
+	bgCtx              context.Context
+	bgCancel           context.CancelFunc
+	closeOnce          sync.Once
+	snapshotMu         sync.RWMutex
+	dailyDays          map[string][]foundation.TaiwanDailySnapshot
+	instDays           map[string][]foundation.InstitutionalFlow
+	marginDays         map[string][]foundation.MarginTrading
+	calendar           foundation.TaiwanTradingCalendar
+	now                func() time.Time
+	twseSem            chan struct{}
+	chipFlightMu       sync.Mutex
+	chipFlights        map[string]*chipFlightCall
+	dailyFlightMu      sync.Mutex
+	dailyFlights       map[string]*dailyFlightCall
+	corporateEvents    CorporateEventsProvider
+}
+
+type CorporateEventsProvider interface {
+	CorporateEvents(ctx context.Context, canonical string, days, limit int) foundation.TaiwanCorporateEventFeed
 }
 
 type chipFlightCall struct {
@@ -80,6 +85,7 @@ type Config struct {
 	Holidays          map[string]bool
 	Now               func() time.Time
 	SyncCashflow      bool // synchronous cashflow fill mode for tests; default false (production is always async background fill)
+	CorporateEvents   CorporateEventsProvider
 }
 
 func NewClient(config Config) *Client {
@@ -114,6 +120,7 @@ func NewClient(config Config) *Client {
 		twseSem:           make(chan struct{}, 4),
 		chipFlights:       map[string]*chipFlightCall{},
 		dailyFlights:      map[string]*dailyFlightCall{},
+		corporateEvents:   config.CorporateEvents,
 	}
 }
 

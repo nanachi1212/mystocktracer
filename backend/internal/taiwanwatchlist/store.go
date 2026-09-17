@@ -62,7 +62,12 @@ func OpenStore(path string) (*Store, error) {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin taiwan watchlist migration: %w", err)
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS taiwan_watchlist (
 			canonical TEXT PRIMARY KEY,
 			code TEXT NOT NULL,
@@ -72,9 +77,29 @@ func (s *Store) migrate(ctx context.Context) error {
 			created_at TEXT NOT NULL
 		);
 		CREATE INDEX IF NOT EXISTS taiwan_watchlist_created ON taiwan_watchlist(created_at ASC);
+		CREATE TABLE IF NOT EXISTS taiwan_corporate_event_state (
+			canonical TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			status TEXT NOT NULL,
+			last_successful_sync TEXT NOT NULL,
+			PRIMARY KEY (canonical, provider)
+		);
+		CREATE TABLE IF NOT EXISTS taiwan_seen_corporate_events (
+			canonical TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			event_id TEXT NOT NULL,
+			published_at TEXT NOT NULL DEFAULT '',
+			first_seen_at TEXT NOT NULL,
+			PRIMARY KEY (canonical, provider, event_id)
+		);
+		CREATE INDEX IF NOT EXISTS taiwan_seen_corporate_events_lookup
+			ON taiwan_seen_corporate_events(canonical, provider, first_seen_at DESC);
 	`)
 	if err != nil {
 		return fmt.Errorf("migrate taiwan watchlist database: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit taiwan watchlist migration: %w", err)
 	}
 	return nil
 }

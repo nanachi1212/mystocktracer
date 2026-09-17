@@ -110,6 +110,23 @@ describe('M6B — WatchlistRow renders saved identities and handles missing quot
 		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={quote()} busy={true} onOpen={() => {}} onRemove={() => {}} />);
 		expect(html).toMatch(/<button[^>]*disabled[^>]*>/);
 	});
+
+	it('renders persistent change-detector results without hiding the quote or identity', () => {
+		const html = renderToStaticMarkup(<WatchlistRow security={security()} quote={quote()} busy={false} onOpen={() => {}} onRemove={() => {}} eventItem={{ feed: { status: 'available', partial: false, stale: false, events: [{ event_id: 'one' }, { event_id: 'two' }] }, change: { status: 'available', baseline: false, new_events: [{ event_id: 'two' }] } }} />);
+		expect(html).toContain('新增公告 1 則');
+		expect(html).toContain('台積電');
+		expect(html).toContain('2,410');
+	});
+});
+
+describe('ToAlpha MOPS — Watchlist sync boundary', () => {
+	it('loads the persistent event sync only inside the Watchlist mount/refresh effect and never polls', () => {
+		const source = workspaceSource();
+		const effectBody = source.slice(source.indexOf('useEffect(() => {'), source.indexOf('}, [config, refreshKey]);'));
+		expect(effectBody).toContain('fetchWatchlistCorporateEvents');
+		expect(source).toContain('/api/v1/tw/corporate-events/sync');
+		expect(source).not.toMatch(/setInterval|setTimeout/);
+	});
 });
 
 describe('M6C — WatchlistRow: security area is interactive, remove is a separate action', () => {

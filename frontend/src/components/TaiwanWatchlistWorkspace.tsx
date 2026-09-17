@@ -5,6 +5,11 @@ import { requestJSON } from '../lib/backend';
 import { chunkTaiwanSymbols, createTaiwanWatchlistBackup, fetchTaiwanWatchlist, formatTaiwanCashFlowTWD, formatTaiwanPercent, formatTaiwanPlainNumber, mergeTaiwanWatchlistBackup, parseTaiwanWatchlistBackup, removeTaiwanWatchlistSecurity, runScopedRequest, taiwanErrorMessage, taiwanIntelligencePath, taiwanSecurityTypeLabel, type TaiwanWatchlistSecurity } from '../lib/taiwan-product';
 
 type QuoteLookup = Record<string, Quote>;
+type WatchlistEventSyncItem = {
+	feed: { status: string; partial: boolean; stale: boolean; reason?: string; events: Array<{ event_id: string }> };
+	change: { status: string; baseline: boolean; new_events: Array<{ event_id: string }> };
+};
+type WatchlistEventLookup = Record<string, WatchlistEventSyncItem>;
 
 // Fetches quotes for every saved security, chunked to the existing /tw/quotes batch limit.
 // Each chunk is requested independently (Promise.allSettled): one chunk failing must not
@@ -22,6 +27,25 @@ async function fetchWatchlistQuotes(config: BackendConfig, canonicals: string[])
 		}
 	}
 	return quotes;
+}
+
+// The server owns the persistent baseline/dedupe state. A provider or network
+// failure is isolated from the canonical Watchlist load while remaining an
+// explicit unavailable state; it must never look like a confirmed empty feed.
+async function fetchWatchlistCorporateEvents(config: BackendConfig, canonicals: string[]): Promise<WatchlistEventLookup> {
+	if (canonicals.length === 0) return {};
+	try {
+		const payload = await requestJSON<{ data: { items: WatchlistEventLookup } }>(config, '/api/v1/tw/corporate-events/sync', {
+			method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbols: canonicals }),
+		});
+		return payload.data.items;
+	} catch (reason) {
+		const message = taiwanErrorMessage(reason, '公告暫時無法取得');
+		return Object.fromEntries(canonicals.map((canonical) => [canonical, {
+			feed: { status: 'unavailable', partial: false, stale: false, reason: message, events: [] },
+			change: { status: 'unavailable', baseline: false, new_events: [] },
+		}]));
+	}
 }
 
 // M8D — the on-demand, per-row intelligence summary. Deliberately a small narrow subset of the
@@ -54,6 +78,7 @@ async function fetchWatchlistSummary(config: BackendConfig, canonical: string): 
 export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }: { config: BackendConfig | null; refreshKey: number; onOpenResearch: (canonical: string) => void }) {
 	const [securities, setSecurities] = useState<TaiwanWatchlistSecurity[]>([]);
 	const [quotes, setQuotes] = useState<QuoteLookup>({});
+	const [eventItems, setEventItems] = useState<WatchlistEventLookup>({});
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
 	const [removingSymbol, setRemovingSymbol] = useState<string | null>(null);
@@ -89,12 +114,13 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 		setExpanded(new Set());
 		void runScopedRequest(loadRequestID, async () => {
 			const list = await fetchTaiwanWatchlist(config);
-			const quoteMap = await fetchWatchlistQuotes(config, list.map((item) => item.canonical));
-			return { list, quoteMap };
+			const canonicals = list.map((item) => item.canonical);
+			const [quoteMap, eventMap] = await Promise.all([fetchWatchlistQuotes(config, canonicals), fetchWatchlistCorporateEvents(config, canonicals)]);
+			return { list, quoteMap, eventMap };
 		}, {
 			onStart: () => { setLoading(true); setError(''); },
-			onSuccess: ({ list, quoteMap }) => { setSecurities(list); setQuotes(quoteMap); },
-			onError: (reason) => { setSecurities([]); setQuotes({}); setError(taiwanErrorMessage(reason, '自選股清單載入失敗')); },
+			onSuccess: ({ list, quoteMap, eventMap }) => { setSecurities(list); setQuotes(quoteMap); setEventItems(eventMap); },
+			onError: (reason) => { setSecurities([]); setQuotes({}); setEventItems({}); setError(taiwanErrorMessage(reason, '自選股清單載入失敗')); },
 			onSettle: () => setLoading(false),
 		});
 	}, [config, refreshKey]);
@@ -148,6 +174,7 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 			securitiesRef.current.delete(canonical);
 			setSecurities((current) => current.filter((item) => item.canonical !== canonical));
 			setQuotes((current) => { const next = { ...current }; delete next[canonical]; return next; });
+			setEventItems((current) => { const next = { ...current }; delete next[canonical]; return next; });
 			// M8D — a removed security's cached/in-flight summary state must not linger indefinitely.
 			setSummaries((current) => { const next = { ...current }; delete next[canonical]; return next; });
 			setExpanded((current) => { const next = new Set(current); next.delete(canonical); return next; });
@@ -171,7 +198,9 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 			setError(`匯入完成：新增 ${result.added}、已存在 ${result.existing}、無效 ${result.invalid}`);
 			if (result.added > 0) {
 				const list = await fetchTaiwanWatchlist(config);
-				setSecurities(list); setQuotes(await fetchWatchlistQuotes(config, list.map((item) => item.canonical)));
+				const canonicals = list.map((item) => item.canonical);
+				const [quoteMap, eventMap] = await Promise.all([fetchWatchlistQuotes(config, canonicals), fetchWatchlistCorporateEvents(config, canonicals)]);
+				setSecurities(list); setQuotes(quoteMap); setEventItems(eventMap);
 			}
 		} catch (reason) { setError(taiwanErrorMessage(reason, '匯入自選股失敗')); }
 		finally { setBackupBusy(false); }
@@ -186,6 +215,7 @@ export function TaiwanWatchlistWorkspace({ config, refreshKey, onOpenResearch }:
 			<WatchlistRow key={item.canonical} security={item} quote={quotes[item.canonical]} busy={removingSymbol === item.canonical}
 				onOpen={() => onOpenResearch(item.canonical)} onRemove={() => void remove(item.canonical)}
 				expanded={expanded.has(item.canonical)} summary={summaries[item.canonical]}
+				eventItem={eventItems[item.canonical]}
 				onToggleSummary={() => toggleSummary(item.canonical)} onRetrySummary={() => retrySummary(item.canonical)} />
 		))}</div>}
 	</div>;
@@ -265,15 +295,17 @@ export function WatchlistSummaryPanel({ summary, onRetry, securityType }: { summ
 // passing them) — existing call sites and tests are unaffected. The toggle is its own sibling
 // <button>, never nested inside the identity button, so it can never also trigger Research
 // navigation, and the identity button's own onOpen/Research-navigation behavior is unchanged.
-export function WatchlistRow({ security, quote, busy, onOpen, onRemove, expanded = false, summary, onToggleSummary = () => {}, onRetrySummary = () => {} }: {
+export function WatchlistRow({ security, quote, busy, onOpen, onRemove, expanded = false, summary, eventItem, onToggleSummary = () => {}, onRetrySummary = () => {} }: {
 	security: TaiwanWatchlistSecurity; quote?: Quote; busy: boolean; onOpen: () => void; onRemove: () => void;
-	expanded?: boolean; summary?: WatchlistSummary; onToggleSummary?: () => void; onRetrySummary?: () => void;
+	expanded?: boolean; summary?: WatchlistSummary; eventItem?: WatchlistEventSyncItem; onToggleSummary?: () => void; onRetrySummary?: () => void;
 }) {
+	const newEventCount = eventItem?.change.new_events.length || 0;
 	return <article className="taiwan-watchlist-row">
 		<button type="button" className="taiwan-watchlist-identity" onClick={onOpen}><strong>{security.name} {security.code}</strong><span>{security.exchange} · {taiwanSecurityTypeLabel(security.security_type)}</span></button>
 		{quote
 			? <div className="taiwan-watchlist-quote"><strong>{quote.price.toLocaleString('zh-TW')}</strong><em className={quote.change_percent > 0 ? 'up' : quote.change_percent < 0 ? 'down' : 'flat'}>{quote.change_percent > 0 ? '+' : ''}{quote.change_percent.toFixed(2)}%</em></div>
 			: <div className="taiwan-watchlist-quote"><span>報價暫時無法取得</span></div>}
+		{eventItem && <span className={`taiwan-watchlist-event ${eventItem.feed.status}`}>{newEventCount > 0 ? `新增公告 ${newEventCount} 則` : eventItem.feed.status === 'no_events' ? '目前無公告' : eventItem.feed.status === 'available' ? `公告 ${eventItem.feed.events.length} 則` : eventItem.feed.status === 'partial' ? '公告部分可用' : eventItem.feed.status === 'stale' ? '公告資料較舊' : eventItem.feed.status === 'unsupported' ? '不支援公告查詢' : eventItem.feed.status === 'not_queried' ? '公告未查詢' : '公告暫時無法取得'}</span>}
 		<button type="button" className="taiwan-watchlist-toggle" aria-expanded={expanded} onClick={onToggleSummary}>{expanded ? '收合摘要' : '展開摘要'}</button>
 		<button type="button" className="taiwan-watchlist-remove" onClick={onRemove} disabled={busy}>{busy ? <LoaderCircle className="spin" size={14} /> : <Trash2 size={14} />}移除自選</button>
 		{expanded && <WatchlistSummaryPanel summary={summary} onRetry={onRetrySummary} securityType={security.security_type} />}
