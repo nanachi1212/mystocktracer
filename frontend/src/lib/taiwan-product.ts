@@ -4,7 +4,7 @@ export type TaiwanScope = 'twse' | 'tpex' | 'combined';
 
 export const taiwanPrimaryNavigation = [
 	['taiwan-overview', '台股總覽'], ['taiwan-screener', '台股選股器'],
-	['taiwan-watchlist', '自選股'], ['taiwan-stock', '個股分析'],
+	['taiwan-watchlist', '自選股'], ['taiwan-portfolio', '持倉'], ['taiwan-stock', '個股分析'],
 ] as const;
 
 export const taiwanMarketDetailNavigation = [
@@ -26,6 +26,26 @@ export const taiwanIntelligenceCorePath = (symbol: string) => `/api/v1/tw/stocks
 export const taiwanResearchPath = (symbol: string) => `/api/v1/tw/stocks/${encodeURIComponent(symbol)}/research`;
 export const taiwanWatchlistPath = () => '/api/v1/tw/watchlist';
 export const taiwanWatchlistRemovePath = (canonical: string) => `/api/v1/tw/watchlist/${encodeURIComponent(canonical)}`;
+export const taiwanPortfolioPath = () => '/api/v1/tw/portfolio';
+export const taiwanPortfolioHoldingPath = (canonical: string) => `/api/v1/tw/portfolio/${encodeURIComponent(canonical)}`;
+export const taiwanPortfolioSummaryPath = () => '/api/v1/tw/portfolio/summary';
+
+export type TaiwanPortfolioHolding = {
+	canonical: string; code?: string; name: string; exchange?: string; security_type?: string; industry?: string;
+	shares: number; average_cost: number; note?: string; created_at: string; updated_at: string;
+	current_price: number | null; price_status: 'not_requested' | 'available' | 'stale' | 'unavailable'; quote_meta?: { trade_date?: string; stale?: boolean };
+	market_value: number | null; total_cost: number; unrealized_pl: number | null; unrealized_pl_percent: number | null; portfolio_weight_percent: number | null;
+};
+export type TaiwanPortfolioConcentration = {
+	holdings_count: number; top_3_percent: number | null; top_5_percent: number | null; status: string;
+	industries: { industry: string; market_value: number; weight_percent: number; holdings_count: number }[];
+};
+export type TaiwanPortfolioSummary = {
+	holdings: TaiwanPortfolioHolding[]; holdings_count: number; priced_holdings_count: number;
+	total_market_value: number | null; available_market_value: number; total_cost: number;
+	total_unrealized_pl: number | null; total_unrealized_pl_percent: number | null;
+	currency: 'TWD'; status: 'available' | 'partial' | 'stale'; concentration: TaiwanPortfolioConcentration;
+};
 
 export const taiwanScopes: { id: TaiwanScope; label: string }[] = [
 	{ id: 'combined', label: '台灣市場' },

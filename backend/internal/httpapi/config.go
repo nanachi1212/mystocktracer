@@ -16,6 +16,7 @@ import (
 	"easy-stock/backend/internal/sector"
 	"easy-stock/backend/internal/stockanalysis"
 	"easy-stock/backend/internal/strategy/inflection"
+	"easy-stock/backend/internal/taiwanportfolio"
 	"easy-stock/backend/internal/taiwanwatchlist"
 )
 
@@ -243,6 +244,7 @@ type Config struct {
 	MarketEmotionDBPath         string
 	ThemeRadarDBPath            string
 	WatchlistDBPath             string
+	TaiwanPortfolioDBPath       string
 	DuanxianxiaBaseURL          string
 	WeChatAPIURL                string
 	ReviewHTTP                  *http.Client
@@ -250,6 +252,7 @@ type Config struct {
 	PortfolioStore              *portfolioinspection.Store
 	MarketEmotionStore          *marketemotion.Store
 	WatchlistStore              *taiwanwatchlist.Store
+	TaiwanPortfolioStore        *taiwanportfolio.Store
 	ReviewImporter              ReviewImporter
 	SettingsPath                string
 	SettingsStore               *appsettings.Store

@@ -27,6 +27,7 @@ func main() {
 	marketEmotionDBPath := os.Getenv("A_STOCK_MARKET_EMOTION_DB")
 	themeRadarDBPath := os.Getenv("A_STOCK_THEME_RADAR_DB")
 	watchlistDBPath := os.Getenv("A_STOCK_TAIWAN_WATCHLIST_DB")
+	taiwanPortfolioDBPath := os.Getenv("A_STOCK_TAIWAN_PORTFOLIO_DB")
 	settingsPath := os.Getenv("A_STOCK_SETTINGS_PATH")
 	masteryCacheDir := os.Getenv("A_STOCK_MASTERY_CACHE")
 	dataDir := ""
@@ -50,6 +51,9 @@ func main() {
 	}
 	if watchlistDBPath == "" {
 		watchlistDBPath = dataPath(dataDir, "taiwan-watchlist.db")
+	}
+	if taiwanPortfolioDBPath == "" {
+		taiwanPortfolioDBPath = dataPath(dataDir, "taiwan-portfolio.db")
 	}
 	if masteryCacheDir == "" {
 		masteryCacheDir = dataPath(dataDir, "trading-mastery")
@@ -97,6 +101,7 @@ func main() {
 		MarketEmotionDBPath:    marketEmotionDBPath,
 		ThemeRadarDBPath:       themeRadarDBPath,
 		WatchlistDBPath:        watchlistDBPath,
+		TaiwanPortfolioDBPath:  taiwanPortfolioDBPath,
 		DuanxianxiaBaseURL:     os.Getenv("A_STOCK_DUANXIANXIA_BASE_URL"),
 		WeChatAPIURL:           os.Getenv("A_STOCK_WECHAT_API_URL"),
 		SettingsPath:           settingsPath,

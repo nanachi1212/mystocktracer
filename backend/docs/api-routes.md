@@ -29,6 +29,10 @@ WebSocket 可以通过 query 传 token：
 | `GET` | `/api/v1/market/news?source=cls&limit=20` | Market news. Current implementation supports `cls`. |
 | `GET` | `/api/v1/stocks/directory` | Cached A-share stock names and codes for local fuzzy search. |
 | `GET` | `/api/v1/tw/securities?query=2330` | Cached TWSE/TPEx official security directory; searches code, canonical symbol, short name, or full name. |
+| `GET` | `/api/v1/tw/portfolio` | List persisted Taiwan holdings enriched with current canonical identity. |
+| `POST` | `/api/v1/tw/portfolio` | Add or idempotently update one canonical Taiwan holding. |
+| `PUT` / `DELETE` | `/api/v1/tw/portfolio/{symbol}` | Update or delete one holding without changing Watchlist or alert history. |
+| `GET` | `/api/v1/tw/portfolio/summary` | Enrich holdings with current Taiwan quotes and calculate TWD totals, P/L, weights, and descriptive concentration. |
 | `GET` | `/api/v1/stocks/hot-ranks` | Deduplicated union of the Tonghuashun and EastMoney A-share hot-stock Top 100 lists, including each source rank. |
 | `GET` | `/api/v1/themes/overview` | One-snapshot overview of all configured themes, including average change, breadth, fund flow, and strongest node. |
 | `GET` | `/api/v1/sector-map?theme=semiconductor_materials` | Industry chain map. Current implementation uses a local theme rule layer, EastMoney board quotes, and EastMoney board constituents. |

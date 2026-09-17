@@ -10,15 +10,15 @@ function renderApp(hash: string) {
 }
 
 describe('Taiwan navigation simplification', () => {
-	it('renders four primary buttons followed by three secondary market-detail buttons', () => {
+	it('renders five primary buttons followed by three secondary market-detail buttons', () => {
 		const html = renderApp('#taiwan-overview');
 		const nav = html.match(/<aside\b[^>]*>[\s\S]*?<nav>([\s\S]*?)<\/nav>/)![1];
 		const primary = nav.match(/class="sidebar-primary"[^>]*>([\s\S]*?)<\/div>/)![1];
 		const details = nav.match(/class="sidebar-market-details"[^>]*>([\s\S]*?)<\/div>/)![1];
 		const labels = (markup: string) => [...markup.matchAll(/<button\b[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
-		expect(labels(primary)).toEqual(['台股總覽', '台股選股器', '自選股', '個股分析']);
+		expect(labels(primary)).toEqual(['台股總覽', '台股選股器', '自選股', '持倉', '個股分析']);
 		expect(labels(details)).toEqual(['市場廣度', '市場情緒', '產業雷達']);
-		expect(nav.match(/<button\b/g)).toHaveLength(7);
+		expect(nav.match(/<button\b/g)).toHaveLength(8);
 		expect(nav).not.toContain('AI 研究');
 		expect(nav).not.toContain('個股研究');
 		expect(nav).toContain('role="group" aria-label="市場詳情"');

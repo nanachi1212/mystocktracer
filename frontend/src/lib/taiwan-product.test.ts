@@ -167,7 +167,7 @@ describe('Taiwan-first product shell', () => {
 	});
 
 	it('keeps only Taiwan-safe primary navigation labels', () => {
-		expect(taiwanPrimaryNavigation.map((item) => item[1])).toEqual(['台股總覽', '台股選股器', '自選股', '個股分析']);
+		expect(taiwanPrimaryNavigation.map((item) => item[1])).toEqual(['台股總覽', '台股選股器', '自選股', '持倉', '個股分析']);
 		expect(taiwanPrimaryNavigation.join(' ')).not.toMatch(/遊資|連板|龍虎榜|打板|首板|炸板/);
 		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
 		const primaryNav = app.slice(app.indexOf('<aside className="app-sidebar"'), app.indexOf('<div className="sidebar-guidance">'));
