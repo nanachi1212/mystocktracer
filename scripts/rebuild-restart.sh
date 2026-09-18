@@ -17,7 +17,7 @@ FRONTEND_PID_FILE="${RUNTIME_DIR}/frontend.pid"
 BACKEND_LOG="${RUNTIME_DIR}/backend.log"
 FRONTEND_LOG="${RUNTIME_DIR}/frontend.log"
 BACKEND_SESSION="easy-stock-backend"
-FRONTEND_SESSION="easy-stock-frontend"
+FRONTEND_SESSION="mystocktracer-frontend"
 
 log() {
   printf '[easy-stock] %s\n' "$*"

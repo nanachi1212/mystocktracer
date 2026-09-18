@@ -1,5 +1,5 @@
-name: Bug 报告
-description: 报告可以稳定复现的功能、数据或桌面端问题
+name: Bug 報告
+description: 回報可以穩定重現的功能、資料或桌面端問題
 title: "[Bug] "
 labels:
   - bug
@@ -7,60 +7,75 @@ body:
   - type: markdown
     attributes:
       value: |
-        感谢反馈。请勿提交 API Key、Cookie、Token、账号、持仓或其他敏感信息。
+        感謝回報。
+
+        ⚠️ **請勿提交** API Key、AI 供應商憑證、Cookie、Token、帳號、完整持倉、本機資料庫檔案或其他個人資料。
+        截圖與日誌請先去識別化。安全性問題請改用 [安全政策](https://github.com/nanachi1212/mystocktracer/blob/main/SECURITY.md) 的私密管道。
   - type: input
     id: version
     attributes:
-      label: easy-stock 版本
-      placeholder: 例如 v0.9.1
+      label: mystocktracer 版本或 commit
+      placeholder: 例如 v0.9.2 或 ec4d5c5
     validations:
       required: true
   - type: dropdown
     id: os
     attributes:
-      label: 操作系统
+      label: 作業系統
       options:
-        - macOS Apple Silicon
-        - macOS Intel
         - Windows 11
         - Windows 10
-        - Linux / 源码运行
+        - macOS Apple Silicon
+        - macOS Intel
+        - Linux / 原始碼執行
         - 其他
-    validations:
-      required: true
-  - type: textarea
-    id: problem
-    attributes:
-      label: 问题描述
-      description: 说明预期结果和实际结果。
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
-      label: 复现步骤
+      label: 重現步驟
       placeholder: |
-        1. 打开……
-        2. 点击……
+        1. 開啟……
+        2. 點擊……
         3. 看到……
     validations:
       required: true
   - type: textarea
-    id: evidence
+    id: expected
     attributes:
-      label: 已脱敏的日志或截图
-      description: 删除密钥、Cookie、Token、账号、持仓和本地路径中的个人信息后再提交。
+      label: 預期結果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 實際結果
+    validations:
+      required: true
   - type: input
     id: source
     attributes:
-      label: 相关数据源与发生时间
-      placeholder: 例如 东方财富，2026-08-25 15:10 Asia/Shanghai
+      label: 相關台股資料來源
+      description: 例如 TWSE、TPEx、MOPS、ToAlpha；不確定可留空。
+      placeholder: 例如 TPEx 日成交資訊
+  - type: input
+    id: asof
+    attributes:
+      label: 畫面上的資料日期 / as_of
+      description: 畫面顯示的交易日或更新時間，有助於判斷是資料問題還是程式問題。
+      placeholder: 例如 as_of 2026-09-17，或「顯示 資料無法取得」
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 已去識別化的截圖或日誌
+      description: 請先移除金鑰、Cookie、Token、帳號、持倉內容與本機路徑中的個人資訊。
   - type: checkboxes
     id: checks
     attributes:
-      label: 提交前检查
+      label: 提交前檢查
       options:
-        - label: 我已搜索现有 Issue，未发现相同问题
+        - label: 我已搜尋現有 Issue，未發現相同問題
           required: true
-        - label: 我已移除所有密钥、登录信息和个人数据
+        - label: 我已移除所有金鑰、登入資訊、持倉與個人資料
           required: true

@@ -1,5 +1,5 @@
 {
-  "name": "easy-stock",
+  "name": "mystocktracer",
   "private": true,
   "scripts": {
     "dev:backend": "cd backend && A_STOCK_ADDR=127.0.0.1:20081 go run ./cmd/server",

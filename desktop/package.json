@@ -1,7 +1,7 @@
 {
-  "name": "easy-stock-desktop",
+  "name": "mystocktracer-desktop",
   "description": "mystocktracer Taiwan stock research desktop application",
-  "author": "easy-stock contributors",
+  "author": "mystocktracer contributors",
   "private": true,
   "version": "0.9.2",
   "main": "main.cjs",

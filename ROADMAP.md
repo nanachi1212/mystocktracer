@@ -1,47 +1,99 @@
-# easy-stock 产品路线图
+# mystocktracer 產品路線圖
 
-easy-stock 的目标是构建一套理解 A股语境、证据可追溯、本地优先的 AI 智能投研工作台。路线图用于表达优先方向，不代表固定发布日期；实际顺序会根据数据源稳定性、用户反馈和维护成本调整。
+mystocktracer 的目標是建立一套理解台股語境、證據可追溯、本機優先的研究工作台。路線圖用於表達優先方向，不代表固定發布日期；實際順序會依資料來源穩定性、使用回饋與維護成本調整。
 
-## 当前能力
+本專案由 [jundizhou/easy-stock](https://github.com/jundizhou/easy-stock) 衍生。文件中的「舊版 A 股能力」指的是仍留在 repository 中的上游功能，不是 mystocktracer 的產品方向。
 
-- A股行情总览、指数、资金、行业、题材、公告与研报；
-- 趋势题材雷达、涨停梯队、超短情绪和市场结构分析；
-- 个股 AI 分析、条件化预案、风险边界与证据链；
-- 雪球、淘股吧和微信公众号文章收集与大 V 观点复盘；
-- 本地 Hermes AI 会话、研究资料、历史记录和桌面端安装包。
+---
 
-## 近期重点
+## 已完成（台股產品）
 
-### 数据可信度
+| 能力 | 狀態 |
+| --- | --- |
+| Pull Request 品質 CI（後端／前端／桌面測試與建置） | 已完成 |
+| 台股官方資料基礎（TWSE／TPEx 目錄、行情、指數、法人、融資融券、基本面） | 已完成 |
+| 市場廣度、市場情緒、產業雷達 | 已完成 |
+| 台股個股研究與確定性解讀 | 已完成 |
+| 台股公司事件（corporate event）資料整合 | 已完成 |
+| 事件提醒中心（Event Alert Center） | 已完成 |
+| AI Research v2（使用者明確啟動、grounded） | 已完成 |
+| 研究歷史（Research History） | 已完成 |
+| 前次研究比較（Previous Research Comparison） | 已完成 |
+| 台股自選股（Watchlist） | 已完成 |
+| 台股持倉（Portfolio） | 已完成 |
+| 台股每日總覽 Dashboard | 已完成 |
+| 資料新鮮度語意（available／stale／partial／unavailable／未查詢） | 已完成 |
 
-- 持续提升数据源健康检查、缓存、降级和交易日期处理；
-- 为关键指标补充更新时间、来源、覆盖率和异常说明；
-- 减少第三方页面或接口变化造成的静默错误。
+---
 
-### 研究闭环
+## 台股產品後續方向
 
-- 加强盘前、盘中、盘后与次日验证之间的衔接；
-- 提升大 V 复盘、市场结构和个股分析之间的证据关联；
-- 让历史判断、验证结果和用户研究方法可以长期积累。
+### 資料可信度
 
-### 桌面体验
+- 持續強化資料來源健康檢查、快取、降級與交易日判斷；
+- 為關鍵指標補上更新時間、來源、覆蓋率與異常說明；
+- 減少第三方頁面或介面變動造成的靜默錯誤；
+- 需要歷史研究的資料逐步補上 Point-in-Time 與 revision 語意。
 
-- 提升 macOS 与 Windows 安装、更新和故障诊断体验；
-- 完善模型、数据源和浏览器登录状态的可观察性；
-- 保持敏感配置、本地数据库和研究记录的本机隔离。
+### 研究閉環
 
-## 持续方向
+- 強化個股證據、事件提醒與研究歷史之間的關聯；
+- 讓歷史判斷、驗證結果與使用者研究方法可以長期累積；
+- 改善 AI 研究的證據樹與結論驗證邊界。
 
-- 扩展稳定、合规且可追溯的市场数据源；
-- 丰富公告、财务、研报、资金与题材归因能力；
-- 改善 AI 研究计划、工具调用、证据树和结论验证；
-- 建立更清晰的社区反馈、贡献和版本发布流程。
+### 桌面體驗
 
-## 如何参与
+- 改善 Windows 與 macOS 的安裝、更新與故障診斷；
+- 完善模型與資料來源狀態的可觀察性；
+- 保持敏感設定、本機資料庫與研究紀錄的本機隔離。
 
-- 使用交流与案例分享：前往 [GitHub Discussions](https://github.com/jundizhou/easy-stock/discussions)；
-- Bug 和数据异常：使用 [Issue 模板](https://github.com/jundizhou/easy-stock/issues/new/choose) 提交可复现信息；
-- 功能建议：描述真实研究场景、当前阻碍和期望结果；
-- 代码与文档：阅读 [贡献指南](./CONTRIBUTING.md) 后提交 Pull Request。
+---
 
-底层数据服务的技术规划见 [Backend Roadmap](./backend/docs/roadmap.md)。
+## OSS Independence / Licensing Transition
+
+本階段的目標是讓 mystocktracer 具備獨立維護的 repository identity，並為未來可能切換到 OSI 相容授權做好準備。授權條款在稽核與替換完成前不會變更。
+
+### Phase A：來源稽核與 repository hygiene（進行中）
+
+- 完整盤點仍繼承自上游 easy-stock 的程式碼、素材與文件；
+- 分離「原創 mystocktracer 實作」與「仍依賴上游框架的部分」；
+- 修正 repository identity（package 名稱、支援連結、貢獻文件、Issue／PR 模板）；
+- 建立 [OSS 來源稽核文件](./docs/oss-provenance-audit.md)。
+
+### Phase B：繼承程式碼替換（規劃中）
+
+- 依稽核結果替換或移除 runtime 關鍵的繼承程式碼；
+- 桌面 shell、封裝與更新識別的遷移（需處理使用者資料相容性）；
+- 舊版 A 股模組的處置；
+- 素材與圖示原創化。
+
+詳細清單、難度與相依順序見 [OSS 來源稽核 — Phase B replacement plan](./docs/oss-provenance-audit.md#phase-b-replacement-plan)。
+
+### Phase C：授權評估
+
+- 在 Phase B 完成後重新評估 HEAD 是否可切換授權；
+- 保留必要的上游歷史署名。
+
+---
+
+## 舊版 A 股能力（上游繼承，非產品方向）
+
+以下能力來自上游 easy-stock，目前仍存在於 repository 中，但不在台股產品導覽中：
+
+- A 股行情總覽、指數、資金、產業、題材；
+- 趨勢題材雷達、漲停梯隊、超短情緒；
+- 雪球、淘股吧與微信公眾號文章收集與大 V 複盤；
+- A 股持倉巡檢（portfolio inspection）；
+- 游資心法資料庫（trading mastery）。
+
+這些模組的處置方式（保留／替換／移除／待調查）記錄於 [OSS 來源稽核](./docs/oss-provenance-audit.md)。
+
+---
+
+## 如何參與
+
+- Bug 與資料異常：使用 [Issue 模板](https://github.com/nanachi1212/mystocktracer/issues/new/choose) 提交可重現資訊；
+- 功能建議：描述真實研究情境、目前阻礙與期望結果；
+- 程式碼與文件：閱讀 [貢獻指南](./CONTRIBUTING.md) 後提交 Pull Request。
+
+底層資料服務的技術規劃見 [Backend Roadmap](./backend/docs/roadmap.md)；台股化細節進度見 [台股化 Roadmap](./docs/taiwan-roadmap.md)。
