@@ -81,7 +81,7 @@ export function ResearchComparisonView({ payload }: { payload: ComparisonPayload
 	</div>;
 }
 
-export function TaiwanResearchHistory({ config, canonical, refreshKey, onOpenResearch }: { config: BackendConfig | null; canonical: string; refreshKey: number; onOpenResearch: (record: ResearchHistoryRecord) => void }) {
+export function TaiwanResearchHistory({ config, canonical, refreshKey, openRequest = 0, onOpenResearch }: { config: BackendConfig | null; canonical: string; refreshKey: number; openRequest?: number; onOpenResearch: (record: ResearchHistoryRecord) => void }) {
 	const [open, setOpen] = useState(false);
 	const [runs, setRuns] = useState<ResearchHistorySummary[]>([]);
 	const [total, setTotal] = useState(0);
@@ -111,6 +111,7 @@ export function TaiwanResearchHistory({ config, canonical, refreshKey, onOpenRes
 	// load is scoped to the selected canonical symbol and successful research refreshes.
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [config, canonical, refreshKey]);
+	useEffect(() => { if (openRequest > 0) setOpen(true); }, [openRequest]);
 
 	const openRun = async (runID: string) => {
 		if (!config) return;

@@ -3,15 +3,15 @@ import { requestJSON, type BackendConfig } from './backend';
 export type TaiwanScope = 'twse' | 'tpex' | 'combined';
 
 export const taiwanPrimaryNavigation = [
-	['taiwan-overview', '台股總覽'], ['taiwan-screener', '台股選股器'],
-	['taiwan-watchlist', '自選股'], ['taiwan-portfolio', '持倉'], ['taiwan-stock', '個股分析'],
+	['taiwan-dashboard', '今日總覽'], ['taiwan-screener', '台股選股器'],
+	['taiwan-watchlist', '自選股'], ['taiwan-portfolio', '持倉'], ['taiwan-alerts', '事件提醒'], ['taiwan-stock', '個股分析'],
 ] as const;
 
 export const taiwanMarketDetailNavigation = [
-	['taiwan-breadth', '市場廣度'], ['taiwan-emotion', '市場情緒'], ['taiwan-industry', '產業雷達'],
+	['taiwan-overview', '市場總覽'], ['taiwan-breadth', '市場廣度'], ['taiwan-emotion', '市場情緒'], ['taiwan-industry', '產業雷達'],
 ] as const;
 
-export const taiwanDefaultWorkspace = 'taiwan-overview';
+export const taiwanDefaultWorkspace = 'taiwan-dashboard';
 
 export function resolveTaiwanWorkspace(hash: string) {
 	const value = hash.replace(/^#/, '');
@@ -748,7 +748,7 @@ export function chunkTaiwanSymbols(symbols: string[], size: number = TAIWAN_QUOT
 
 const labels: Record<string, string> = {
 	current: '最新', stale: '資料較舊', partial: '部分資料', unavailable: '無法取得',
-	available: '可使用', data_insufficient: '資料不足', not_applicable: '不適用', indeterminate: '無法判定',
+	available: '可使用', not_queried: '尚未查詢', data_insufficient: '資料不足', not_applicable: '不適用', indeterminate: '無法判定',
 	'official close': '官方收盤', official: '官方資料', realtime: '即時', delayed: '延遲',
 	positive: '偏正向', negative: '偏弱', weak: '偏弱', mixed: '訊號分歧', balanced: '多空相當',
 	high: '高', medium: '中', low: '低', supportive: '相對有支撐', reported: '已揭露', flat: '持平',

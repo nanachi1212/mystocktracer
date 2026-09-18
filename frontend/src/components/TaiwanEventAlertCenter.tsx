@@ -49,8 +49,8 @@ function formatAlertTime(value?: string) {
 	return Number.isNaN(parsed.getTime()) ? '時間未提供' : parsed.toLocaleString('zh-TW', { hour12: false });
 }
 
-export function TaiwanEventAlertCenter({ config, refreshKey }: { config: BackendConfig | null; refreshKey: number }) {
-	const [open, setOpen] = useState(false);
+export function TaiwanEventAlertCenter({ config, refreshKey, defaultOpen = false }: { config: BackendConfig | null; refreshKey: number; defaultOpen?: boolean }) {
+	const [open, setOpen] = useState(defaultOpen);
 	const [payload, setPayload] = useState<AlertPayload>({ alerts: [], unread_count: 0, total: 0, limit: 50, offset: 0, corporate_events_enabled: true });
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');

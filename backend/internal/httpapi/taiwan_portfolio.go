@@ -24,25 +24,26 @@ type taiwanPortfolioWriteRequest struct {
 }
 
 type taiwanPortfolioHoldingView struct {
-	Canonical    string                 `json:"canonical"`
-	Code         string                 `json:"code,omitempty"`
-	Name         string                 `json:"name"`
-	Exchange     string                 `json:"exchange,omitempty"`
-	SecurityType string                 `json:"security_type,omitempty"`
-	Industry     string                 `json:"industry,omitempty"`
-	Shares       float64                `json:"shares"`
-	AverageCost  float64                `json:"average_cost"`
-	Note         string                 `json:"note,omitempty"`
-	CreatedAt    time.Time              `json:"created_at"`
-	UpdatedAt    time.Time              `json:"updated_at"`
-	CurrentPrice *float64               `json:"current_price"`
-	PriceStatus  string                 `json:"price_status"`
-	QuoteMeta    *foundation.SourceMeta `json:"quote_meta,omitempty"`
-	MarketValue  *float64               `json:"market_value"`
-	TotalCost    float64                `json:"total_cost"`
-	UnrealizedPL *float64               `json:"unrealized_pl"`
-	UnrealizedPC *float64               `json:"unrealized_pl_percent"`
-	Weight       *float64               `json:"portfolio_weight_percent"`
+	Canonical     string                 `json:"canonical"`
+	Code          string                 `json:"code,omitempty"`
+	Name          string                 `json:"name"`
+	Exchange      string                 `json:"exchange,omitempty"`
+	SecurityType  string                 `json:"security_type,omitempty"`
+	Industry      string                 `json:"industry,omitempty"`
+	Shares        float64                `json:"shares"`
+	AverageCost   float64                `json:"average_cost"`
+	Note          string                 `json:"note,omitempty"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
+	CurrentPrice  *float64               `json:"current_price"`
+	ChangePercent *float64               `json:"change_percent"`
+	PriceStatus   string                 `json:"price_status"`
+	QuoteMeta     *foundation.SourceMeta `json:"quote_meta,omitempty"`
+	MarketValue   *float64               `json:"market_value"`
+	TotalCost     float64                `json:"total_cost"`
+	UnrealizedPL  *float64               `json:"unrealized_pl"`
+	UnrealizedPC  *float64               `json:"unrealized_pl_percent"`
+	Weight        *float64               `json:"portfolio_weight_percent"`
 }
 
 type taiwanPortfolioIndustryConcentration struct {
@@ -294,6 +295,10 @@ func calculateTaiwanPortfolioSummary(holdings []taiwanportfolio.Holding, identit
 			unrealizedPercent = &value
 		}
 		view.CurrentPrice, view.MarketValue, view.UnrealizedPL, view.UnrealizedPC = &price, &marketValue, &unrealized, unrealizedPercent
+		changePercent := quoteResult.quote.ChangePercent
+		if !math.IsNaN(changePercent) && !math.IsInf(changePercent, 0) {
+			view.ChangePercent = &changePercent
+		}
 		view.QuoteMeta = &quoteResult.quote.Meta
 		view.PriceStatus = "available"
 		if quoteResult.quote.Meta.Stale || quoteResult.quote.Meta.Freshness == "stale" {

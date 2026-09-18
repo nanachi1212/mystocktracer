@@ -351,9 +351,10 @@ describe('M8B — ScreenerEntryContext rendering', () => {
 });
 
 describe('M8B — navigation wiring (Screener context threaded through the existing M6C handoff)', () => {
-	it('ExternalTaiwanSymbolRequest carries an optional context field, never required', () => {
+	it('ExternalTaiwanSymbolRequest keeps context and dashboard history intent optional', () => {
 		const source = researchSource();
-		expect(source).toContain('export type ExternalTaiwanSymbolRequest = { canonical: string; token: number; context?: TaiwanResearchEntryContext | null };');
+		expect(source).toContain('context?: TaiwanResearchEntryContext | null');
+		expect(source).toContain('openHistory?: boolean');
 	});
 
 	it('select() accepts an optional context override distinguishing "leave untouched" (undefined) from "clear" (null)', () => {

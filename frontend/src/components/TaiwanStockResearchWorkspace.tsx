@@ -70,7 +70,7 @@ const researchLabels: Record<string, string> = { price: '價格', market: '市�
 // M8B: `context` is optional — only a Screener-originated request carries the applied filters/sort
 // as a TaiwanResearchEntryContext; a Watchlist-originated request (or any other caller) omits it,
 // and the workspace then shows no "來自台股篩選器" block.
-export type ExternalTaiwanSymbolRequest = { canonical: string; token: number; context?: TaiwanResearchEntryContext | null };
+export type ExternalTaiwanSymbolRequest = { canonical: string; token: number; context?: TaiwanResearchEntryContext | null; openHistory?: boolean };
 
 export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbolRequest }: { config: BackendConfig | null; refreshKey: number; externalSymbolRequest?: ExternalTaiwanSymbolRequest | null }) {
 	const [query, setQuery] = useState('2330');
@@ -301,9 +301,9 @@ export function TaiwanStockResearchWorkspace({ config, refreshKey, externalSymbo
 						onClose={() => setSubscriptionAIModalOpen(false)}
 					/>
 				)}
-				<TaiwanResearchHistory config={config} canonical={selected?.canonical || displayData.identity.canonical_symbol} refreshKey={researchHistoryRefreshKey} onOpenResearch={openHistoricalResearch} />
-				{research && <>{researchViewLabel && <div className="taiwan-research-view-label">{researchViewLabel}</div>}<ResearchView research={research} /></>}
 			</>}
+			<TaiwanResearchHistory config={config} canonical={selected?.canonical || displayData.identity.canonical_symbol} refreshKey={researchHistoryRefreshKey} openRequest={externalSymbolRequest?.openHistory ? externalSymbolRequest.token : 0} onOpenResearch={openHistoricalResearch} />
+			{research && <>{researchViewLabel && <div className="taiwan-research-view-label">{researchViewLabel}</div>}<ResearchView research={research} /></>}
 		</>}
 		{!displayData && !loading && <div className="taiwan-empty-state"><strong>選擇台灣證券開始分析</strong><p>可搜尋上市或上櫃股票；原始資料載入不會呼叫 AI。</p></div>}
 	</div>;

@@ -139,6 +139,36 @@ func (s *Store) ListResearchHistory(ctx context.Context, canonical string, limit
 	return page, nil
 }
 
+// ListRecentResearchHistory returns the newest successful research runs across all
+// symbols. Dashboard consumers use this bounded query instead of issuing one query
+// per Watchlist/Portfolio symbol.
+func (s *Store) ListRecentResearchHistory(ctx context.Context, limit int) ([]ResearchHistorySummary, error) {
+	if limit < 1 || limit > 100 {
+		return nil, fmt.Errorf("research history limit is outside the allowed range")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT h.run_id,h.canonical,h.security_name,h.created_at,h.evidence_as_of,h.research_version,h.payload_version,h.model_provider,h.model_name,h.completeness,h.stale,h.partial,
+		EXISTS(SELECT 1 FROM taiwan_ai_research_history p WHERE p.canonical=h.canonical AND p.id<h.id)
+		FROM taiwan_ai_research_history h ORDER BY h.id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list recent Taiwan AI research history: %w", err)
+	}
+	defer rows.Close()
+	result := make([]ResearchHistorySummary, 0, limit)
+	for rows.Next() {
+		var item ResearchHistorySummary
+		var createdAt string
+		if err := rows.Scan(&item.RunID, &item.Canonical, &item.SecurityName, &createdAt, &item.EvidenceAsOf, &item.ResearchVersion, &item.PayloadVersion, &item.ModelProvider, &item.ModelName, &item.Completeness, &item.Stale, &item.Partial, &item.HasPrevious); err != nil {
+			return nil, fmt.Errorf("scan recent Taiwan AI research history: %w", err)
+		}
+		item.CreatedAt = parseTime(createdAt)
+		result = append(result, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recent Taiwan AI research history: %w", err)
+	}
+	return result, nil
+}
+
 func (s *Store) GetResearchHistory(ctx context.Context, canonical, runID string) (ResearchHistoryRecord, error) {
 	canonical = strings.ToUpper(strings.TrimSpace(canonical))
 	runID = strings.TrimSpace(runID)
