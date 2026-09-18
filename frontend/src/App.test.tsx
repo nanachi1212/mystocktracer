@@ -10,15 +10,15 @@ function renderApp(hash: string) {
 }
 
 describe('Taiwan navigation simplification', () => {
-	it('renders five primary buttons followed by three secondary market-detail buttons', () => {
-		const html = renderApp('#taiwan-overview');
+	it('renders dashboard-first primary navigation followed by market-detail buttons', () => {
+		const html = renderApp('#taiwan-dashboard');
 		const nav = html.match(/<aside\b[^>]*>[\s\S]*?<nav>([\s\S]*?)<\/nav>/)![1];
 		const primary = nav.match(/class="sidebar-primary"[^>]*>([\s\S]*?)<\/div>/)![1];
 		const details = nav.match(/class="sidebar-market-details"[^>]*>([\s\S]*?)<\/div>/)![1];
 		const labels = (markup: string) => [...markup.matchAll(/<button\b[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
-		expect(labels(primary)).toEqual(['台股總覽', '台股選股器', '自選股', '持倉', '個股分析']);
-		expect(labels(details)).toEqual(['市場廣度', '市場情緒', '產業雷達']);
-		expect(nav.match(/<button\b/g)).toHaveLength(8);
+		expect(labels(primary)).toEqual(['今日總覽', '台股選股器', '自選股', '持倉', '事件提醒', '個股分析']);
+		expect(labels(details)).toEqual(['市場總覽', '市場廣度', '市場情緒', '產業雷達']);
+		expect(nav.match(/<button\b/g)).toHaveLength(10);
 		expect(nav).not.toContain('AI 研究');
 		expect(nav).not.toContain('個股研究');
 		expect(nav).toContain('role="group" aria-label="市場詳情"');
@@ -43,11 +43,11 @@ describe('Taiwan navigation simplification', () => {
 	});
 
 	it.each([
-		['taiwan-overview', '台股總覽'], ['taiwan-screener', '台股選股器'], ['taiwan-watchlist', '自選股'],
-		['taiwan-breadth', '市場廣度'], ['taiwan-emotion', '市場情緒'], ['taiwan-industry', '產業雷達'],
-	])('restores #%s with its own title and active navigation', (id, label) => {
+		['taiwan-dashboard', '今日總覽', '今日總覽'], ['taiwan-overview', '台股總覽', '市場總覽'], ['taiwan-screener', '台股選股器', '台股選股器'], ['taiwan-watchlist', '自選股', '自選股'], ['taiwan-alerts', '事件提醒', '事件提醒'],
+		['taiwan-breadth', '市場廣度', '市場廣度'], ['taiwan-emotion', '市場情緒', '市場情緒'], ['taiwan-industry', '產業雷達', '產業雷達'],
+	])('restores #%s with its own title and active navigation', (id, title, navLabel) => {
 		const html = renderApp(`#${id}`);
-		expect(html).toContain(`<h1>${label}</h1>`);
-		expect(html).toMatch(new RegExp(`<button[^>]*class="active"[^>]*aria-current="page"[^>]*aria-label="${label}"`));
+		expect(html).toContain(`<h1>${title}</h1>`);
+		expect(html).toMatch(new RegExp(`<button[^>]*class="active"[^>]*aria-current="page"[^>]*aria-label="${navLabel}"`));
 	});
 });

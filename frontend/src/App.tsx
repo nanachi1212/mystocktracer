@@ -1,6 +1,7 @@
 import {
 	Activity,
 	BarChart3,
+	Bell,
 	Bot,
 	BookMarked,
 	BookOpen,
@@ -76,14 +77,16 @@ import { TaiwanStockResearchWorkspace } from './components/TaiwanStockResearchWo
 import { TaiwanStockResearchErrorBoundary } from './components/TaiwanStockResearchErrorBoundary';
 import { TaiwanWatchlistWorkspace } from './components/TaiwanWatchlistWorkspace';
 import { TaiwanPortfolioWorkspace } from './components/TaiwanPortfolioWorkspace';
+import { TaiwanDailyDashboard } from './components/TaiwanDailyDashboard';
+import { TaiwanEventAlertCenter } from './components/TaiwanEventAlertCenter';
 import { resolveTaiwanWorkspace, taiwanPrimaryNavigation, taiwanMarketDetailNavigation, type TaiwanResearchEntryContext } from './lib/taiwan-product';
 import { logRuntimeEvent } from './lib/runtime-log';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
-type WorkspaceMode = 'taiwan-overview' | 'taiwan-breadth' | 'taiwan-emotion' | 'taiwan-industry' | 'taiwan-screener' | 'taiwan-stock' | 'taiwan-watchlist' | 'taiwan-portfolio' | 'themes' | 'limit-up' | 'mastery' | 'reviews' | 'stock-ai' | 'portfolio-inspection' | 'ai' | 'market';
+type WorkspaceMode = 'taiwan-dashboard' | 'taiwan-overview' | 'taiwan-breadth' | 'taiwan-emotion' | 'taiwan-industry' | 'taiwan-screener' | 'taiwan-stock' | 'taiwan-watchlist' | 'taiwan-portfolio' | 'taiwan-alerts' | 'themes' | 'limit-up' | 'mastery' | 'reviews' | 'stock-ai' | 'portfolio-inspection' | 'ai' | 'market';
 
 const taiwanNavigationIcons = {
-	'taiwan-overview': LayoutDashboard, 'taiwan-screener': Search, 'taiwan-watchlist': Star, 'taiwan-portfolio': WalletCards,
+	'taiwan-dashboard': LayoutDashboard, 'taiwan-overview': BarChart3, 'taiwan-screener': Search, 'taiwan-watchlist': Star, 'taiwan-portfolio': WalletCards, 'taiwan-alerts': Bell,
 	'taiwan-stock': BrainCircuit, 'taiwan-breadth': Activity, 'taiwan-emotion': Gauge, 'taiwan-industry': BarChart3,
 };
 
@@ -106,7 +109,7 @@ export function App() {
 		if (window.location.hash === '#portfolio-inspection') return 'portfolio-inspection';
 		if (window.location.hash === '#ai') return 'ai';
 		if (window.location.hash.startsWith('#market')) return 'market';
-		return 'taiwan-overview';
+		return 'taiwan-dashboard';
 	});
 	const [sidebarExpanded, setSidebarExpanded] = useState(true);
 	const [config, setConfig] = useState<BackendConfig | null>(null);
@@ -160,7 +163,7 @@ export function App() {
 	// touched by App itself, and never causes any cold-start request.
 	// M8B: `context` is optional and only ever set by the Screener call site below — a Watchlist-
 	// originated request never has Screener filters to attach, so it stays undefined there.
-	const [requestedTaiwanSymbol, setRequestedTaiwanSymbol] = useState<{ canonical: string; token: number; context?: TaiwanResearchEntryContext | null } | null>(null);
+	const [requestedTaiwanSymbol, setRequestedTaiwanSymbol] = useState<{ canonical: string; token: number; context?: TaiwanResearchEntryContext | null; openHistory?: boolean } | null>(null);
 	const taiwanSymbolRequestNonce = useRef(0);
 	const [requestedPortfolioSymbol, setRequestedPortfolioSymbol] = useState<{ canonical: string; token: number } | null>(null);
 	const portfolioSymbolRequestNonce = useRef(0);
@@ -651,6 +654,11 @@ export function App() {
 		setRequestedTaiwanSymbol({ canonical, token: taiwanSymbolRequestNonce.current, context });
 		switchWorkspace('taiwan-stock');
 	};
+	const openTaiwanResearchHistory = (canonical: string) => {
+		taiwanSymbolRequestNonce.current += 1;
+		setRequestedTaiwanSymbol({ canonical, token: taiwanSymbolRequestNonce.current, context: null, openHistory: true });
+		switchWorkspace('taiwan-stock');
+	};
 	const openTaiwanPortfolio = (canonical: string) => {
 		portfolioSymbolRequestNonce.current += 1;
 		setRequestedPortfolioSymbol({ canonical, token: portfolioSymbolRequestNonce.current });
@@ -709,6 +717,7 @@ export function App() {
 		? limitUpData ? `${limitUpData.current.trade_date} · ${limitUpData.session_status} · ${limitUpData.meta.source.includes('duanxianxia') ? '开盘啦涨停池' : '东方财富兜底'} · ${limitUpData.concept_status === 'ready' ? '题材已归因' : '题材降级'}` : '开盘啦涨停池优先'
 		: isTaiwanWorkspace ? 'TWSE · TPEx · 官方資料與可追溯狀態' : workspaceMode === 'mastery' ? 'GitHub 原始资料 · 每日缓存 · Hermes 本地知识库' : workspaceMode === 'reviews' ? '雪球 · 淘股吧 · 微信公众号' : workspaceMode === 'stock-ai' ? '多周期评分 · 基准超额 · 隔日情景 · 动态风控' : workspaceMode === 'portfolio-inspection' ? '逐股分析 · 组合风险 · 后台任务' : workspaceMode === 'ai' ? '本机 Hermes AI 对话' : workspaceMode === 'market' ? '全球指数 · 行业资金 · 龙虎榜 · 公告研报' : themeSourceStatus + ' · ' + streamStatus;
 	const taiwanTitles: Partial<Record<WorkspaceMode, [string, string]>> = {
+		'taiwan-dashboard': ['今日總覽', '市場、持股、自選股、事件與研究活動的資訊中心'],
 		'taiwan-overview': ['台股總覽', '上市、上櫃行情與官方市場資料'],
 		'taiwan-breadth': ['市場廣度', '上漲、下跌家數與成交方向'],
 		'taiwan-emotion': ['市場情緒', '以確定性規則呈現市場參與與訊號分歧'],
@@ -717,6 +726,7 @@ export function App() {
 		'taiwan-stock': ['個股分析', '官方證據與確定性解讀，不提供投資推薦'],
 		'taiwan-watchlist': ['自選股', '已儲存的台灣證券與最新報價'],
 		'taiwan-portfolio': ['持倉總覽', '台股市值、成本、損益與集中度'],
+		'taiwan-alerts': ['事件提醒', '共用公司事件收件匣與已讀狀態'],
 	};
 	const topbarTitle = taiwanTitles[workspaceMode]?.[0] || (workspaceMode === 'themes' ? '趋势题材雷达' : workspaceMode === 'limit-up' ? '短线连板雷达' : workspaceMode === 'mastery' ? '游资心法库' : workspaceMode === 'reviews' ? '大V复盘日记' : workspaceMode === 'stock-ai' ? '个股 AI 分析' : workspaceMode === 'portfolio-inspection' ? '持仓 AI 巡检' : workspaceMode === 'market' ? '行情总览' : 'AI 对话');
 	const topbarDescription = taiwanTitles[workspaceMode]?.[1] || (workspaceMode === 'themes' ? '炒作主线、趋势强度、个股梯队与日 K 联动工作台' : workspaceMode === 'limit-up' ? '连板高度、炒作概念与晋级结构工作台' : workspaceMode === 'mastery' ? '阅读不同游资的交易经验，并由 Hermes 按原文辅助研读' : workspaceMode === 'reviews' ? '多平台复盘内容、作者观点与原文归档工作台' : workspaceMode === 'stock-ai' ? '多周期评分、隔日情景推演与账户级风控执行工作台' : workspaceMode === 'portfolio-inspection' ? '逐股研判、集中度识别与组合风险巡检工作台' : workspaceMode === 'market' ? '从盘面快讯到资金与研究信号的统一行情工作台' : '像 Codex 一样持续协作、拆解问题并形成可执行结果');
@@ -770,7 +780,7 @@ export function App() {
 				</div>
 			</header>
 
-			{workspaceMode === 'taiwan-overview' ? <TaiwanMarketWorkspace key={workspaceMode} config={config} refreshKey={marketRefreshKey} view="overview" onNavigate={switchWorkspace} /> : workspaceMode === 'taiwan-breadth' ? <TaiwanMarketWorkspace key={workspaceMode} config={config} refreshKey={marketRefreshKey} view="breadth" /> : workspaceMode === 'taiwan-emotion' ? <TaiwanMarketWorkspace key={workspaceMode} config={config} refreshKey={marketRefreshKey} view="emotion" /> : workspaceMode === 'taiwan-industry' ? <TaiwanMarketWorkspace key={workspaceMode} config={config} refreshKey={marketRefreshKey} view="industry" /> : workspaceMode === 'taiwan-screener' ? <TaiwanScreenerWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} /> : workspaceMode === 'taiwan-stock' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} externalSymbolRequest={requestedTaiwanSymbol} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-watchlist' ? <TaiwanWatchlistWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} onAddPortfolio={openTaiwanPortfolio} /> : workspaceMode === 'taiwan-portfolio' ? <TaiwanPortfolioWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} externalSymbolRequest={requestedPortfolioSymbol} /> : workspaceMode === 'themes' ? <>
+			{workspaceMode === 'taiwan-dashboard' ? <TaiwanDailyDashboard config={config} refreshKey={marketRefreshKey} onNavigate={switchWorkspace} onOpenResearch={openTaiwanStockResearch} onOpenResearchHistory={openTaiwanResearchHistory} /> : workspaceMode === 'taiwan-overview' ? <TaiwanMarketWorkspace key={workspaceMode} config={config} refreshKey={marketRefreshKey} view="overview" onNavigate={switchWorkspace} /> : workspaceMode === 'taiwan-breadth' ? <TaiwanMarketWorkspace key={workspaceMode} config={config} refreshKey={marketRefreshKey} view="breadth" /> : workspaceMode === 'taiwan-emotion' ? <TaiwanMarketWorkspace key={workspaceMode} config={config} refreshKey={marketRefreshKey} view="emotion" /> : workspaceMode === 'taiwan-industry' ? <TaiwanMarketWorkspace key={workspaceMode} config={config} refreshKey={marketRefreshKey} view="industry" /> : workspaceMode === 'taiwan-screener' ? <TaiwanScreenerWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} /> : workspaceMode === 'taiwan-stock' ? <TaiwanStockResearchErrorBoundary><TaiwanStockResearchWorkspace config={config} refreshKey={marketRefreshKey} externalSymbolRequest={requestedTaiwanSymbol} /></TaiwanStockResearchErrorBoundary> : workspaceMode === 'taiwan-watchlist' ? <TaiwanWatchlistWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} onAddPortfolio={openTaiwanPortfolio} /> : workspaceMode === 'taiwan-portfolio' ? <TaiwanPortfolioWorkspace config={config} refreshKey={marketRefreshKey} onOpenResearch={openTaiwanStockResearch} externalSymbolRequest={requestedPortfolioSymbol} /> : workspaceMode === 'taiwan-alerts' ? <div className="taiwan-product-workspace"><TaiwanEventAlertCenter config={config} refreshKey={marketRefreshKey} defaultOpen /></div> : workspaceMode === 'themes' ? <>
 			<section className="market-strip" aria-label="市场概览">
 				<div><Activity size={16} aria-hidden="true" /><span>主线平均热度</span><strong>{marketPulse.average || '--'}</strong></div>
 				<div><Flame size={16} aria-hidden="true" /><span>活跃主线</span><strong>{marketPulse.active}</strong></div>

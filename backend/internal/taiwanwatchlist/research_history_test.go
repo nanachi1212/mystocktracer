@@ -56,6 +56,13 @@ func TestResearchHistoryPersistsOrdersPaginatesAndIsolatesSymbols(t *testing.T) 
 	if _, err := store.GetResearchHistory(t.Context(), "2330.TWSE", "research-run-other"); !errors.Is(err, ErrResearchHistoryNotFound) {
 		t.Fatalf("cross-symbol get err=%v", err)
 	}
+	recent, err := store.ListRecentResearchHistory(t.Context(), 3)
+	if err != nil || len(recent) != 3 || recent[0].RunID != "research-run-other" || recent[1].RunID != "research-run-0003" {
+		t.Fatalf("recent=%+v err=%v", recent, err)
+	}
+	if _, err := store.ListRecentResearchHistory(t.Context(), 0); err == nil {
+		t.Fatal("unbounded recent-history query was accepted")
+	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}

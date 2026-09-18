@@ -160,14 +160,14 @@ describe('Taiwan-first product shell', () => {
 
 	it('keeps old research bookmarks on stock analysis and preserves all market-detail routes', () => {
 		expect(resolveTaiwanWorkspace('#taiwan-research')).toBe('taiwan-stock');
-		expect(taiwanMarketDetailNavigation.map(([, label]) => label)).toEqual(['市場廣度', '市場情緒', '產業雷達']);
+		expect(taiwanMarketDetailNavigation.map(([, label]) => label)).toEqual(['市場總覽', '市場廣度', '市場情緒', '產業雷達']);
 		for (const [id] of [...taiwanPrimaryNavigation, ...taiwanMarketDetailNavigation]) {
 			expect(resolveTaiwanWorkspace(`#${id}`)).toBe(id);
 		}
 	});
 
 	it('keeps only Taiwan-safe primary navigation labels', () => {
-		expect(taiwanPrimaryNavigation.map((item) => item[1])).toEqual(['台股總覽', '台股選股器', '自選股', '持倉', '個股分析']);
+		expect(taiwanPrimaryNavigation.map((item) => item[1])).toEqual(['今日總覽', '台股選股器', '自選股', '持倉', '事件提醒', '個股分析']);
 		expect(taiwanPrimaryNavigation.join(' ')).not.toMatch(/遊資|連板|龍虎榜|打板|首板|炸板/);
 		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
 		const primaryNav = app.slice(app.indexOf('<aside className="app-sidebar"'), app.indexOf('<div className="sidebar-guidance">'));
@@ -176,8 +176,8 @@ describe('Taiwan-first product shell', () => {
 
 	it('mounts no legacy market workspace on the Taiwan default path', () => {
 		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
-		expect(app).toContain("return 'taiwan-overview'");
-		expect(app).toContain("workspaceMode === 'taiwan-overview' ? <TaiwanMarketWorkspace");
+		expect(app).toContain("return 'taiwan-dashboard'");
+		expect(app).toContain("workspaceMode === 'taiwan-dashboard' ? <TaiwanDailyDashboard");
 		const taiwanMarket = fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanMarketWorkspace.tsx'), 'utf8');
 		expect(taiwanMarket).not.toMatch(/\/api\/v1\/themes|source=cls|\/api\/v1\/market\/|billboard/);
 	});

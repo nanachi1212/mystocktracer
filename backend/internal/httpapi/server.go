@@ -592,6 +592,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/tw/institutional", s.taiwanInstitutionalHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/margin", s.taiwanMarginHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/data-status", s.taiwanDataStatusHandler)
+	s.mux.HandleFunc("GET /api/v1/tw/dashboard", s.taiwanDashboardHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/market-breadth", s.taiwanMarketBreadthHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/screener", s.taiwanScreenerHandler)
 	s.mux.HandleFunc("GET /api/v1/tw/market-emotion", s.taiwanMarketEmotionHandler)
