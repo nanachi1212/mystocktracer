@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -112,4 +114,81 @@ func TestLegacySettingsWithoutTaiwanAlertsKeepSafeDefault(t *testing.T) {
 	if !store.Snapshot().TaiwanAlerts.CorporateEventsEnabled {
 		t.Fatal("legacy settings unexpectedly disabled Taiwan alerts")
 	}
+}
+
+func TestInvalidJSONDoesNotOverwriteExistingSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	original := []byte(`{"llm":`)
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil || !strings.Contains(err.Error(), "decode settings") {
+		t.Fatalf("Open() error = %v, want decode failure", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(original) {
+		t.Fatalf("invalid settings were modified: %q", after)
+	}
+}
+
+func TestLegacyUnknownFieldsAreReadButNotRegenerated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	legacy := []byte(`{"llm":{"provider":"custom","model":"gpt-test"},"tushare_token":"removed","review_automation":{"enabled":true}}`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Snapshot().LLM.Model != "gpt-test" {
+		t.Fatalf("known legacy value was not loaded: %+v", store.Snapshot())
+	}
+	if _, err := store.Update(func(values *Values) error {
+		values.TaiwanAlerts.CorporateEventsEnabled = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, removed := range []string{"tushare_token", "review_automation"} {
+		if strings.Contains(string(written), removed) {
+			t.Fatalf("retired field %q was regenerated: %s", removed, written)
+		}
+	}
+}
+
+func TestStoreConcurrentSnapshotsAndUpdates(t *testing.T) {
+	store, err := Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var group sync.WaitGroup
+	for worker := 0; worker < 8; worker++ {
+		group.Add(1)
+		go func(id int) {
+			defer group.Done()
+			for iteration := 0; iteration < 100; iteration++ {
+				if id%2 == 0 {
+					_, _ = store.Update(func(values *Values) error {
+						values.BrokerCommission.Source = "concurrent"
+						return nil
+					})
+					continue
+				}
+				snapshot := store.Snapshot()
+				if len(snapshot.LLMProfiles) == 0 {
+					t.Errorf("snapshot lost normalized profiles")
+					return
+				}
+			}
+		}(worker)
+	}
+	group.Wait()
 }

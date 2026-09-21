@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"easy-stock/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 )
 
 const TaiwanStockInterpretationVersion = "taiwan_stock_interpretation_v1"

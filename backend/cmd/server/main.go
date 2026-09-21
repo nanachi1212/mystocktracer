@@ -2,159 +2,101 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
-	"easy-stock/backend/internal/httpapi"
-	"easy-stock/backend/internal/runtimelog"
+	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/httpapi"
+	"github.com/nanachi1212/mystocktracer/backend/internal/runtimelog"
 )
 
 func main() {
-	addr := os.Getenv("A_STOCK_ADDR")
-	if addr == "" {
-		addr = "127.0.0.1:20081"
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx); err != nil {
+		log.Fatal(err)
 	}
-	watchlistDBPath := os.Getenv("A_STOCK_TAIWAN_WATCHLIST_DB")
-	taiwanPortfolioDBPath := os.Getenv("A_STOCK_TAIWAN_PORTFOLIO_DB")
-	settingsPath := os.Getenv("A_STOCK_SETTINGS_PATH")
-	dataDir := ""
-	if configDir, err := os.UserConfigDir(); err == nil {
-		dataDir = preferredDataDir(configDir)
-	}
-	if settingsPath == "" {
-		settingsPath = dataPath(dataDir, "settings.json")
-	}
-	if watchlistDBPath == "" {
-		watchlistDBPath = dataPath(dataDir, "taiwan-watchlist.db")
-	}
-	if taiwanPortfolioDBPath == "" {
-		taiwanPortfolioDBPath = dataPath(dataDir, "taiwan-portfolio.db")
-	}
-	cashflowCacheDir := os.Getenv("A_STOCK_CASHFLOW_CACHE")
-	if cashflowCacheDir == "" {
-		cashflowCacheDir = dataPath(dataDir, "cashflow-cache")
-	}
-	logDirectory := os.Getenv("A_STOCK_LOG_DIR")
-	if logDirectory == "" {
-		logDirectory = dataPath(dataDir, "logs")
-	}
-	if logDirectory != "" {
-		logger, closer, err := runtimelog.ConfigureStandard(logDirectory, "backend")
+}
+
+func run(ctx context.Context) error {
+	cfg := loadRuntimeConfig()
+	if cfg.logDirectory != "" {
+		logger, closer, err := runtimelog.ConfigureStandard(cfg.logDirectory, "backend")
 		if err != nil {
 			log.Printf("runtime logging unavailable: %v", err)
 		} else {
 			defer closer.Close()
-			logger.Printf("level=info event=runtime_start component=backend version=%q", runtimeVersion())
+			logger.Printf("level=info event=runtime_start component=backend version=%q", cfg.version)
 		}
 	}
-	hermesHome := os.Getenv("A_STOCK_HERMES_HOME")
-	if hermesHome == "" {
-		hermesHome = dataPath(dataDir, "hermes-home")
-	}
-	hermesWorkDir := os.Getenv("A_STOCK_HERMES_WORKDIR")
-	if hermesWorkDir == "" {
-		hermesWorkDir, _ = os.Getwd()
-	}
-	hermesGateway := hermes.NewRuntime(hermes.Config{
-		RuntimeRoot: resolveHermesRuntimeRoot(),
-		Home:        hermesHome,
-		WorkDir:     hermesWorkDir,
-		PythonPath:  os.Getenv("A_STOCK_HERMES_PYTHON"),
+
+	agent := hermes.NewRuntime(hermes.Config{
+		RuntimeRoot: cfg.hermesRuntimeRoot,
+		Home:        cfg.hermesHome,
+		WorkDir:     cfg.hermesWorkDir,
+		PythonPath:  cfg.hermesPython,
 	})
-	server := httpapi.NewServer(httpapi.Config{
-		Token:                  os.Getenv("A_STOCK_TOKEN"),
-		WatchlistDBPath:        watchlistDBPath,
-		TaiwanPortfolioDBPath:  taiwanPortfolioDBPath,
-		SettingsPath:           settingsPath,
-		HermesGateway:          hermesGateway,
+	api := httpapi.NewServer(httpapi.Config{
+		Token:                  cfg.token,
+		WatchlistDBPath:        cfg.watchlistDBPath,
+		TaiwanPortfolioDBPath:  cfg.portfolioDBPath,
+		SettingsPath:           cfg.settingsPath,
+		HermesGateway:          agent,
 		Logger:                 log.Default(),
 		StrictPersistence:      true,
-		TaiwanCashflowCacheDir: cashflowCacheDir,
-		ToAlphaMOPSEnabled:     envBool("A_STOCK_TOALPHA_MOPS_ENABLED"),
-		ToAlphaMOPSEndpoint:    os.Getenv("A_STOCK_TOALPHA_MOPS_ENDPOINT"),
+		TaiwanCashflowCacheDir: cfg.cashflowCacheDirectory,
+		ToAlphaMOPSEnabled:     cfg.toAlphaMOPSEnabled,
+		ToAlphaMOPSEndpoint:    cfg.toAlphaMOPSEndpoint,
 	})
-	if err := server.StartupError(); err != nil {
-		log.Fatalf("persistent data startup failed: %v", err)
+	if err := api.StartupError(); err != nil {
+		_ = api.Close()
+		return fmtError("persistent data startup failed", err)
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	httpServer := &http.Server{Addr: addr, Handler: server}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer shutdownCancel()
-		_ = httpServer.Shutdown(shutdownCtx)
-	}()
-	log.Printf("mystocktracer data foundation listening on http://%s", addr)
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
-	}
-	if err := server.Close(); err != nil {
-		log.Printf("close persistent data: %v", err)
-	}
-}
-
-func envBool(name string) bool {
-	value := strings.TrimSpace(os.Getenv(name))
-	return value == "1" || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
-}
-
-func runtimeVersion() string {
-	if value := strings.TrimSpace(os.Getenv("A_STOCK_APP_VERSION")); value != "" {
-		return value
-	}
-	return "development"
-}
-
-func preferredDataDir(configDir string) string {
-	current := filepath.Join(configDir, "easy-stock")
-	if isFile(filepath.Join(current, "settings.json")) {
-		return current
-	}
-	legacy := filepath.Join(configDir, "a-stock-ai")
-	if isFile(filepath.Join(legacy, "settings.json")) {
-		return legacy
-	}
-	return current
-}
-
-func isFile(filePath string) bool {
-	info, err := os.Stat(filePath)
-	return err == nil && !info.IsDir()
-}
-
-func dataPath(dataDir, name string) string {
-	if dataDir == "" {
-		return ""
-	}
-	return filepath.Join(dataDir, name)
-}
-
-func resolveHermesRuntimeRoot() string {
-	if configured := os.Getenv("A_STOCK_HERMES_RUNTIME_ROOT"); configured != "" {
-		return configured
-	}
-	candidates := []string{}
-	if executable, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Clean(filepath.Join(filepath.Dir(executable), "..", "hermes-runtime")))
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates,
-			filepath.Join(cwd, "desktop", "resources", "hermes-runtime"),
-			filepath.Join(cwd, "..", "desktop", "resources", "hermes-runtime"),
-		)
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
+	defer func() {
+		if err := api.Close(); err != nil {
+			log.Printf("close persistent data: %v", err)
 		}
+	}()
+
+	httpServer := &http.Server{
+		Addr:              cfg.address,
+		Handler:           api,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       90 * time.Second,
 	}
-	return ""
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("HTTP graceful shutdown: %v", err)
+		}
+	}()
+
+	log.Printf("mystocktracer data foundation listening on http://%s", cfg.address)
+	err := httpServer.ListenAndServe()
+	if !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	<-shutdownDone
+	return nil
 }
+
+func fmtError(message string, err error) error {
+	return &startupError{message: message, cause: err}
+}
+
+type startupError struct {
+	message string
+	cause   error
+}
+
+func (e *startupError) Error() string { return e.message + ": " + e.cause.Error() }
+func (e *startupError) Unwrap() error { return e.cause }

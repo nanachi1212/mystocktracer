@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"easy-stock/backend/internal/taiwanwatchlist"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
 
 func decodeTaiwanWatchlistSecurities(t *testing.T, response *httptest.ResponseRecorder) []taiwanWatchlistSecurity {

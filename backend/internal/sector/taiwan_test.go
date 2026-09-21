@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"easy-stock/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 )
 
 func TestTaiwanIndustryRadarMetricsUniverseAndRelativeValues(t *testing.T) {

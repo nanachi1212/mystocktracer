@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"easy-stock/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 )
 
 type TaiwanAdapter struct{}

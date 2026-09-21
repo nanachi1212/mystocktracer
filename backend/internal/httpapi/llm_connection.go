@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/appsettings"
+	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
 )
 
 const llmProbeMarker = "A_STOCK_HERMES_OK"
@@ -22,11 +22,11 @@ type llmConnectionTestResult struct {
 }
 
 func (s *Server) settingsLLMTest(w http.ResponseWriter, r *http.Request) {
-	if s.hermesGateway == nil {
+	if s.agentRuntime == nil {
 		writeError(w, http.StatusServiceUnavailable, "Hermes 模型執行環境不可用")
 		return
 	}
-	status := s.hermesGateway.Status()
+	status := s.agentRuntime.Status()
 	if !status.Available {
 		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Hermes 執行環境不可用"))
 		return
@@ -39,9 +39,9 @@ func (s *Server) settingsLLMTest(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.modelResponseTimeout())
 	defer cancel()
 	startedAt := time.Now()
-	result, err := s.hermesGateway.Prompt(ctx, "这是模型连接探针。请仅回复 "+llmProbeMarker+"，不要添加任何其他文字。")
+	result, err := s.agentRuntime.Prompt(ctx, "这是模型连接探针。请仅回复 "+llmProbeMarker+"，不要添加任何其他文字。")
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "Hermes 模型連線失敗: "+err.Error())
+		writeUpstreamError(w, "llm_connection_probe", "Hermes 模型連線失敗", err)
 		return
 	}
 	content := strings.TrimSpace(result.Content)

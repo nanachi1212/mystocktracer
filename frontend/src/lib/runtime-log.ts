@@ -27,16 +27,10 @@ export function installRuntimeLogging() {
 }
 
 export function runtimeFeatureForPath(pathname: string) {
-	if (pathname.startsWith('/api/v1/themes') || pathname.startsWith('/api/v1/sector-map')) return 'theme-radar';
-	if (pathname.startsWith('/api/v1/short-term')) return 'short-term';
-	if (pathname.startsWith('/api/v1/stocks/ai-analysis')) return 'stock-analysis';
-	if (pathname.startsWith('/api/v1/stocks')) return 'stocks';
-	if (pathname.startsWith('/api/v1/reviews')) return 'reviews';
-	if (pathname.startsWith('/api/v1/market') || pathname.startsWith('/api/v1/research')) return 'market-data';
-	if (pathname.startsWith('/api/v1/quotes')) return 'quotes';
+	if (pathname.startsWith('/api/v1/tw/')) return 'taiwan';
 	if (pathname.startsWith('/api/v1/settings')) return 'settings';
 	if (pathname.startsWith('/api/v1/ai')) return 'ai-chat';
-	if (pathname.startsWith('/api/v1/strategy')) return 'strategy';
+	if (pathname === '/api/health') return 'health';
 	return 'renderer';
 }
 

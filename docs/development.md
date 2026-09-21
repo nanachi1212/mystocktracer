@@ -139,24 +139,26 @@ Electron 桌面模式
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `A_STOCK_ADDR` | `127.0.0.1:20081` | 后端监听地址 |
-| `A_STOCK_TOKEN` | 空 | 可选的本机 API Bearer Token |
-| `A_STOCK_TOALPHA_MOPS_ENABLED` | `false` | 是否啟用 ToAlpha MOPS 重大訊息補充。僅 `1` / `true` / `yes` 會啟用 |
-| `A_STOCK_TOALPHA_MOPS_ENDPOINT` | `https://toalpha.tw/mcp/mops` | 可選 MCP Streamable HTTP endpoint 覆寫，主要用於測試 |
+| `MYSTOCKTRACER_ADDR` | `127.0.0.1:20081` | 後端監聽地址 |
+| `MYSTOCKTRACER_TOKEN` | 空 | 可選的本機 API Bearer Token |
+| `MYSTOCKTRACER_TOALPHA_MOPS_ENABLED` | `false` | 是否啟用 ToAlpha MOPS 重大訊息補充。僅 `1` / `true` / `yes` 會啟用 |
+| `MYSTOCKTRACER_TOALPHA_MOPS_ENDPOINT` | `https://toalpha.tw/mcp/mops` | 可選 MCP Streamable HTTP endpoint 覆寫，主要用於測試 |
 | `A_STOCK_FRONTEND_HOST` | `127.0.0.1` | `npm run restart` 使用的前端地址 |
 | `A_STOCK_FRONTEND_PORT` | `20073` | `npm run restart` 使用的前端端口 |
-| `VITE_A_STOCK_BACKEND_URL` | `http://127.0.0.1:20081` | 前端连接的后端地址 |
-| `VITE_A_STOCK_TOKEN` | 空 | 前端请求携带的后端 Token |
+| `VITE_MYSTOCKTRACER_BACKEND_URL` | `http://127.0.0.1:20081` | 前端連接的後端地址 |
+| `VITE_MYSTOCKTRACER_TOKEN` | 空 | 前端請求攜帶的後端 Token |
 
 ### 数据和运行时变量
 
 | 变量 | 说明 |
 | --- | --- |
-| `A_STOCK_SETTINGS_PATH` | 设置文件路径 |
-| `A_STOCK_TAIWAN_WATCHLIST_DB` | 台股自選股 SQLite 路徑；未設定時使用應用資料目錄下的 `taiwan-watchlist.db` |
-| `A_STOCK_TAIWAN_PORTFOLIO_DB` | 台股持倉 SQLite 路徑；未設定時使用應用資料目錄下的 `taiwan-portfolio.db` |
-| `A_STOCK_CASHFLOW_CACHE` | 台股現金流量快取目錄 |
-| `A_STOCK_LOG_DIR` | 运行日志目录；桌面端默认使用用户数据目录下的 `logs` |
+| `MYSTOCKTRACER_SETTINGS_PATH` | 設定檔路徑 |
+| `MYSTOCKTRACER_TAIWAN_WATCHLIST_DB` | 台股自選股 SQLite 路徑；未設定時使用應用資料目錄下的 `taiwan-watchlist.db` |
+| `MYSTOCKTRACER_TAIWAN_PORTFOLIO_DB` | 台股持倉 SQLite 路徑；未設定時使用應用資料目錄下的 `taiwan-portfolio.db` |
+| `MYSTOCKTRACER_CASHFLOW_CACHE` | 台股現金流量快取目錄 |
+| `MYSTOCKTRACER_LOG_DIR` | 運行日誌目錄；桌面端預設使用使用者資料目錄下的 `logs` |
+
+上述台股 runtime 變數以 `MYSTOCKTRACER_*` 為 canonical 名稱。過渡期間，在新名稱完全未設定時才讀取同尾碼的 `A_STOCK_*`；新名稱永遠優先，舊名稱已 deprecated。桌面端只向後端寫出 canonical 名稱，不同時維護兩份狀態。Electron identity 與 `userData` root 本階段未變更。
 
 ### Hermes 开发配置
 

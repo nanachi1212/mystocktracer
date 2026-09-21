@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/taiwanwatchlist"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
 
 // taiwanWatchlistSecurity is the wire shape of one saved Taiwan security.

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
+	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 func TestSettingsLLMModelsUsesSavedKeyAndNormalizesResults(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/taiwanwatchlist"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
 
 type corporateEventSyncRequest struct {

@@ -5,15 +5,27 @@ import (
 	"log"
 	"time"
 
-	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
-	"easy-stock/backend/internal/marketemotion"
-	"easy-stock/backend/internal/sector"
-	"easy-stock/backend/internal/stockanalysis"
-	"easy-stock/backend/internal/taiwanportfolio"
-	"easy-stock/backend/internal/taiwanwatchlist"
+	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/marketemotion"
+	"github.com/nanachi1212/mystocktracer/backend/internal/sector"
+	"github.com/nanachi1212/mystocktracer/backend/internal/stockanalysis"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanportfolio"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
+
+// AgentRuntime is the complete AI capability required by the HTTP boundary.
+// Hermes currently implements it, but handlers do not depend on its concrete runtime.
+type AgentRuntime interface {
+	Prompt(ctx context.Context, prompt string) (hermes.PromptResult, error)
+	Status() hermes.Status
+	ModelAPIKey() (string, error)
+	SyncLLM(cfg appsettings.LLM, apiKeyUpdate *string) error
+	Start(ctx context.Context) (hermes.Process, error)
+}
+
+type AgentProcess = hermes.Process
 
 type TaiwanDirectoryProvider interface {
 	Directory(ctx context.Context) ([]foundation.SecurityIdentity, error)
@@ -146,7 +158,7 @@ type Config struct {
 	TaiwanPortfolioStore        *taiwanportfolio.Store
 	SettingsPath                string
 	SettingsStore               *appsettings.Store
-	HermesGateway               hermes.Gateway
+	HermesGateway               AgentRuntime
 	Logger                      *log.Logger
 	StrictPersistence           bool
 	TaiwanCashflowCacheDir      string

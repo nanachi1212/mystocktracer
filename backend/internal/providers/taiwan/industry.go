@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/sector"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/sector"
 )
 
 // IndustryRadar acquires one directory and one bulk daily snapshot, then groups

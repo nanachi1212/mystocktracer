@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"easy-stock/backend/internal/hermes"
 	"github.com/gorilla/websocket"
+	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 func TestAIChatRelaysHermesJSONRPCOverWebSocket(t *testing.T) {

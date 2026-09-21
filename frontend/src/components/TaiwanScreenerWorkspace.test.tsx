@@ -64,7 +64,7 @@ describe('M7B — navigation wiring', () => {
 		expect(app).toContain("'taiwan-screener'");
 		expect(resolveTaiwanWorkspace('#taiwan-screener')).toBe('taiwan-screener');
 		expect(app).toContain('return resolveTaiwanWorkspace(window.location.hash)');
-		expect(app).toContain('onClick={() => switchWorkspace(mode)}');
+		expect(app).toContain('onWorkspaceChange={switchWorkspace}');
 		expect(taiwanPrimaryNavigation).toContainEqual(['taiwan-screener', '台股選股器']);
 	});
 

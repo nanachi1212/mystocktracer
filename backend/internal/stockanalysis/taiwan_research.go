@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 const (

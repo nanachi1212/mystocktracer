@@ -4,163 +4,171 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"github.com/nanachi1212/mystocktracer/backend/internal/runtimelog"
 )
 
-const maxHermesGatewayFrameBytes = 4 << 20
+const (
+	maxAgentMessageBytes = 4 << 20
+	maxAgentErrorBytes   = 8 << 10
+)
 
-var hermesWebSocketUpgrader = websocket.Upgrader{
+var agentWebSocketUpgrader = websocket.Upgrader{
 	ReadBufferSize:  64 << 10,
 	WriteBufferSize: 64 << 10,
-	CheckOrigin: func(*http.Request) bool {
-		// The server is bound to loopback and protected by a random desktop token.
-		// Electron file:// pages do not provide a conventional HTTP origin.
-		return true
+	CheckOrigin: func(request *http.Request) bool {
+		origin := strings.TrimSpace(request.Header.Get("Origin"))
+		return origin == "" || origin == "null" || strings.HasPrefix(origin, "file://") || isAllowedOrigin(origin)
 	},
 }
 
 func (s *Server) aiChatWebSocket(w http.ResponseWriter, r *http.Request) {
-	if s.hermesGateway == nil {
-		writeError(w, http.StatusServiceUnavailable, "Hermes 對話服務不可用")
+	if message, status := s.agentAvailability(); status != http.StatusOK {
+		writeError(w, status, message)
 		return
 	}
-	status := s.hermesGateway.Status()
-	if !status.Available {
-		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Hermes 執行環境不可用"))
-		return
-	}
-	if !status.Configured {
-		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "請先設定 Hermes 使用的模型"))
-		return
-	}
-
-	connection, err := hermesWebSocketUpgrader.Upgrade(w, r, nil)
+	connection, err := agentWebSocketUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 	defer connection.Close()
-	connection.SetReadLimit(maxHermesGatewayFrameBytes)
+	connection.SetReadLimit(maxAgentMessageBytes)
 
-	process, err := s.hermesGateway.Start(r.Context())
+	process, err := s.agentRuntime.Start(r.Context())
 	if err != nil {
-		_ = writeHermesGatewayError(connection, err.Error())
+		_ = sendAgentError(connection, "無法啟動 Hermes 對話")
 		return
 	}
-	waited := false
-	defer func() {
-		_ = process.Stop()
-		if !waited {
-			_ = process.Wait()
-		}
-	}()
+	bridge := newAgentBridge(process)
+	defer bridge.close()
+	go bridge.forwardClient(connection)
+	bridge.forwardRuntime(connection)
+}
 
-	var stderrMu sync.Mutex
-	stderrTail := ""
-	go func() {
-		scanner := bufio.NewScanner(process.Errors())
-		scanner.Buffer(make([]byte, 16<<10), 256<<10)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
-			}
-			stderrMu.Lock()
-			stderrTail = truncateTail(stderrTail+"\n"+line, 8<<10)
-			stderrMu.Unlock()
-		}
-	}()
+func (s *Server) agentAvailability() (string, int) {
+	if s.agentRuntime == nil {
+		return "Hermes 對話服務不可用", http.StatusServiceUnavailable
+	}
+	status := s.agentRuntime.Status()
+	if !status.Available {
+		return firstNonEmpty(status.Message, "Hermes 執行環境不可用"), http.StatusServiceUnavailable
+	}
+	if !status.Configured {
+		return firstNonEmpty(status.Message, "請先設定 Hermes 使用的模型"), http.StatusPreconditionFailed
+	}
+	return "", http.StatusOK
+}
 
-	clientDone := make(chan error, 1)
-	go func() {
-		for {
-			messageType, payload, readErr := connection.ReadMessage()
-			if readErr != nil {
-				clientDone <- readErr
-				_ = process.Stop()
-				return
-			}
-			if messageType != websocket.TextMessage {
-				continue
-			}
-			if len(payload) > maxHermesGatewayFrameBytes {
-				clientDone <- errors.New("Hermes 请求帧过大")
-				_ = process.Stop()
-				return
-			}
-			payload = append(payload, '\n')
-			if _, writeErr := process.Input().Write(payload); writeErr != nil {
-				clientDone <- writeErr
-				_ = process.Stop()
-				return
-			}
-		}
-	}()
+type agentBridge struct {
+	process AgentProcess
+	stop    sync.Once
+	wait    sync.Once
+	waitErr error
+	errors  *boundedText
+}
 
-	scanner := bufio.NewScanner(process.Output())
-	scanner.Buffer(make([]byte, 64<<10), maxHermesGatewayFrameBytes)
-	for scanner.Scan() {
-		payload := append([]byte(nil), scanner.Bytes()...)
-		if len(strings.TrimSpace(string(payload))) == 0 {
+func newAgentBridge(process AgentProcess) *agentBridge {
+	bridge := &agentBridge{process: process, errors: &boundedText{limit: maxAgentErrorBytes}}
+	go bridge.captureErrors()
+	return bridge
+}
+
+func (b *agentBridge) forwardClient(connection *websocket.Conn) {
+	for {
+		messageType, payload, err := connection.ReadMessage()
+		if err != nil {
+			b.stopProcess()
+			return
+		}
+		if messageType != websocket.TextMessage {
 			continue
 		}
-		if err := connection.WriteMessage(websocket.TextMessage, payload); err != nil {
+		if len(payload) > maxAgentMessageBytes {
+			b.stopProcess()
+			return
+		}
+		payload = append(payload, '\n')
+		if _, err := b.process.Input().Write(payload); err != nil {
+			b.stopProcess()
 			return
 		}
 	}
+}
 
-	select {
-	case <-clientDone:
-		return
-	default:
-	}
-	waitErr := process.Wait()
-	waited = true
-	if scanErr := scanner.Err(); scanErr != nil {
-		waitErr = scanErr
-	}
-	if waitErr != nil && !errors.Is(waitErr, io.EOF) {
-		stderrMu.Lock()
-		detail := strings.TrimSpace(stderrTail)
-		stderrMu.Unlock()
-		message := "Hermes 会话意外结束"
-		if detail != "" {
-			message += ": " + detail
+func (b *agentBridge) forwardRuntime(connection *websocket.Conn) {
+	scanner := bufio.NewScanner(b.process.Output())
+	scanner.Buffer(make([]byte, 64<<10), maxAgentMessageBytes)
+	for scanner.Scan() {
+		message := append([]byte(nil), scanner.Bytes()...)
+		if len(strings.TrimSpace(string(message))) == 0 {
+			continue
 		}
-		_ = writeHermesGatewayError(connection, message)
+		if err := connection.WriteMessage(websocket.TextMessage, message); err != nil {
+			return
+		}
+	}
+	processError := b.waitProcess()
+	if scanner.Err() != nil {
+		processError = scanner.Err()
+	}
+	if processError != nil && !errors.Is(processError, io.EOF) {
+		_ = sendAgentError(connection, "Hermes 對話意外結束")
 	}
 }
 
-func rpcString(value any) string {
-	text, _ := value.(string)
-	return text
+func (b *agentBridge) captureErrors() {
+	scanner := bufio.NewScanner(b.process.Errors())
+	scanner.Buffer(make([]byte, 16<<10), 256<<10)
+	for scanner.Scan() {
+		b.errors.append(scanner.Text())
+	}
 }
 
-func writeHermesGatewayError(connection *websocket.Conn, message string) error {
+func (b *agentBridge) stopProcess() { b.stop.Do(func() { _ = b.process.Stop() }) }
+func (b *agentBridge) waitProcess() error {
+	b.wait.Do(func() { b.waitErr = b.process.Wait() })
+	return b.waitErr
+}
+func (b *agentBridge) close() {
+	b.stopProcess()
+	_ = b.waitProcess()
+}
+
+type boundedText struct {
+	mu    sync.Mutex
+	value string
+	limit int
+}
+
+func (b *boundedText) append(value string) {
+	value = strings.TrimSpace(runtimelog.Redact(value))
+	if value == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.value += "\n" + value
+	if len(b.value) > b.limit {
+		b.value = b.value[len(b.value)-b.limit:]
+	}
+}
+
+func sendAgentError(connection *websocket.Conn, message string) error {
 	payload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "event",
 		"params": map[string]any{
-			"type": "gateway.error",
-			"payload": map[string]string{
-				"message": strings.TrimSpace(message),
-			},
+			"type":    "gateway.error",
+			"payload": map[string]string{"message": strings.TrimSpace(runtimelog.Redact(message))},
 		},
 	})
 	if err != nil {
 		return err
 	}
 	return connection.WriteMessage(websocket.TextMessage, payload)
-}
-
-func truncateTail(value string, maxBytes int) string {
-	if len(value) <= maxBytes {
-		return value
-	}
-	return fmt.Sprintf("…%s", value[len(value)-maxBytes:])
 }

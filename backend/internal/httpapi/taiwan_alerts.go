@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/taiwanwatchlist"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
 
 const (

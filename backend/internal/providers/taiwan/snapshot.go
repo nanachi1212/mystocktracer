@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 )
 
 const (

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
-	"easy-stock/backend/internal/stockanalysis"
-	"easy-stock/backend/internal/taiwanwatchlist"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/stockanalysis"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
 
 func (s *Server) taiwanSecurity(ctxQuery string, r *http.Request) (foundation.SecurityIdentity, error) {
@@ -310,7 +310,7 @@ func (s *Server) taiwanStockResearchHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var prompter hermes.IsolatedPrompter
-	if value, ok := s.hermesGateway.(hermes.IsolatedPrompter); ok {
+	if value, ok := s.agentRuntime.(hermes.IsolatedPrompter); ok {
 		prompter = value
 	}
 	research := stockanalysis.GenerateTaiwanResearch(ctx, prompter, intelligence, time.Now().UTC())
