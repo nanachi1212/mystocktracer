@@ -8,12 +8,11 @@ import (
 
 	"easy-stock/backend/internal/appsettings"
 	"easy-stock/backend/internal/hermes"
-	"easy-stock/backend/internal/methodology"
 )
 
 func TestTaiwanFirstSkillsExcludesLegacyAShareSkillOnly(t *testing.T) {
 	skills := []hermes.SkillInfo{
-		{Name: methodology.SkillName, Description: "A股游资心法资料库", Category: "trading", Enabled: true},
+		{Name: legacyMainlandSkillName, Description: "A股游资心法资料库", Category: "trading", Enabled: true},
 		{Name: "some-other-skill", Description: "generic", Category: "general", Enabled: true},
 	}
 	filtered := taiwanFirstSkills(skills)
@@ -26,7 +25,7 @@ func TestAgentSettingsGETExcludesLegacyAShareSkillFromTaiwanFirstView(t *testing
 	store, _ := appsettings.Open("")
 	gateway := &fakeHermesGateway{agentSettings: hermes.AgentSettings{
 		Skills: []hermes.SkillInfo{
-			{Name: methodology.SkillName, Description: "A股游资心法资料库", Category: "trading", Enabled: true},
+			{Name: legacyMainlandSkillName, Description: "A股游资心法资料库", Category: "trading", Enabled: true},
 			{Name: "some-other-skill", Description: "generic", Category: "general", Enabled: true},
 		},
 	}}
@@ -37,7 +36,7 @@ func TestAgentSettingsGETExcludesLegacyAShareSkillFromTaiwanFirstView(t *testing
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), methodology.SkillName) {
+	if strings.Contains(rec.Body.String(), legacyMainlandSkillName) {
 		t.Fatalf("legacy A-share skill leaked into the Taiwan-first Skill/MCP settings view: %s", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "some-other-skill") {

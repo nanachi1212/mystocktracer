@@ -9,22 +9,11 @@ const {
   startBackend,
   waitForHealth,
 } = require('./backend-process.cjs');
-const {
-  LEGACY_TAOGUBA_AUTH_MARKER,
-  TAOGUBA_AUTH_MARKER,
-  partitionForProfile,
-  playwrightCookie,
-  readBrowserAuthStatus,
-  statePathForProfile,
-  writeStorageState,
-} = require('./browser-auth.cjs');
-const { createTaogubaBrowserBridge } = require('./taoguba-browser-bridge.cjs');
-const { createXueqiuBrowserBridge } = require('./xueqiu-browser-bridge.cjs');
 const { resolveUserDataPath } = require('./user-data.cjs');
 const { resolveHermesRuntimeRoot } = require('./hermes-runtime-root.cjs');
 const { createUpdateBackup, resolveBackupRoot } = require('./data-protection.cjs');
 const { UpdateManager } = require('./update-manager.cjs');
-const { resolveUpdateFeedURL } = require('./update-feed.cjs');
+const { resolveUpdateFeed, releasePageURL } = require('./update-feed.cjs');
 const { createRotatingLogger } = require('./runtime-logger.cjs');
 const { validateSubscriptionAIURL } = require('./subscription-ai-url.cjs');
 
@@ -61,13 +50,8 @@ process.on('unhandledRejection', (reason) => desktopLogger.event('error', 'runti
 
 let backendProcess;
 let backendConfig;
-let xueqiuBrowserBridge;
-let xueqiuBrowserBridgeConfig;
-let taogubaBrowserBridge;
-let taogubaBrowserBridgeConfig;
 let updateManager;
 let updateCheckTimer;
-const reviewLoginWindows = new Map();
 
 function featureLogger(feature) {
   return {
@@ -128,10 +112,6 @@ async function bootBackend() {
 }
 
 async function createWindow() {
-  await Promise.all([
-    bootXueqiuBrowserBridge(),
-    bootTaogubaBrowserBridge(),
-  ]);
   await bootBackend();
 	const windowIcon = path.join(__dirname, 'assets', 'easy-stock.png');
 
@@ -200,26 +180,10 @@ function terminateChild(child, timeoutMs = 10000) {
 }
 
 async function stopRuntime() {
-  const loginSessions = [...reviewLoginWindows.values()]
-    .filter((entry) => !entry.window.isDestroyed())
-    .map((entry) => entry.window.webContents.session);
+  await Promise.all([session.defaultSession?.flushStorageData()].filter(Boolean));
   await Promise.all([
-    session.defaultSession?.flushStorageData(),
-    ...loginSessions.map((persistentSession) => persistentSession.flushStorageData()),
-  ].filter(Boolean));
-  for (const entry of reviewLoginWindows.values()) {
-    if (!entry.window.isDestroyed()) entry.window.destroy();
-  }
-  reviewLoginWindows.clear();
-  await Promise.all([
-    xueqiuBrowserBridge?.close(),
-    taogubaBrowserBridge?.close(),
     terminateChild(backendProcess),
   ].filter(Boolean));
-  xueqiuBrowserBridge = undefined;
-  xueqiuBrowserBridgeConfig = undefined;
-  taogubaBrowserBridge = undefined;
-  taogubaBrowserBridgeConfig = undefined;
   backendProcess = undefined;
   backendConfig = undefined;
 }
@@ -227,7 +191,7 @@ async function stopRuntime() {
 function initializeUpdateManager() {
   const enabled = app.isPackaged && ['darwin', 'win32'].includes(process.platform);
   if (enabled) {
-    autoUpdater.setFeedURL({ provider: 'generic', url: resolveUpdateFeedURL() });
+    autoUpdater.setFeedURL(resolveUpdateFeed());
   }
   updateManager = new UpdateManager({
     updater: autoUpdater,
@@ -260,7 +224,6 @@ function buildRuntimeEnv(resourcesRoot) {
   const userData = app.getPath('userData');
   const hermesHome = process.env.A_STOCK_HERMES_HOME || path.join(userData, 'hermes-home');
   const hermesWorkDir = process.env.A_STOCK_HERMES_WORKDIR || path.join(userData, 'hermes-workspace');
-  const browserStateDir = process.env.A_STOCK_BROWSER_STATE_DIR || path.join(userData, 'browser-auth');
   const bundledRuntime = path.join(resourcesRoot, 'hermes-runtime');
   const packagedBrowserWrapperDir = path.join(resourcesRoot, 'agent-browser');
   const developmentBrowserWrapperDir = path.join(__dirname, 'scripts', 'browser-bin');
@@ -277,55 +240,18 @@ function buildRuntimeEnv(resourcesRoot) {
   });
   fs.mkdirSync(hermesHome, { recursive: true });
   fs.mkdirSync(hermesWorkDir, { recursive: true });
-  fs.mkdirSync(browserStateDir, { recursive: true, mode: 0o700 });
   return {
 		A_STOCK_LOG_DIR: runtimeLogDirectory,
 		A_STOCK_APP_VERSION: app.getVersion(),
     A_STOCK_SETTINGS_PATH: path.join(userData, 'settings.json'),
-    A_STOCK_REVIEW_DB: path.join(userData, 'reviews.db'),
-    A_STOCK_PORTFOLIO_DB: path.join(userData, 'portfolio-inspections.db'),
     A_STOCK_TAIWAN_PORTFOLIO_DB: path.join(userData, 'taiwan-portfolio.db'),
-    A_STOCK_MARKET_EMOTION_DB: path.join(userData, 'market-emotion.db'),
-    A_STOCK_THEME_RADAR_DB: path.join(userData, 'theme-radar.db'),
-    A_STOCK_MASTERY_CACHE: path.join(userData, 'trading-mastery'),
     A_STOCK_HERMES_HOME: hermesHome,
     A_STOCK_HERMES_WORKDIR: hermesWorkDir,
     A_STOCK_HERMES_RUNTIME_ROOT: hermesRuntimeRoot,
-    A_STOCK_BROWSER_STATE_DIR: browserStateDir,
-    ...(xueqiuBrowserBridgeConfig ? {
-      A_STOCK_BROWSER_BRIDGE_URL: xueqiuBrowserBridgeConfig.baseURL,
-      A_STOCK_BROWSER_BRIDGE_TOKEN: xueqiuBrowserBridgeConfig.token,
-    } : {}),
-    ...(taogubaBrowserBridgeConfig ? {
-      A_STOCK_TAOGUBA_BROWSER_BRIDGE_URL: taogubaBrowserBridgeConfig.baseURL,
-      A_STOCK_TAOGUBA_BROWSER_BRIDGE_TOKEN: taogubaBrowserBridgeConfig.token,
-    } : {}),
     A_STOCK_AGENT_BROWSER_WRAPPER_DIR: browserWrapperDir,
     A_STOCK_AGENT_BROWSER_REAL: browserReal,
     ...(process.env.A_STOCK_HERMES_PYTHON ? { A_STOCK_HERMES_PYTHON: process.env.A_STOCK_HERMES_PYTHON } : {}),
   };
-}
-
-async function bootXueqiuBrowserBridge() {
-  if (xueqiuBrowserBridgeConfig) return xueqiuBrowserBridgeConfig;
-	xueqiuBrowserBridge = createXueqiuBrowserBridge({
-    BrowserWindow,
-    partitionForProfile: (profileId) => partitionForProfile('xueqiu', profileId),
-		logger: featureLogger('xueqiu-bridge'),
-  });
-  xueqiuBrowserBridgeConfig = await xueqiuBrowserBridge.start();
-  return xueqiuBrowserBridgeConfig;
-}
-
-async function bootTaogubaBrowserBridge() {
-  if (taogubaBrowserBridgeConfig) return taogubaBrowserBridgeConfig;
-	taogubaBrowserBridge = createTaogubaBrowserBridge({
-    BrowserWindow,
-    partitionForProfile: (profileId) => partitionForProfile('taoguba', profileId),
-		logger: featureLogger('taoguba-bridge'),
-  });
-  taogubaBrowserBridgeConfig = await taogubaBrowserBridge.start();
-  return taogubaBrowserBridgeConfig;
 }
 
 function agentBrowserBinaryName() {
@@ -354,22 +280,13 @@ ipcMain.handle('runtime-log', (_event, entry = {}) => {
 	rendererLogger.event(level, feature, message);
 	return true;
 });
-ipcMain.handle('browser-auth-status', (_event, profileId, source = 'xueqiu') => browserAuthStatus(source, profileId));
-ipcMain.handle('open-review-source-login', (_event, source, profileId, homepageURL) => openReviewSourceLogin(source, profileId, homepageURL));
-ipcMain.handle('open-xueqiu-login', (_event, profileId, homepageURL) => openReviewSourceLogin('xueqiu', profileId, homepageURL));
-ipcMain.handle('review-browser-login-complete', (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  const entry = [...reviewLoginWindows.values()].find((item) => item.window === window);
-  if (!entry) throw new Error('登录窗口已失效');
-  return entry.complete();
-});
 ipcMain.handle('app-update-status', () => updateManager?.getStatus() || {
   state: 'disabled', supported: false, currentVersion: app.getVersion(), progress: 0, message: '自动更新尚未初始化',
 });
 ipcMain.handle('app-update-check', () => updateManager.checkForUpdates());
 ipcMain.handle('app-update-download', () => updateManager.downloadUpdate());
 ipcMain.handle('app-update-install', () => updateManager.installUpdate());
-ipcMain.handle('app-update-open-release', () => shell.openExternal(`https://github.com/jundizhou/easy-stock/releases/tag/v${updateManager?.getStatus().latestVersion || app.getVersion()}`));
+ipcMain.handle('app-update-open-release', () => shell.openExternal(releasePageURL(updateManager?.getStatus().latestVersion || app.getVersion())));
 ipcMain.handle('app-update-open-backups', async () => {
   const backupRoot = resolveBackupRoot(app.getPath('userData'));
   fs.mkdirSync(backupRoot, { recursive: true, mode: 0o700 });
@@ -380,170 +297,6 @@ ipcMain.handle('open-subscription-ai', async (_event, targetUrl) => {
   validateSubscriptionAIURL(targetUrl);
   return shell.openExternal(targetUrl);
 });
-
-function browserAuthRoot() {
-  return process.env.A_STOCK_BROWSER_STATE_DIR || path.join(app.getPath('userData'), 'browser-auth');
-}
-
-function browserAuthStatus(source, profileId) {
-  const normalized = reviewBrowserSource(source);
-  return readBrowserAuthStatus(statePathForProfile(browserAuthRoot(), profileId, normalized), normalized);
-}
-
-async function exportReviewStorageState(source, profileId, window) {
-  const normalized = reviewBrowserSource(source);
-  const partition = partitionForProfile(normalized, profileId);
-  const partitionSession = session.fromPartition(partition);
-  const cookies = (await partitionSession.cookies.get({})).filter((cookie) => isReviewSourceHost(cookie.domain, normalized));
-  let origins = [];
-  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-    try {
-      const originState = await window.webContents.executeJavaScript(`(() => {
-        const hostname = location.hostname.toLowerCase();
-        const source = ${JSON.stringify(normalized)};
-        const allowed = source === 'xueqiu'
-          ? hostname === 'xueqiu.com' || hostname.endsWith('.xueqiu.com')
-          : hostname === 'tgb.cn' || hostname.endsWith('.tgb.cn') || hostname === 'taoguba.com.cn' || hostname.endsWith('.taoguba.com.cn');
-        if (!allowed) return null;
-        const loginUserID = String(globalThis.loginUserID || '').trim();
-        const loginUserName = String(globalThis.loginUserName || '').trim();
-        const bodyText = String(document.body?.innerText || '');
-        let storage = [];
-        try {
-          storage = Object.keys(localStorage).map((name) => ({ name, value: localStorage.getItem(name) || '' }));
-        } catch {
-          storage = [];
-        }
-        return {
-          origin: location.origin,
-          localStorage: storage,
-          authenticated: source === 'taoguba' && ((loginUserID && loginUserID !== '0') || Boolean(loginUserName) || (/退出登录|退出账号/.test(bodyText) && !/登录\\s*\\/\\s*注册/.test(bodyText))),
-        };
-      })()`, true);
-      if (originState?.origin) {
-        const localStorage = (Array.isArray(originState.localStorage) ? originState.localStorage : [])
-          .filter((item) => item?.name !== TAOGUBA_AUTH_MARKER && item?.name !== LEGACY_TAOGUBA_AUTH_MARKER);
-        if (normalized === 'taoguba' && originState.authenticated) {
-          localStorage.push({ name: TAOGUBA_AUTH_MARKER, value: '1' });
-        }
-        if (localStorage.length) origins = [{ origin: originState.origin, localStorage }];
-      }
-    } catch (error) {
-		desktopLogger.event('warn', `${normalized}-login`, 'export localStorage failed', error);
-    }
-  }
-  writeStorageState(statePathForProfile(browserAuthRoot(), profileId, normalized), {
-    cookies: cookies.map(playwrightCookie),
-    origins,
-  });
-  return browserAuthStatus(normalized, profileId);
-}
-
-function validReviewSourceURL(source, value) {
-  const normalized = reviewBrowserSource(source);
-  const fallback = normalized === 'taoguba' ? 'https://www.tgb.cn/' : 'https://xueqiu.com/';
-  try {
-    const parsed = new URL(String(value || fallback));
-    if (parsed.protocol === 'https:' && isReviewSourceHost(parsed.hostname, normalized)) {
-      return parsed.toString();
-    }
-  } catch {
-    // Fall through to the known-safe login URL.
-  }
-  return fallback;
-}
-
-function openReviewSourceLogin(source, profileId, homepageURL) {
-  const normalized = reviewBrowserSource(source);
-  const label = normalized === 'taoguba' ? '淘股吧' : '雪球';
-  const key = String(profileId || '').trim();
-  if (!key) throw new Error(`${label}配置 ID 不能为空`);
-  const windowKey = `${normalized}:${key}`;
-  const existing = reviewLoginWindows.get(windowKey);
-  if (existing && !existing.window.isDestroyed()) {
-    existing.window.show();
-    existing.window.focus();
-    return existing.done;
-  }
-
-  const loginWindow = new BrowserWindow({
-    width: 1120,
-    height: 800,
-    minWidth: 900,
-    minHeight: 640,
-    title: `${label}登录 · easy-stock`,
-    backgroundColor: '#ffffff',
-    autoHideMenuBar: true,
-    webPreferences: {
-      partition: partitionForProfile(normalized, key),
-      preload: path.join(__dirname, 'review-login-preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-
-  let closing = false;
-  let finalizing = null;
-  let resolveDone;
-  const done = new Promise((resolve) => { resolveDone = resolve; });
-  const cookieStore = loginWindow.webContents.session.cookies;
-  let exportTimer;
-  const scheduleExport = () => {
-    clearTimeout(exportTimer);
-    exportTimer = setTimeout(() => {
-		void exportReviewStorageState(normalized, key, loginWindow).catch((error) => desktopLogger.event('warn', `${normalized}-login`, 'save auth failed', error));
-    }, 700);
-  };
-  const cookieListener = () => scheduleExport();
-  const complete = (forceClose = false) => {
-    if (finalizing) return finalizing;
-    finalizing = exportReviewStorageState(normalized, key, loginWindow)
-      .catch((error) => ({ configured: false, message: `保存${label}登录态失败：${error.message}` }))
-      .then((status) => {
-        if (forceClose || status.configured) {
-          closing = true;
-          resolveDone(status);
-          loginWindow.destroy();
-        }
-        return status;
-      })
-      .finally(() => {
-        if (!closing) finalizing = null;
-      });
-    return finalizing;
-  };
-  reviewLoginWindows.set(windowKey, { window: loginWindow, done, complete: () => complete(false) });
-  cookieStore.on('changed', cookieListener);
-  loginWindow.webContents.on('did-finish-load', scheduleExport);
-  loginWindow.on('close', (event) => {
-    if (closing) return;
-    event.preventDefault();
-    clearTimeout(exportTimer);
-    void complete(true);
-  });
-  loginWindow.on('closed', () => {
-    clearTimeout(exportTimer);
-    cookieStore.removeListener('changed', cookieListener);
-    reviewLoginWindows.delete(windowKey);
-  });
-  void loginWindow.loadURL(validReviewSourceURL(normalized, homepageURL)).catch((error) => {
-		desktopLogger.event('warn', `${normalized}-login`, 'open login page failed', error);
-  });
-  return done;
-}
-
-function reviewBrowserSource(source) {
-  const normalized = String(source || '').trim().toLowerCase();
-  if (normalized !== 'xueqiu' && normalized !== 'taoguba') throw new Error('不支持的浏览器登录平台');
-  return normalized;
-}
-
-function isReviewSourceHost(value, source) {
-  const hostname = String(value || '').replace(/^\./, '').toLowerCase();
-  if (source === 'xueqiu') return hostname === 'xueqiu.com' || hostname.endsWith('.xueqiu.com');
-  return hostname === 'tgb.cn' || hostname.endsWith('.tgb.cn') || hostname === 'taoguba.com.cn' || hostname.endsWith('.taoguba.com.cn');
-}
 
 function safeURLPath(value) {
 	try {
@@ -580,8 +333,6 @@ app.on('before-quit', () => {
 	desktopLogger.event('info', 'runtime', 'stopping');
   app.isQuitting = true;
   clearInterval(updateCheckTimer);
-  if (xueqiuBrowserBridge) void xueqiuBrowserBridge.close();
-  if (taogubaBrowserBridge) void taogubaBrowserBridge.close();
   if (backendProcess && !backendProcess.killed) backendProcess.kill();
 });
 

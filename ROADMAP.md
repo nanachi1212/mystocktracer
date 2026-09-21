@@ -96,4 +96,4 @@ mystocktracer 的目標是建立一套理解台股語境、證據可追溯、本
 - 功能建議：描述真實研究情境、目前阻礙與期望結果；
 - 程式碼與文件：閱讀 [貢獻指南](./CONTRIBUTING.md) 後提交 Pull Request。
 
-底層資料服務的技術規劃見 [Backend Roadmap](./backend/docs/roadmap.md)；台股化細節進度見 [台股化 Roadmap](./docs/taiwan-roadmap.md)。
+後端 API 路由見 [Backend API Routes](./backend/docs/api-routes.md)；台股化細節進度見 [台股化 Roadmap](./docs/taiwan-roadmap.md)。

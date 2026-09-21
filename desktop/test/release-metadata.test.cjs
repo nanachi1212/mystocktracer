@@ -81,7 +81,7 @@ test('merges macOS updater metadata without installed npm dependencies', () => {
   assert.match(merged, /path: easy-stock-v0\.4\.0-macos-arm64\.zip/);
 });
 
-test('separates user downloads from internal updater assets', () => {
+test('publishes user downloads and updater metadata in one GitHub release asset set', () => {
   const sourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-release-assets-'));
   const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-publish-assets-'));
   const version = '0.4.0';
@@ -102,24 +102,12 @@ test('separates user downloads from internal updater assets', () => {
   const scriptPath = path.resolve(__dirname, '..', 'scripts', 'prepare-publish-assets.mjs');
   execFileSync(process.execPath, [scriptPath, sourceRoot, outputRoot, `v${version}`]);
 
-  assert.deepEqual(fs.readdirSync(path.join(outputRoot, 'github')).sort(), [
-    `easy-stock-v${version}-macos-arm64.dmg`,
-    `easy-stock-v${version}-macos-x64.dmg`,
-    `easy-stock-v${version}-windows-x64-setup.exe`,
-  ]);
-  assert.deepEqual(fs.readdirSync(path.join(outputRoot, 'updater')).sort(), [
-    `easy-stock-v${version}-macos-arm64.zip`,
-    `easy-stock-v${version}-macos-arm64.zip.blockmap`,
-    `easy-stock-v${version}-macos-x64.zip`,
-    `easy-stock-v${version}-macos-x64.zip.blockmap`,
-    `easy-stock-v${version}-windows-x64-setup.exe`,
-    `easy-stock-v${version}-windows-x64-setup.exe.blockmap`,
-    'latest-mac.yml',
-    'latest.yml',
-  ].sort());
+  assert.deepEqual(fs.readdirSync(path.join(outputRoot, 'github')).sort(), [...names].sort());
+  // The updater reads latest.yml straight from the release, so there is no second asset directory.
+  assert.equal(fs.existsSync(path.join(outputRoot, 'updater')), false);
 });
 
-test('electron-builder package files includes subscription-ai-url.cjs and all direct runtime modules', () => {
+test('desktop package includes current runtime modules and excludes removed browser-login bridges', async () => {
   const electronBuilderScript = fs.readFileSync(path.resolve(__dirname, '..', 'scripts', 'electron-builder.mjs'), 'utf8');
   assert.match(electronBuilderScript, /'subscription-ai-url\.cjs'/);
 
@@ -133,6 +121,24 @@ test('electron-builder package files includes subscription-ai-url.cjs and all di
       `electron-builder.mjs should include direct runtime dependency: ${moduleName}`,
     );
   }
+
+  const { requiredLocalRuntimeModules } = await import('../scripts/verify-release-package.mjs');
+  const requiredModules = requiredLocalRuntimeModules();
+  for (const removedModule of [
+    'review-login-preload.cjs',
+    'xueqiu-login-preload.cjs',
+    'browser-auth.cjs',
+    'taoguba-browser-bridge.cjs',
+    'xueqiu-browser-bridge.cjs',
+  ]) {
+    assert.equal(requiredModules.includes(removedModule), false, `${removedModule} must stay removed from package requirements`);
+  }
+});
+
+test('desktop startup no longer boots removed browser-login bridges', () => {
+  const mainScript = fs.readFileSync(path.resolve(__dirname, '..', 'main.cjs'), 'utf8');
+  assert.doesNotMatch(mainScript, /boot(?:Xueqiu|Taoguba)BrowserBridge/);
+  assert.doesNotMatch(mainScript, /openReviewSourceLogin|openXueqiuLogin|getBrowserAuthStatus/);
 });
 
 test('release package verifier detects missing runtime modules in app.asar', async () => {

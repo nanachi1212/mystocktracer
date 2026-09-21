@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"easy-stock/backend/internal/hermes"
-	"easy-stock/backend/internal/methodology"
 )
 
 var (
@@ -150,8 +149,13 @@ func buildAgentSettingsView(settings hermes.AgentSettings) agentSettingsView {
 	return view
 }
 
+// legacyMainlandSkillName is the Hermes skill the removed A-share trading-mastery module used
+// to install. The module is gone, but the skill directory can still exist in a Hermes home
+// created by an earlier version, so the settings view keeps filtering it out.
+const legacyMainlandSkillName = "a-stock-short-term-masters"
+
 // taiwanFirstSkills excludes Hermes skills that have no Taiwan-market equivalent (currently
-// just the mainland-China trading-mastery skill) from the settings view exposed to the
+// just the leftover mainland-China trading-mastery skill) from the settings view exposed to the
 // Taiwan-first Skill/MCP panel, so it never presents an A-share-only capability as part of
 // the normal Taiwan research toolset. The skill itself, its files, and its enabled/disabled
 // state are untouched — Taiwan stock research also never invokes it: GenerateTaiwanResearch
@@ -159,7 +163,7 @@ func buildAgentSettingsView(settings hermes.AgentSettings) agentSettingsView {
 func taiwanFirstSkills(skills []hermes.SkillInfo) []hermes.SkillInfo {
 	filtered := make([]hermes.SkillInfo, 0, len(skills))
 	for _, skill := range skills {
-		if skill.Name == methodology.SkillName {
+		if skill.Name == legacyMainlandSkillName {
 			continue
 		}
 		filtered = append(filtered, skill)

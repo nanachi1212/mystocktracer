@@ -6,21 +6,18 @@ import {
 	Eye,
 	EyeOff,
 	FolderOpen,
-	Globe2,
 	KeyRound,
 	LoaderCircle,
-	LogIn,
 	PlugZap,
 	Plus,
 	RefreshCw,
 	Save,
-	Server,
 	ShieldCheck,
 	Trash2,
 	X,
 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { AppSettings, BackendConfig, BrowserAuthStatus, LLMConnectionTestResult, LLMModelOption, LLMModelsResult, LLMProfile, ReviewAutomationProfile, RuntimeLogStatus, SecretSettingStatus, requestJSON } from '../lib/backend';
+import { AppSettings, BackendConfig, LLMConnectionTestResult, LLMModelOption, LLMModelsResult, LLMProfile, RuntimeLogStatus, SecretSettingStatus, requestJSON } from '../lib/backend';
 import { llmLocalConnectionError, llmLocalPresets, llmProviderDefinition, llmProviders } from '../lib/llm-providers';
 import { AppUpdatePanel } from './AppUpdatePanel';
 import { HermesAgentSettingsPanel } from './HermesAgentSettingsPanel';
@@ -32,22 +29,14 @@ type Props = {
 	onSaved?: () => void;
 };
 
-type SecretKey = 'llm_api_key' | 'tushare_token' | 'ths_cookie' | 'xueqiu_cookie' | 'eastmoney_cookie' | 'wechat_api_token';
-type ReviewSource = 'wechat' | 'xueqiu' | 'taoguba';
-type ReviewProfileDraft = Omit<ReviewAutomationProfile, 'credential'> & { credential: SecretSettingStatus; credential_value: string; clear_credential: boolean };
+// Phase B1 removed the China data-provider credentials and review-source automation, so the only
+// secret this drawer still manages is the Hermes model API key.
+type SecretKey = 'llm_api_key';
 type ModelListState = 'idle' | 'loading' | 'success' | 'error';
 
 const manualModelOption = '__manual_model_input__';
 const defaultResponseTimeoutSeconds = 300;
 
-const emptySecrets = (): Record<SecretKey, string> => ({
-	llm_api_key: '',
-	tushare_token: '',
-	ths_cookie: '',
-	xueqiu_cookie: '',
-	eastmoney_cookie: '',
-	wechat_api_token: '',
-});
 
 export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 	const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -61,11 +50,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 	const [model, setModel] = useState('');
 	const [apiMode, setAPIMode] = useState('chat_completions');
 	const [responseTimeoutSeconds, setResponseTimeoutSeconds] = useState(defaultResponseTimeoutSeconds);
-	const [reviewSource, setReviewSource] = useState<ReviewSource>('xueqiu');
-	const [reviewProfiles, setReviewProfiles] = useState<ReviewProfileDraft[]>([]);
 	const [corporateEventAlertsEnabled, setCorporateEventAlertsEnabled] = useState(true);
-	const [secrets, setSecrets] = useState<Record<SecretKey, string>>(emptySecrets);
-	const [clearSecrets, setClearSecrets] = useState<Set<SecretKey>>(new Set());
 	const [state, setState] = useState<'idle' | 'loading' | 'saving' | 'saved' | 'error'>('idle');
 	const [message, setMessage] = useState('');
 	const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -74,8 +59,6 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 	const [modelListState, setModelListState] = useState<ModelListState>('idle');
 	const [modelListMessage, setModelListMessage] = useState('');
 	const [manualModel, setManualModel] = useState(true);
-	const [browserAuthStatuses, setBrowserAuthStatuses] = useState<Record<string, BrowserAuthStatus>>({});
-	const [openingBrowserProfile, setOpeningBrowserProfile] = useState('');
 	const [runtimeLogStatus, setRuntimeLogStatus] = useState<RuntimeLogStatus | null>(null);
 	const [openingRuntimeLogs, setOpeningRuntimeLogs] = useState(false);
 	const modelFetchSequence = useRef(0);
@@ -113,12 +96,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 				setResponseTimeoutSeconds(payload.data.llm.response_timeout_seconds || defaultResponseTimeoutSeconds);
 				setProfileKeyValues({});
 				setClearProfileKeys(new Set());
-				const profiles = toProfileDrafts(payload.data.review_automation?.profiles || []);
-				setReviewProfiles(profiles);
 				setCorporateEventAlertsEnabled(payload.data.taiwan_alerts?.corporate_events_enabled !== false);
-				void refreshBrowserAuthStatuses(profiles);
-				setSecrets(emptySecrets());
-				setClearSecrets(new Set());
 				setState('idle');
 			})
 			.catch((error) => {
@@ -140,12 +118,10 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		void window.aStock.getRuntimeLogStatus().then(setRuntimeLogStatus).catch(() => setRuntimeLogStatus(null));
 	}, [open]);
 
-	const configuredCount = useMemo(() => {
-		if (!settings) return 0;
-		const sharedCredentials = Object.entries(settings.credentials).filter(([key]) => key !== 'xueqiu_cookie' && key !== 'wechat_api_token').map(([, value]) => value);
-		const browserSessions = Object.values(browserAuthStatuses).filter((item) => item.configured).length;
-		return [...settings.llm_profiles.map((profile) => profile.api_key), ...sharedCredentials].filter((item) => item.configured).length + browserSessions;
-	}, [browserAuthStatuses, settings]);
+	const configuredCount = useMemo(
+		() => settings ? settings.llm_profiles.filter((profile) => profile.api_key.configured).length : 0,
+		[settings],
+	);
 
 	const selectedLLMProfile = useMemo(() => llmProfiles.find((profile) => profile.id === activeLLMProfileID), [activeLLMProfileID, llmProfiles]);
 
@@ -227,35 +203,16 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		setModelListMessage(`${preset.label} 使用既有 OpenAI-compatible 介面；API Key 可留空。`);
 	};
 
-	const updateSecret = (key: SecretKey, value: string) => {
-		if (key === 'llm_api_key') {
-			setProfileKeyValues((current) => ({ ...current, [activeLLMProfileID]: value }));
-			setClearProfileKeys((current) => { const next = new Set(current); if (value) next.delete(activeLLMProfileID); return next; });
-			resetModelList(); setTestState('idle'); setTestResult(null); return;
-		}
-		setSecrets((current) => ({ ...current, [key]: value }));
-		if (value) {
-			setClearSecrets((current) => {
-				const next = new Set(current);
-				next.delete(key);
-				return next;
-			});
-		}
+	const updateSecret = (_key: SecretKey, value: string) => {
+		setProfileKeyValues((current) => ({ ...current, [activeLLMProfileID]: value }));
+		setClearProfileKeys((current) => { const next = new Set(current); if (value) next.delete(activeLLMProfileID); return next; });
+		resetModelList(); setTestState('idle'); setTestResult(null);
 	};
 
-	const toggleClear = (key: SecretKey) => {
-		if (key === 'llm_api_key') {
-			setClearProfileKeys((current) => { const next = new Set(current); if (next.has(activeLLMProfileID)) next.delete(activeLLMProfileID); else next.add(activeLLMProfileID); return next; });
-			setProfileKeyValues((current) => ({ ...current, [activeLLMProfileID]: '' }));
-			resetModelList(); return;
-		}
-		setClearSecrets((current) => {
-			const next = new Set(current);
-			if (next.has(key)) next.delete(key);
-			else next.add(key);
-			return next;
-		});
-		setSecrets((current) => ({ ...current, [key]: '' }));
+	const toggleClear = (_key: SecretKey) => {
+		setClearProfileKeys((current) => { const next = new Set(current); if (next.has(activeLLMProfileID)) next.delete(activeLLMProfileID); else next.add(activeLLMProfileID); return next; });
+		setProfileKeyValues((current) => ({ ...current, [activeLLMProfileID]: '' }));
+		resetModelList();
 	};
 
 	const updateModel = (nextModel: string) => {
@@ -304,56 +261,9 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		}
 	};
 
-	const updateReviewProfile = (id: string, patch: Partial<ReviewProfileDraft>) => setReviewProfiles((current) => current.map((profile) => profile.id === id ? { ...profile, ...patch } : profile));
-	const addReviewProfile = (source: ReviewSource) => setReviewProfiles((current) => [...current, newProfileDraft(source)]);
-	const removeReviewProfile = (id: string) => setReviewProfiles((current) => current.filter((profile) => profile.id !== id));
-
-	const refreshBrowserAuthStatuses = async (profiles: ReviewProfileDraft[]) => {
-		const browserProfiles = profiles.filter((profile) => profile.source === 'xueqiu' || profile.source === 'taoguba');
-		if (!window.aStock?.getBrowserAuthStatus) {
-			setBrowserAuthStatuses(Object.fromEntries(browserProfiles.map((profile) => [profile.id, { configured: false, message: '请在桌面应用中配置浏览器登录态' }])));
-			return;
-		}
-		const statuses = await Promise.all(browserProfiles.map(async (profile) => {
-			try {
-				return [profile.id, await window.aStock!.getBrowserAuthStatus!(profile.id, profile.source as 'xueqiu' | 'taoguba')] as const;
-			} catch (error) {
-				return [profile.id, { configured: false, message: error instanceof Error ? error.message : '读取浏览器登录态失败' }] as const;
-			}
-		}));
-		setBrowserAuthStatuses(Object.fromEntries(statuses));
-	};
-
-	const openReviewSourceLogin = async (profile: ReviewProfileDraft) => {
-		const source = profile.source as 'xueqiu' | 'taoguba';
-		const label = reviewSourceLabel(source);
-		const opener = window.aStock?.openReviewSourceLogin
-			? (id: string, homepageURL: string) => window.aStock!.openReviewSourceLogin!(source, id, homepageURL)
-			: source === 'xueqiu' && window.aStock?.openXueqiuLogin
-				? (id: string, homepageURL: string) => window.aStock!.openXueqiuLogin!(id, homepageURL)
-				: null;
-		if (!opener) {
-			setBrowserAuthStatuses((current) => ({ ...current, [profile.id]: { configured: false, message: '内置登录窗口仅在桌面应用中可用' } }));
-			return;
-		}
-		setOpeningBrowserProfile(profile.id);
-		setBrowserAuthStatuses((current) => ({ ...current, [profile.id]: { ...current[profile.id], configured: current[profile.id]?.configured || false, message: `登录窗口已打开；完成${label}登录或安全验证后，点击“我已完成登录”` } }));
-		try {
-			const status = await opener(profile.id, profile.base_url || (source === 'xueqiu' ? 'https://xueqiu.com' : 'https://www.tgb.cn'));
-			setBrowserAuthStatuses((current) => ({ ...current, [profile.id]: status }));
-		} catch (error) {
-			setBrowserAuthStatuses((current) => ({ ...current, [profile.id]: { configured: false, message: error instanceof Error ? error.message : `打开${label}登录窗口失败` } }));
-		} finally {
-			setOpeningBrowserProfile('');
-		}
-	};
 
 	const persistSettings = async () => {
 		if (!config) throw new Error('後端尚未連線');
-		const credentials: Record<string, string> = {};
-		for (const key of ['tushare_token', 'ths_cookie', 'xueqiu_cookie', 'eastmoney_cookie'] as SecretKey[]) {
-			if (secrets[key].trim()) credentials[key] = secrets[key].trim();
-		}
 		const modelProfiles = llmProfiles.map((profile) => {
 			const current = profile.id === activeLLMProfileID ? { ...profile, name: profileName.trim(), provider, base_url: baseURL.trim(), model: model.trim(), api_mode: apiMode } : profile;
 			return { id: current.id, name: current.name.trim(), provider: current.provider, base_url: current.base_url.trim(), model: current.model.trim(), api_mode: current.api_mode, api_key: (profileKeyValues[current.id] || '').trim() || undefined, clear_api_key: clearProfileKeys.has(current.id) };
@@ -361,7 +271,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		const payload = await requestJSON<{ data: AppSettings }>(config, '/api/v1/settings', {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ llm: { response_timeout_seconds: responseTimeoutSeconds }, llm_profiles: modelProfiles, active_llm_profile_id: activeLLMProfileID, credentials, review_automation: { profiles: reviewProfiles.map((profile) => ({ id: profile.id, source: profile.source, name: profile.name.trim(), base_url: profile.source === 'wechat' ? '' : profile.base_url.trim(), credential: profile.source === 'wechat' ? undefined : profile.credential_value.trim() || undefined, clear_credential: profile.source === 'wechat' || profile.clear_credential, sync_hour: profile.sync_hour, auto_analyze: profile.auto_analyze, enabled: profile.enabled })) }, taiwan_alerts: { corporate_events_enabled: corporateEventAlertsEnabled }, clear_secrets: [...clearSecrets].filter((key) => key !== 'llm_api_key').concat('wechat_api_token') }),
+			body: JSON.stringify({ llm: { response_timeout_seconds: responseTimeoutSeconds }, llm_profiles: modelProfiles, active_llm_profile_id: activeLLMProfileID, taiwan_alerts: { corporate_events_enabled: corporateEventAlertsEnabled } }),
 		});
 		setSettings(payload.data);
 		const savedProfiles = normalizeLLMProfiles(payload.data);
@@ -371,12 +281,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		loadProfileFields(savedActive);
 		setProfileKeyValues({});
 		setClearProfileKeys(new Set());
-		const savedReviewProfiles = toProfileDrafts(payload.data.review_automation?.profiles || []);
-		setReviewProfiles(savedReviewProfiles);
 		setCorporateEventAlertsEnabled(payload.data.taiwan_alerts?.corporate_events_enabled !== false);
-		void refreshBrowserAuthStatuses(savedReviewProfiles);
-		setSecrets(emptySecrets());
-		setClearSecrets(new Set());
 		return payload.data;
 	};
 
@@ -483,11 +388,6 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 							</div>
 						</section>
 
-						{/* Legacy mainland-China review-source automation and data-provider credentials
-						   (see ReviewSource / SecretKey) have no Taiwan equivalent and would mislead
-						   Taiwan-first users. Hidden from this settings drawer per P1C audit — the
-						   underlying state, fetch, and save logic are left intact (not deleted) so the backend
-						   settings contract and any future multi-market UI are unaffected. */}
 
 						<section className="settings-section">
 							<div className="settings-section-title"><Bell size={18} /><div><h3>台股事件提醒</h3><p>控制新公司公告是否加入本機提醒中心；關閉後仍可查看公告，也不會刪除既有提醒。</p></div></div>
@@ -516,41 +416,10 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 	);
 }
 
-function ReviewProfileCard({ profile, browserAuthStatus, openingBrowser, onOpenBrowserLogin, onChange, onRemove, canRemove }: { profile: ReviewProfileDraft; browserAuthStatus?: BrowserAuthStatus; openingBrowser: boolean; onOpenBrowserLogin: () => void; onChange: (patch: Partial<ReviewProfileDraft>) => void; onRemove: () => void; canRemove: boolean }) {
-	const sourceLabel = reviewSourceLabel(profile.source as ReviewSource);
-	const isWechat = profile.source === 'wechat';
-	const usesBrowserLogin = profile.source === 'xueqiu' || profile.source === 'taoguba';
-	return <article className={`review-profile-card ${profile.enabled ? '' : 'disabled'}`}>
-		<header><div><span className={`review-profile-source ${profile.source}`}>{reviewSourceLabel(profile.source as ReviewSource)}</span><strong>{profile.name || '未命名配置'}</strong></div><div><button type="button" className={profile.enabled ? 'profile-enabled active' : 'profile-enabled'} onClick={() => onChange({ enabled: !profile.enabled })}>{profile.enabled ? '已启用' : '已停用'}</button>{canRemove && <button type="button" className="profile-remove" title="删除配置" onClick={onRemove}><Trash2 size={14} /></button>}</div></header>
-		<div className="review-profile-grid">
-			<label><span>配置名称</span><input value={profile.name} onChange={(event) => onChange({ name: event.target.value })} placeholder={`${reviewSourceLabel(profile.source as ReviewSource)}配置名称`} /></label>
-			{!isWechat && <label><span>每日同步时间</span><select value={profile.sync_hour} onChange={(event) => onChange({ sync_hour: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, hour) => <option value={hour} key={hour}>{String(hour).padStart(2, '0')}:00</option>)}</select></label>}
-		</div>
-		{!isWechat && <label><span>平台地址</span><input value={profile.base_url} onChange={(event) => onChange({ base_url: event.target.value })} placeholder={profile.source === 'xueqiu' ? 'https://xueqiu.com' : 'https://www.tgb.cn'} /></label>}
-		{usesBrowserLogin ? <div className={`profile-browser-auth ${browserAuthStatus?.configured ? 'ready' : ''}`}><Globe2 size={18} /><span><strong>{browserAuthStatus?.configured ? `${sourceLabel}浏览器已登录` : `使用内置浏览器登录${sourceLabel}`}</strong><small>{browserAuthStatus?.message || '打开后由你亲自完成登录或安全验证，然后点击“我已完成登录”保存登录态。'}</small>{browserAuthStatus?.updated_at && <em>最近保存 {new Date(browserAuthStatus.updated_at).toLocaleString('zh-CN', { hour12: false })}</em>}</span><button type="button" onClick={onOpenBrowserLogin} disabled={openingBrowser}>{openingBrowser ? <LoaderCircle className="spin" size={14} /> : <LogIn size={14} />}{openingBrowser ? '等待确认登录' : browserAuthStatus?.configured ? '重新登录' : '打开登录窗口'}</button></div> : isWechat ? <div className="profile-builtin-service"><Server size={16} /><span><strong>内置文章解析 API</strong><small>无需填写服务地址或 Token；扫码登录仅用于解析已知文章链接，不会读取公众号历史文章列表。</small></span></div> : null}
-		{!isWechat && <label className="profile-ai-toggle"><span>抓取后自动 AI 提炼</span><button type="button" className={profile.auto_analyze ? 'active' : ''} onClick={() => onChange({ auto_analyze: !profile.auto_analyze })}>{profile.auto_analyze ? '已开启' : '已关闭'}</button></label>}
-	</article>;
-}
-
-function toProfileDrafts(profiles: ReviewAutomationProfile[]): ReviewProfileDraft[] {
-	const drafts = profiles.map((profile) => ({ ...profile, base_url: profile.source === 'wechat' ? '' : profile.base_url, credential_value: '', clear_credential: profile.source === 'wechat' }));
-	if (!drafts.some((profile) => profile.source === 'wechat')) {
-		drafts.unshift({ id: 'wechat-default', source: 'wechat', name: '微信公众号默认配置', base_url: '', credential: { configured: false }, credential_value: '', clear_credential: true, sync_hour: 7, auto_analyze: true, enabled: true });
-	}
-	return drafts;
-}
-
 function normalizeLLMProfiles(settings: AppSettings): LLMProfile[] {
 	if (settings.llm_profiles?.length) return settings.llm_profiles;
 	return [{ id: 'llm-default', name: settings.llm.model || llmProviderDefinition(settings.llm.provider).label, provider: settings.llm.provider, base_url: settings.llm.base_url, model: settings.llm.model, api_mode: settings.llm.api_mode, api_key: settings.llm.api_key }];
 }
-
-function newProfileDraft(source: ReviewSource): ReviewProfileDraft {
-	const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-	return { id: `${source}-${suffix}`, source, name: `${reviewSourceLabel(source)}配置`, base_url: source === 'wechat' ? '' : source === 'xueqiu' ? 'https://xueqiu.com' : 'https://www.tgb.cn', credential: { configured: false }, credential_value: '', clear_credential: false, sync_hour: 7, auto_analyze: true, enabled: true };
-}
-
-function reviewSourceLabel(source: ReviewSource) { return source === 'wechat' ? '微信公众号' : source === 'xueqiu' ? '雪球' : '淘股吧'; }
 
 function modelOptionLabel(option: LLMModelOption) {
 	const detail = option.display_name || option.owned_by;

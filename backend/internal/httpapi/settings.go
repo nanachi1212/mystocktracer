@@ -29,16 +29,6 @@ type settingsView struct {
 		ResponseTimeoutSeconds int                 `json:"response_timeout_seconds"`
 		APIKey                 secretSettingStatus `json:"api_key"`
 	} `json:"llm"`
-	Credentials struct {
-		TushareToken    secretSettingStatus `json:"tushare_token"`
-		THSCookie       secretSettingStatus `json:"ths_cookie"`
-		XueqiuCookie    secretSettingStatus `json:"xueqiu_cookie"`
-		EastMoneyCookie secretSettingStatus `json:"eastmoney_cookie"`
-		WeChatAPIToken  secretSettingStatus `json:"wechat_api_token"`
-	} `json:"credentials"`
-	ReviewAutomation struct {
-		Profiles []reviewSourceProfileView `json:"profiles"`
-	} `json:"review_automation"`
 	TaiwanAlerts struct {
 		CorporateEventsEnabled bool `json:"corporate_events_enabled"`
 	} `json:"taiwan_alerts"`
@@ -66,29 +56,6 @@ type llmProfileUpdate struct {
 	ClearAPIKey bool    `json:"clear_api_key"`
 }
 
-type reviewSourceProfileView struct {
-	ID          string              `json:"id"`
-	Source      string              `json:"source"`
-	Name        string              `json:"name"`
-	BaseURL     string              `json:"base_url"`
-	Credential  secretSettingStatus `json:"credential"`
-	SyncHour    int                 `json:"sync_hour"`
-	AutoAnalyze bool                `json:"auto_analyze"`
-	Enabled     bool                `json:"enabled"`
-}
-
-type reviewSourceProfileUpdate struct {
-	ID              string  `json:"id"`
-	Source          string  `json:"source"`
-	Name            string  `json:"name"`
-	BaseURL         string  `json:"base_url"`
-	Credential      *string `json:"credential"`
-	ClearCredential bool    `json:"clear_credential"`
-	SyncHour        int     `json:"sync_hour"`
-	AutoAnalyze     bool    `json:"auto_analyze"`
-	Enabled         bool    `json:"enabled"`
-}
-
 type settingsUpdateRequest struct {
 	LLMProfiles        *[]llmProfileUpdate `json:"llm_profiles"`
 	ActiveLLMProfileID *string             `json:"active_llm_profile_id"`
@@ -100,17 +67,7 @@ type settingsUpdateRequest struct {
 		ResponseTimeoutSeconds *int    `json:"response_timeout_seconds"`
 		APIKey                 *string `json:"api_key"`
 	} `json:"llm"`
-	Credentials struct {
-		TushareToken    *string `json:"tushare_token"`
-		THSCookie       *string `json:"ths_cookie"`
-		XueqiuCookie    *string `json:"xueqiu_cookie"`
-		EastMoneyCookie *string `json:"eastmoney_cookie"`
-		WeChatAPIToken  *string `json:"wechat_api_token"`
-	} `json:"credentials"`
-	ClearSecrets     []string `json:"clear_secrets"`
-	ReviewAutomation struct {
-		Profiles *[]reviewSourceProfileUpdate `json:"profiles"`
-	} `json:"review_automation"`
+	ClearSecrets []string `json:"clear_secrets"`
 	TaiwanAlerts struct {
 		CorporateEventsEnabled *bool `json:"corporate_events_enabled"`
 	} `json:"taiwan_alerts"`
@@ -203,51 +160,10 @@ func (s *Server) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 		if request.LLMProfiles == nil && hasLLMUpdate(request) {
 			upsertActiveLLMProfile(values)
 		}
-		applyOptionalSecret(&values.Credentials.TushareToken, request.Credentials.TushareToken)
-		applyOptionalSecret(&values.Credentials.THSCookie, request.Credentials.THSCookie)
-		// Snowball authentication is now owned by Electron's isolated browser
-		// partitions. Remove the legacy shared cookie whenever settings are saved.
-		values.Credentials.XueqiuCookie = ""
-		applyOptionalSecret(&values.Credentials.EastMoneyCookie, request.Credentials.EastMoneyCookie)
-		applyOptionalSecret(&values.Credentials.WeChatAPIToken, request.Credentials.WeChatAPIToken)
 		for _, key := range request.ClearSecrets {
-			switch key {
-			case "llm_api_key":
+			if key == "llm_api_key" {
 				values.LLM.APIKey = ""
-			case "tushare_token":
-				values.Credentials.TushareToken = ""
-			case "ths_cookie":
-				values.Credentials.THSCookie = ""
-			case "xueqiu_cookie":
-				values.Credentials.XueqiuCookie = ""
-			case "eastmoney_cookie":
-				values.Credentials.EastMoneyCookie = ""
-			case "wechat_api_token":
-				values.Credentials.WeChatAPIToken = ""
 			}
-		}
-		if request.ReviewAutomation.Profiles != nil {
-			existing := map[string]appsettings.ReviewSourceProfile{}
-			for _, profile := range values.ReviewAutomation.Profiles {
-				existing[profile.ID] = profile
-			}
-			profiles := make([]appsettings.ReviewSourceProfile, 0, len(*request.ReviewAutomation.Profiles))
-			for index, input := range *request.ReviewAutomation.Profiles {
-				id := strings.TrimSpace(input.ID)
-				if id == "" {
-					id = fmt.Sprintf("%s-%d-%d", strings.TrimSpace(input.Source), time.Now().UnixNano(), index)
-				}
-				credential := existing[id].Credential
-				if input.Source == "xueqiu" {
-					credential = ""
-				} else if input.ClearCredential {
-					credential = ""
-				} else if input.Credential != nil && strings.TrimSpace(*input.Credential) != "" {
-					credential = strings.TrimSpace(*input.Credential)
-				}
-				profiles = append(profiles, appsettings.ReviewSourceProfile{ID: id, Source: strings.TrimSpace(input.Source), Name: strings.TrimSpace(input.Name), BaseURL: strings.TrimRight(strings.TrimSpace(input.BaseURL), "/"), Credential: credential, SyncHour: input.SyncHour, AutoAnalyze: input.AutoAnalyze, Enabled: input.Enabled})
-			}
-			values.ReviewAutomation.Profiles = profiles
 		}
 		if request.TaiwanAlerts.CorporateEventsEnabled != nil {
 			values.TaiwanAlerts.CorporateEventsEnabled = *request.TaiwanAlerts.CorporateEventsEnabled
@@ -358,50 +274,11 @@ func validateSingleLLM(request settingsUpdateRequest) error {
 			return fmt.Errorf("模型响应等待时间必须在 %d 到 %d 秒之间", appsettings.MinLLMResponseTimeoutSeconds, appsettings.MaxLLMResponseTimeoutSeconds)
 		}
 	}
-	if request.ReviewAutomation.Profiles != nil {
-		if len(*request.ReviewAutomation.Profiles) > 100 {
-			return fmt.Errorf("too many review automation profiles")
-		}
-		for _, profile := range *request.ReviewAutomation.Profiles {
-			if profile.Source != "wechat" && profile.Source != "xueqiu" && profile.Source != "taoguba" {
-				return fmt.Errorf("unsupported review source: %s", profile.Source)
-			}
-			if strings.TrimSpace(profile.Name) == "" || len([]rune(profile.Name)) > 80 {
-				return fmt.Errorf("review profile name is required and must be at most 80 characters")
-			}
-			if profile.SyncHour < 0 || profile.SyncHour > 23 {
-				return fmt.Errorf("sync_hour must be between 0 and 23")
-			}
-			if baseURL := strings.TrimSpace(profile.BaseURL); baseURL != "" {
-				parsed, err := url.Parse(baseURL)
-				if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-					return fmt.Errorf("review profile base_url must be an http or https URL")
-				}
-			}
-			if profile.Credential != nil && len(*profile.Credential) > 16<<10 {
-				return fmt.Errorf("a review profile credential is too long")
-			}
-		}
-	}
-	secrets := []*string{
-		request.LLM.APIKey,
-		request.Credentials.TushareToken,
-		request.Credentials.THSCookie,
-		request.Credentials.XueqiuCookie,
-		request.Credentials.EastMoneyCookie,
-		request.Credentials.WeChatAPIToken,
-	}
-	for _, secret := range secrets {
-		if secret != nil && len(*secret) > 16<<10 {
-			return fmt.Errorf("a secret value is too long")
-		}
-	}
-	allowedClear := map[string]bool{
-		"llm_api_key": true, "tushare_token": true, "ths_cookie": true,
-		"xueqiu_cookie": true, "eastmoney_cookie": true, "wechat_api_token": true,
+	if request.LLM.APIKey != nil && len(*request.LLM.APIKey) > 16<<10 {
+		return fmt.Errorf("a secret value is too long")
 	}
 	for _, key := range request.ClearSecrets {
-		if !allowedClear[key] {
+		if key != "llm_api_key" {
 			return fmt.Errorf("unsupported clear_secrets key: %s", key)
 		}
 	}
@@ -451,15 +328,6 @@ func (s *Server) buildSettingsView(values appsettings.Values) settingsView {
 			}
 		}
 		view.LLMProfiles = append(view.LLMProfiles, llmProfileView{ID: profile.ID, Name: profile.Name, Provider: profile.Provider, BaseURL: profile.BaseURL, Model: profile.Model, APIMode: normalizeAPIMode(profile.APIMode, profile.Provider), APIKey: secretSettingStatus{Configured: configured}})
-	}
-	view.Credentials.TushareToken = secretStatus(values.Credentials.TushareToken)
-	view.Credentials.THSCookie = secretStatus(values.Credentials.THSCookie)
-	view.Credentials.XueqiuCookie = secretStatus(values.Credentials.XueqiuCookie)
-	view.Credentials.EastMoneyCookie = secretStatus(values.Credentials.EastMoneyCookie)
-	view.Credentials.WeChatAPIToken = secretStatus(values.Credentials.WeChatAPIToken)
-	view.ReviewAutomation.Profiles = make([]reviewSourceProfileView, 0, len(values.ReviewAutomation.Profiles))
-	for _, profile := range values.ReviewAutomation.Profiles {
-		view.ReviewAutomation.Profiles = append(view.ReviewAutomation.Profiles, reviewSourceProfileView{ID: profile.ID, Source: profile.Source, Name: profile.Name, BaseURL: profile.BaseURL, Credential: secretStatus(profile.Credential), SyncHour: profile.SyncHour, AutoAnalyze: profile.AutoAnalyze, Enabled: profile.Enabled})
 	}
 	view.TaiwanAlerts.CorporateEventsEnabled = values.TaiwanAlerts.CorporateEventsEnabled
 	return view

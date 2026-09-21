@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -95,7 +93,6 @@ func (s *Server) aiChatWebSocket(w http.ResponseWriter, r *http.Request) {
 				_ = process.Stop()
 				return
 			}
-			payload = s.enrichHermesPrompt(r.Context(), payload)
 			payload = append(payload, '\n')
 			if _, writeErr := process.Input().Write(payload); writeErr != nil {
 				clientDone <- writeErr
@@ -137,36 +134,6 @@ func (s *Server) aiChatWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = writeHermesGatewayError(connection, message)
 	}
-}
-
-func (s *Server) enrichHermesPrompt(parent context.Context, payload []byte) []byte {
-	if s.masteryLibrary == nil {
-		return payload
-	}
-	var frame map[string]any
-	if err := json.Unmarshal(payload, &frame); err != nil || rpcString(frame["method"]) != "prompt.submit" {
-		return payload
-	}
-	params, ok := frame["params"].(map[string]any)
-	if !ok {
-		return payload
-	}
-	prompt := strings.TrimSpace(rpcString(params["text"]))
-	if prompt == "" {
-		return payload
-	}
-	ctx, cancel := context.WithTimeout(parent, 8*time.Second)
-	defer cancel()
-	knowledge, err := s.masteryLibrary.ContextForPrompt(ctx, prompt, 12_000)
-	if err != nil || strings.TrimSpace(knowledge) == "" {
-		return payload
-	}
-	params["text"] = "[本地游资心法知识库]\n" + knowledge + "\n\n[用户当前问题]\n" + prompt
-	updated, err := json.Marshal(frame)
-	if err != nil || len(updated) > maxHermesGatewayFrameBytes {
-		return payload
-	}
-	return updated
 }
 
 func rpcString(value any) string {
