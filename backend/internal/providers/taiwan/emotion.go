@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"easy-stock/backend/internal/marketemotion"
+	"github.com/nanachi1212/mystocktracer/backend/internal/marketemotion"
 )
 
 func (c *Client) MarketEmotion(ctx context.Context, now time.Time) (marketemotion.TaiwanMarketEmotion, error) {

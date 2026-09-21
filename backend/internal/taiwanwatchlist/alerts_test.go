@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 )
 
 func addAlertTestSecurity(t *testing.T, store *Store, canonical, code, name, exchange string) {

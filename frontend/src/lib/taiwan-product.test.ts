@@ -169,7 +169,7 @@ describe('Taiwan-first product shell', () => {
 	it('keeps only Taiwan-safe primary navigation labels', () => {
 		expect(taiwanPrimaryNavigation.map((item) => item[1])).toEqual(['今日總覽', '台股選股器', '自選股', '持倉', '事件提醒', '個股分析']);
 		expect(taiwanPrimaryNavigation.join(' ')).not.toMatch(/遊資|連板|龍虎榜|打板|首板|炸板/);
-		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
+		const app = fs.readFileSync(path.join(root, 'frontend/src/components/ApplicationFrame.tsx'), 'utf8');
 		const primaryNav = app.slice(app.indexOf('<aside className="app-sidebar"'), app.indexOf('<div className="sidebar-guidance">'));
 		expect(primaryNav).not.toMatch(/大V|个股分析|持仓|短线|趋势题材|游资|龙虎榜|連板|遊資/);
 	});
@@ -195,7 +195,7 @@ describe('Taiwan-first product shell', () => {
 	});
 
 	it('does not claim Taiwan provider data is connected when only the backend endpoint resolved', () => {
-		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
+		const app = fs.readFileSync(path.join(root, 'frontend/src/components/ApplicationFrame.tsx'), 'utf8');
 		// `config` only means the backend HTTP endpoint was resolved — it says nothing about
 		// whether TWSE/TPEx data actually loaded, and (P1F) resolving `config` never proves the
 		// backend process is actually reachable either. The topbar wording must not overclaim

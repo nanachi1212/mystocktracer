@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"easy-stock/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 )
 
 const TaiwanIndustryRadarVersion = "taiwan_industry_radar_v1"

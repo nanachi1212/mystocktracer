@@ -1,0 +1,589 @@
+/* Taiwan-first product surfaces */
+.taiwan-product-workspace { display: grid; gap: 14px; padding: 16px 18px 24px; min-width: 0; }
+.taiwan-scope-tabs { display: flex; flex-wrap: wrap; gap: 7px; }
+.taiwan-scope-tabs button { min-height: 34px; padding: 0 13px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); cursor: pointer; }
+.taiwan-scope-tabs button.active { border-color: #77a7d7; background: #eef6ff; color: #175ea9; font-weight: 700; }
+.taiwan-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.taiwan-status-card, .taiwan-stock-heading, .taiwan-emotion-summary, .taiwan-ai-action, .taiwan-interpretation, .taiwan-research-result, .taiwan-research-unavailable, .taiwan-empty-state { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.taiwan-status-card { display: grid; gap: 6px; }
+.taiwan-status-card > div { display: flex; align-items: center; gap: 8px; }
+.taiwan-status-card small, .taiwan-status-card p { margin: 0; color: var(--muted); }
+.taiwan-status { padding: 3px 7px; border-radius: 999px; background: #edf5ff; color: #175ea9; font-size: 10px; }
+.taiwan-status.partial, .taiwan-status.stale { background: #fff5df; color: #996515; }
+.taiwan-status.unavailable { background: #fff0f1; color: #b5303a; }
+.taiwan-metric-grid, .taiwan-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.taiwan-metric-grid article, .taiwan-detail-grid article { display: grid; gap: 5px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.taiwan-metric-grid span, .taiwan-detail-grid span, .taiwan-detail-grid small { color: var(--muted); }
+.taiwan-metric-grid strong, .taiwan-detail-grid strong { font-size: 19px; }
+.taiwan-emotion-summary, .taiwan-stock-heading, .taiwan-ai-action { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.taiwan-emotion-summary > div { display: grid; gap: 4px; }
+.taiwan-emotion-summary span, .taiwan-emotion-summary small { color: var(--muted); }
+.taiwan-industry-list, .taiwan-interpretation > div, .taiwan-research-result > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.taiwan-industry-list article, .taiwan-interpretation article, .taiwan-research-result article { display: grid; gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.taiwan-industry-list header, .taiwan-interpretation article header { display: flex; justify-content: space-between; gap: 10px; }
+.taiwan-industry-list header span, .taiwan-industry-list small, .taiwan-interpretation small, .taiwan-research-result small { color: var(--muted); }
+.taiwan-industry-list article > div { display: flex; justify-content: space-between; gap: 12px; }
+.taiwan-stock-heading h2, .taiwan-research-result h3 { margin: 3px 0; }
+.taiwan-stock-heading > div:last-child { display: grid; justify-items: end; gap: 4px; }
+.taiwan-stock-heading > div:last-child strong { font-size: 24px; }
+.taiwan-interpretation { display: grid; gap: 12px; }
+.taiwan-evidence-overview { display: grid; gap: 10px; }
+.taiwan-evidence-overview h3 { margin: 3px 0; }
+.taiwan-evidence-overview p { margin: 0; color: var(--muted); line-height: 1.5; }
+.taiwan-corporate-events { display: grid; gap: 10px; }
+.taiwan-corporate-events > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.taiwan-corporate-events h3 { margin: 3px 0; }
+.taiwan-event-provenance { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.taiwan-event-status { padding: 4px 7px; border-radius: 4px; background: #edf1f3; color: #5d707c; font-size: 9px; white-space: nowrap; }
+.taiwan-event-status.available { background: #e8f5ee; color: #25704e; }
+.taiwan-event-status.partial, .taiwan-event-status.stale { background: #fff3d9; color: #8a6518; }
+.taiwan-event-status.unavailable { background: #faeae6; color: #a64232; }
+.taiwan-event-list { display: grid; gap: 8px; }
+.taiwan-event-list article { display: grid; gap: 7px; padding: 11px 12px; border: 1px solid #dce3e7; border-radius: 6px; background: #fff; }
+.taiwan-event-list article > header, .taiwan-event-list article > footer { display: flex; justify-content: space-between; gap: 10px; }
+.taiwan-event-list article > header > div { display: grid; gap: 3px; }
+.taiwan-event-list article strong { color: #263e4e; font-size: 11px; }
+.taiwan-event-list article small, .taiwan-event-list article span, .taiwan-event-list article footer { color: #7b8993; font-size: 9px; }
+.taiwan-event-list article p { margin: 0; color: #536876; font-size: 10px; line-height: 1.6; }
+.taiwan-event-list article a { color: #17679b; font-weight: 700; }
+.taiwan-watchlist-event { padding: 4px 7px; border-radius: 4px; background: #edf1f3; color: #5d707c; font-size: 9px; white-space: nowrap; }
+.taiwan-watchlist-event.available { background: #e8f5ee; color: #25704e; }
+.taiwan-watchlist-event.partial, .taiwan-watchlist-event.stale { background: #fff3d9; color: #8a6518; }
+.taiwan-watchlist-event.unavailable { background: #faeae6; color: #a64232; }
+.taiwan-interpretation > header { display: flex; justify-content: space-between; }
+.taiwan-interpretation h3 { margin: 3px 0; }
+.taiwan-interpretation ul, .taiwan-research-result ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+.taiwan-interpretation footer { color: var(--muted); }
+.taiwan-ai-action p, .taiwan-empty-state p, .taiwan-research-unavailable p { margin: 4px 0 0; color: var(--muted); }
+.taiwan-ai-action button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; }
+.taiwan-ai-action button:disabled { opacity: .6; cursor: wait; }
+.taiwan-research-result { display: grid; gap: 14px; }
+.taiwan-research-result header > span { color: var(--blue); font-weight: 700; }
+.taiwan-research-result p { line-height: 1.65; }
+.taiwan-research-unavailable { border-color: #ead5b6; background: #fffaf2; }
+.taiwan-research-error-boundary { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 16px 18px; padding: 14px 16px; border: 1px solid #ead5b6; border-radius: 10px; background: #fffaf2; color: #9b6a25; }
+.taiwan-research-error-boundary button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; }
+@media (max-width: 900px) { .taiwan-metric-grid, .taiwan-detail-grid, .taiwan-industry-list, .taiwan-interpretation > div, .taiwan-research-result > div { grid-template-columns: 1fr; } .taiwan-stock-heading, .taiwan-emotion-summary, .taiwan-ai-action { align-items: stretch; flex-direction: column; } }
+/* M8G: Taiwan Overview compact summary (Breadth/Emotion/Industry/Index at a glance) */
+.taiwan-overview-summary { display: grid; gap: 10px; margin-bottom: 4px; }
+.taiwan-overview-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.taiwan-overview-card { display: grid; gap: 6px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.taiwan-overview-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); }
+.taiwan-overview-card header button { padding: 0; border: 0; background: none; color: var(--blue); cursor: pointer; font-size: 12px; }
+.taiwan-overview-card strong { font-size: 19px; }
+.taiwan-overview-card p { margin: 0; color: var(--muted); }
+.taiwan-overview-card ol { margin: 0; padding-left: 16px; }
+.taiwan-overview-card .up { color: #1a8b4c; } .taiwan-overview-card .down { color: #c23b3b; } .taiwan-overview-card .flat { color: var(--muted); }
+.taiwan-overview-screener-action { justify-self: start; min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; }
+@media (max-width: 900px) { .taiwan-overview-summary-grid { grid-template-columns: 1fr; } }
+/* Taiwan daily dashboard */
+.taiwan-dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; background: var(--bg); }
+.taiwan-dashboard-toolbar, .taiwan-dashboard-freshness, .taiwan-dashboard > .taiwan-loading, .taiwan-dashboard > .market-partial-warning { grid-column: 1 / -1; }
+.taiwan-dashboard-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.taiwan-dashboard-toolbar > div { display: grid; gap: 3px; }
+.taiwan-dashboard-toolbar span, .taiwan-dashboard-meta, .taiwan-dashboard-empty, .taiwan-dashboard-freshness { color: var(--muted); }
+.taiwan-dashboard-toolbar button, .taiwan-dashboard-card header button, .taiwan-dashboard-list button.compact { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--blue); cursor: pointer; }
+.taiwan-dashboard-card { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.taiwan-dashboard-card.market { grid-column: 1 / -1; }
+.taiwan-dashboard-card > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.taiwan-dashboard-card > header > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.taiwan-dashboard-card > header > div > span { display: grid; gap: 2px; }
+.taiwan-dashboard-card > header small { color: var(--muted); font-size: 10px; }
+.taiwan-dashboard-card > header strong { font-size: 15px; }
+.taiwan-dashboard-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.taiwan-dashboard-metrics > div { display: grid; gap: 3px; padding: 10px; border-radius: 8px; background: var(--surface-2); }
+.taiwan-dashboard-metrics span, .taiwan-dashboard-metrics small { color: var(--muted); }
+.taiwan-dashboard-metrics strong { font-size: 18px; }
+.taiwan-dashboard-industries, .taiwan-dashboard-meta, .taiwan-dashboard-empty { margin: 0; }
+.taiwan-dashboard-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.taiwan-dashboard-list li { display: flex; align-items: center; gap: 7px; min-width: 0; border-top: 1px solid var(--line-soft); }
+.taiwan-dashboard-list li > button:first-child { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 9px 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.taiwan-dashboard-list span { display: grid; gap: 2px; min-width: 0; }
+.taiwan-dashboard-list small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.taiwan-dashboard-list b { color: var(--muted); white-space: nowrap; }
+.taiwan-dashboard-list b.up { color: var(--up); } .taiwan-dashboard-list b.down { color: var(--down); }
+.taiwan-dashboard-card.attention { border-color: #ead5b6; background: #fffaf2; }
+.taiwan-dashboard-freshness { padding: 4px 2px; font-size: 12px; }
+@media (max-width: 980px) { .taiwan-dashboard { grid-template-columns: 1fr; } .taiwan-dashboard-card.market { grid-column: auto; } .taiwan-dashboard-toolbar, .taiwan-dashboard-freshness, .taiwan-dashboard > .taiwan-loading, .taiwan-dashboard > .market-partial-warning { grid-column: auto; } .taiwan-dashboard-metrics { grid-template-columns: 1fr; } }
+.sidebar-primary, .sidebar-market-details { display: grid; gap: 5px; }
+.sidebar-market-details { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.sidebar-group-heading { padding: 0 11px 3px; color: var(--muted); font-size: 11px; }
+.sidebar-collapsed .sidebar-group-heading { display: none; }
+.llm-local-presets { display: grid; gap: 7px; padding: 10px; border: 1px solid #cfe0f2; border-radius: 9px; background: #f7fbff; color: var(--muted); font-size: 11px; }
+.llm-local-presets > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.llm-local-presets button { display: grid; gap: 2px; min-width: 190px; padding: 8px 10px; border: 1px solid #b9cee5; border-radius: 7px; background: #fff; color: #175ea9; text-align: left; cursor: pointer; }
+.llm-local-presets button small, .llm-local-presets > small { color: var(--subtle); font-size: 9px; }
+.taiwan-market-view { display: grid; gap: 12px; }
+.taiwan-search-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 7px; }
+.taiwan-search-results button { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; text-align: left; cursor: pointer; }
+.taiwan-search-results span { color: #7b8797; font-size: 9px; }
+.taiwan-watchlist-list { display: grid; gap: 8px; }
+.taiwan-alert-center { position: relative; display: grid; gap: 8px; }
+.taiwan-alert-trigger { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); cursor: pointer; }
+.taiwan-alert-badge { min-width: 20px; padding: 2px 5px; border-radius: 999px; background: #c73b36; color: #fff; font-size: 10px; text-align: center; }
+.taiwan-alert-panel { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
+.taiwan-alert-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.taiwan-alert-panel > header > div { display: flex; align-items: center; gap: 8px; }
+.taiwan-alert-panel > header > div:first-child { display: grid; gap: 2px; }
+.taiwan-alert-panel > header small { color: var(--muted); }
+.taiwan-alert-panel button, .taiwan-alert-item footer a { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: inherit; font-size: 10px; text-decoration: none; cursor: pointer; }
+.taiwan-alert-panel button:disabled { opacity: .55; cursor: not-allowed; }
+.taiwan-alert-list { display: grid; gap: 8px; }
+.taiwan-alert-item { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-left: 3px solid #cbd5df; border-radius: 8px; background: #fff; }
+.taiwan-alert-item.unread { border-left-color: #c73b36; }
+.taiwan-alert-item.read { opacity: .76; }
+.taiwan-alert-heading, .taiwan-alert-item footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.taiwan-alert-heading > div { display: flex; align-items: baseline; gap: 6px; }
+.taiwan-alert-heading span, .taiwan-alert-heading time, .taiwan-alert-item footer > span { color: var(--muted); font-size: 10px; }
+.taiwan-alert-item h3 { margin: 0; font-size: 13px; }
+.taiwan-alert-meta { display: flex; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: 10px; }
+.taiwan-alert-meta span, .taiwan-alert-meta em { padding: 3px 6px; border-radius: 5px; background: #eef2f5; font-style: normal; }
+.taiwan-alert-meta em { background: #fff3d9; color: #8a6518; }
+.taiwan-watchlist-backup-actions { display: flex; gap: 8px; }
+.taiwan-watchlist-backup-actions button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; }
+.taiwan-watchlist-backup-actions button:disabled { opacity: .6; cursor: not-allowed; }
+.taiwan-watchlist-row { display: grid; grid-template-columns: 1fr auto auto auto auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+/* M8D — the row's own grid has no mechanism for a full-width sub-panel; this lets the on-demand
+   intelligence summary span the entire row (below the identity/quote/actions line) instead of
+   trying to occupy a 5th column. */
+.taiwan-watchlist-summary { grid-column: 1 / -1; }
+.taiwan-watchlist-identity { display: grid; gap: 3px; justify-items: start; padding: 0; border: none; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.taiwan-watchlist-identity span { color: #7b8797; font-size: 9px; }
+.taiwan-watchlist-identity:hover strong, .taiwan-watchlist-identity:focus-visible strong { text-decoration: underline; }
+.taiwan-watchlist-quote { display: grid; gap: 2px; justify-items: end; text-align: right; }
+.taiwan-watchlist-quote span { color: #7b8797; font-size: 9px; }
+.taiwan-watchlist-remove { display: flex; align-items: center; gap: 5px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: #7b8797; font-size: 9px; cursor: pointer; }
+.taiwan-watchlist-remove:disabled { opacity: 0.6; cursor: not-allowed; }
+.taiwan-watchlist-toggle { display: flex; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; font-size: 9px; cursor: pointer; }
+.taiwan-watchlist-toggle:disabled { opacity: 0.6; cursor: not-allowed; }
+.taiwan-watchlist-toggle.saved { border-color: var(--up); color: var(--up); }
+.taiwan-watchlist-toggle-error { color: #9b6a25; font-size: 8px; }
+@media (max-width: 900px) { .taiwan-watchlist-row { grid-template-columns: 1fr; justify-items: start; } .taiwan-watchlist-quote { justify-items: start; text-align: left; } .taiwan-alert-panel > header, .taiwan-alert-heading, .taiwan-alert-item footer { align-items: flex-start; flex-direction: column; } }
+.settings-toggle { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; }
+.settings-toggle input { width: 16px; height: 16px; }
+.taiwan-chip-panel { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.taiwan-chip-panel > header { display:flex; justify-content:space-between; align-items:end; padding:12px 14px; border-bottom:1px solid var(--line-soft); }
+.taiwan-chip-panel h3 { margin:0; }.taiwan-chip-panel header span,.taiwan-chip-panel header small { color:#7b8797; font-size:8px; }
+.taiwan-chip-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:12px; }.taiwan-chip-grid article { display:grid; gap:4px; padding:10px; border:1px solid var(--line-soft); border-radius:8px; }.taiwan-chip-grid span,.taiwan-chip-grid small { color:#718096; font-size:9px; }.taiwan-chip-grid em { font-size:10px; font-style:normal; font-weight:700; }
+.taiwan-margin-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:1px; border-top:1px solid var(--line-soft); background:var(--line-soft); }.taiwan-margin-grid article { display:grid; gap:4px; padding:11px; background:#fff; }.taiwan-margin-grid span { color:#7b8797; font-size:8px; }.taiwan-margin-grid strong { font-size:11px; }
+.taiwan-fundamentals-panel { overflow:hidden; border:1px solid var(--line); border-radius:10px; background:#fff; }.taiwan-fundamentals-panel > header { display:flex; justify-content:space-between; align-items:end; padding:12px 14px; border-bottom:1px solid var(--line-soft); }.taiwan-fundamentals-panel h3 { margin:0; }.taiwan-fundamentals-panel header span,.taiwan-fundamentals-panel header small { color:#7b8797; font-size:8px; }
+.taiwan-fundamentals-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:12px; }.taiwan-fundamentals-grid article { display:grid; gap:5px; padding:11px; border:1px solid var(--line-soft); border-radius:8px; }.taiwan-fundamentals-grid article span,.taiwan-fundamentals-grid article small,.taiwan-fundamentals-grid article p { margin:0; color:#718096; font-size:9px; }
+.taiwan-screener-filters { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.taiwan-screener-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.taiwan-screener-filter-grid label { display: grid; gap: 4px; min-width: 0; }
+.taiwan-screener-filter-grid span { color: var(--muted); font-size: 9px; }
+.taiwan-screener-filter-grid input, .taiwan-screener-filter-grid select { min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; min-width: 0; }
+.taiwan-screener-filter-error { margin: 0; color: #b5303a; font-size: 10px; }
+.taiwan-screener-filter-actions { display: flex; gap: 8px; }
+.taiwan-screener-apply, .taiwan-screener-clear { min-height: 34px; padding: 0 14px; border-radius: 8px; cursor: pointer; }
+.taiwan-screener-apply { border: 0; background: var(--blue); color: #fff; }
+.taiwan-screener-clear { border: 1px solid var(--line); background: #fff; color: var(--muted); }
+.taiwan-screener-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.taiwan-screener-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.taiwan-screener-table th, .taiwan-screener-table td { padding: 9px 12px; border-bottom: 1px solid var(--line-soft); text-align: left; white-space: nowrap; }
+.taiwan-screener-table th { color: var(--muted); font-size: 9px; font-weight: 600; }
+.taiwan-screener-table td.up { color: var(--up); }
+.taiwan-screener-table td.down { color: var(--down); }
+.taiwan-screener-identity { padding: 0; border: none; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.taiwan-screener-identity:hover strong, .taiwan-screener-identity:focus-visible strong { text-decoration: underline; }
+.taiwan-screener-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; color: var(--muted); font-size: 10px; }
+.taiwan-screener-pagination div { display: flex; gap: 8px; }
+.taiwan-screener-pagination button { min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; }
+.taiwan-screener-pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+.taiwan-screener-watchlist-unavailable { color: #7b8797; font-size: 9px; }
+.taiwan-screener-advanced-group { border-top: 1px solid var(--line-soft); padding-top: 8px; }
+.taiwan-screener-advanced-toggle { display: flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 4px; border: none; background: none; color: var(--blue); font-size: 11px; font-weight: 600; cursor: pointer; }
+.taiwan-screener-advanced-grid { margin-top: 8px; }
+.taiwan-screener-advanced-subheading { margin: 10px 0 4px; color: var(--muted); font-size: 10px; font-weight: 600; }
+.taiwan-screener-advanced-subheading:first-of-type { margin-top: 4px; }
+.taiwan-screener-advanced-note { margin: 6px 0 0; color: var(--muted); font-size: 9px; }
+.taiwan-screener-domain-freshness { display: flex; align-items: center; gap: 8px; padding: 6px 2px; color: var(--muted); font-size: 10px; }
+.taiwan-screener-advanced-cell { white-space: normal; }
+.taiwan-screener-advanced-block { display: flex; flex-direction: column; gap: 1px; font-size: 9px; color: var(--muted); }
+.taiwan-screener-advanced-block + .taiwan-screener-advanced-block { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line-soft); }
+@media (max-width: 900px) { .taiwan-screener-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* P5.3A: 使用已訂閱的 AI */
+.taiwan-ai-actions-group {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+.taiwan-subscription-ai-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 36px;
+	padding: 0 14px;
+	border: 1px solid #c0d3e8;
+	border-radius: 8px;
+	background: #f0f6ff;
+	color: #175ea9;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.15s, border-color 0.15s;
+}
+.taiwan-subscription-ai-btn:hover {
+	background: #e2eeff;
+	border-color: #9cbde2;
+}
+.subscription-ai-modal-overlay {
+	position: fixed;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	padding: 24px;
+	background: rgba(18, 28, 44, 0.55);
+	backdrop-filter: blur(4px);
+	z-index: 150;
+}
+.subscription-ai-modal {
+	width: min(720px, calc(100vw - 32px));
+	max-height: 90vh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid #c9d5e8;
+	border-radius: 14px;
+	background: #ffffff;
+	box-shadow: 0 25px 80px rgba(18, 36, 68, 0.32);
+}
+.subscription-ai-modal-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 18px 22px 14px;
+	border-bottom: 1px solid #e2e8f0;
+	background: linear-gradient(135deg, #f8faff, #ffffff);
+}
+.subscription-ai-modal-header > div {
+	display: grid;
+	gap: 4px;
+}
+.subscription-ai-modal-header span {
+	color: #2476d2;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+}
+.subscription-ai-modal-header h2 {
+	margin: 0;
+	color: var(--text);
+	font-size: 20px;
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+.subscription-ai-modal-header h2 small {
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+	font-family: "SFMono-Regular", Consolas, monospace;
+}
+.subscription-ai-modal-header p {
+	margin: 0;
+	color: var(--muted);
+	font-size: 12px;
+}
+.subscription-ai-modal-close {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: #f8fafc;
+	color: var(--muted);
+	cursor: pointer;
+}
+.subscription-ai-modal-close:hover {
+	border-color: #9bbcdf;
+	background: #edf5ff;
+	color: var(--blue);
+}
+.subscription-ai-modal-body {
+	padding: 18px 22px;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+}
+.subscription-ai-section {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.subscription-ai-section-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text);
+}
+.subscription-ai-provider-group {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+.subscription-ai-provider-btn {
+	flex: 1;
+	min-width: 100px;
+	min-height: 38px;
+	padding: 6px 14px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: #f8fafc;
+	color: var(--text);
+	font-weight: 600;
+	font-size: 14px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+.subscription-ai-provider-btn:hover {
+	border-color: #77a7d7;
+	background: #f0f6ff;
+}
+.subscription-ai-provider-btn.active {
+	border-color: #175ea9;
+	background: #175ea9;
+	color: #ffffff;
+}
+.subscription-ai-type-options {
+	display: grid;
+	gap: 8px;
+}
+.subscription-ai-type-radio {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 10px 12px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: #ffffff;
+	cursor: pointer;
+	transition: border-color 0.15s;
+}
+.subscription-ai-type-radio:hover {
+	border-color: #9bbcdf;
+	background: #fafcff;
+}
+.subscription-ai-type-radio input {
+	margin-top: 3px;
+	cursor: pointer;
+}
+.subscription-ai-type-radio .radio-content {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.subscription-ai-type-radio strong {
+	font-size: 13px;
+	color: var(--text);
+}
+.subscription-ai-type-radio small {
+	font-size: 11px;
+	color: var(--muted);
+}
+.subscription-ai-preview-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.subscription-ai-privacy-note {
+	font-size: 11px;
+	color: #276749;
+	background: #f0fff4;
+	border: 1px solid #c6f6d5;
+	border-radius: 4px;
+	padding: 2px 6px;
+}
+.subscription-ai-prompt-preview {
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: #f8fafc;
+	max-height: 200px;
+	overflow-y: auto;
+	padding: 10px 14px;
+}
+.subscription-ai-prompt-preview pre {
+	margin: 0;
+	font-family: "SFMono-Regular", Consolas, monospace;
+	font-size: 11px;
+	line-height: 1.5;
+	color: #2d3748;
+	white-space: pre-wrap;
+	word-break: break-all;
+}
+.subscription-ai-error {
+	padding: 10px 14px;
+	border: 1px solid #feb2b2;
+	border-radius: 8px;
+	background: #fff5f5;
+	color: #c53030;
+	font-size: 12px;
+}
+.subscription-ai-success {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 12px 14px;
+	border: 1px solid #9ae6b4;
+	border-radius: 8px;
+	background: #f0fff4;
+	color: #22543d;
+	font-size: 12px;
+}
+.subscription-ai-success svg {
+	margin-top: 2px;
+	flex-shrink: 0;
+}
+.subscription-ai-success-text {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-weight: 500;
+}
+.subscription-ai-modal-footer {
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 12px;
+	padding: 14px 22px;
+	border-top: 1px solid #e2e8f0;
+	background: #fafbfe;
+}
+.subscription-ai-btn-secondary {
+	padding: 8px 16px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: #ffffff;
+	color: var(--text);
+	font-size: 13px;
+	cursor: pointer;
+}
+.subscription-ai-btn-secondary:hover {
+	background: #f1f5f9;
+}
+.subscription-ai-btn-primary {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	padding: 8px 18px;
+	border: none;
+	border-radius: 8px;
+	background: #175ea9;
+	color: #ffffff;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+.subscription-ai-btn-primary:hover:not(:disabled) {
+	background: #124c88;
+}
+.subscription-ai-btn-primary:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+@media (max-width: 600px) {
+	.subscription-ai-modal-overlay {
+		padding: 0;
+		align-items: flex-end;
+	}
+	.subscription-ai-modal {
+		width: 100vw;
+		max-height: 92vh;
+		border-radius: 14px 14px 0 0;
+	}
+	.subscription-ai-provider-group {
+		flex-direction: column;
+	}
+	.subscription-ai-modal-footer {
+		flex-direction: column-reverse;
+		align-items: stretch;
+	}
+	.subscription-ai-btn-primary, .subscription-ai-btn-secondary {
+		justify-content: center;
+	}
+}
+.taiwan-research-history { margin: 18px 0; }
+.taiwan-research-history-trigger { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; background: var(--surface); color: var(--text); cursor: pointer; }
+.taiwan-research-history-trigger span { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #175ea9; color: #fff; font-size: 11px; text-align: center; }
+.taiwan-research-history-panel { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 14px; }
+.taiwan-research-history-panel > header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.taiwan-research-history-panel > header small { display: block; margin-top: 4px; color: var(--muted); }
+.taiwan-research-history-panel > header > div:last-child { display: flex; gap: 8px; }
+.taiwan-research-history-panel button { display: inline-flex; align-items: center; gap: 5px; }
+.taiwan-research-history-list { display: grid; gap: 10px; }
+.taiwan-research-history-list > article { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fff; }
+.taiwan-research-history-list > article.active { border-color: #175ea9; }
+.taiwan-research-history-list article header, .taiwan-research-history-list article footer { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.taiwan-research-history-list article header div { display: grid; gap: 3px; }
+.taiwan-research-history-list article time, .taiwan-research-history-list article small, .taiwan-research-history-list article p { color: var(--muted); font-size: 12px; }
+.taiwan-research-history-list article footer { justify-content: flex-start; margin-top: 10px; }
+.taiwan-research-comparison { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+.taiwan-comparison-summary div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.taiwan-comparison-summary span { border-radius: 999px; padding: 4px 8px; background: #f1f5f9; font-size: 12px; }
+.taiwan-comparison-domains { display: grid; gap: 8px; margin-top: 12px; }
+.taiwan-comparison-domains > article { border: 1px solid var(--line); border-radius: 9px; padding: 10px; }
+.taiwan-comparison-domains article header { display: flex; justify-content: space-between; gap: 8px; }
+.taiwan-comparison-domains ul, .taiwan-comparison-assumptions ul { margin: 8px 0 0; padding-left: 18px; }
+.taiwan-comparison-domains li { margin: 6px 0; }
+.taiwan-comparison-domains li span, .taiwan-comparison-domains li small { display: block; color: var(--muted); }
+.taiwan-comparison-assumptions { margin-top: 14px; }
+.taiwan-comparison-assumptions li { display: flex; justify-content: space-between; gap: 12px; margin: 7px 0; }
+.taiwan-comparison-events { margin-top: 14px; }
+.taiwan-comparison-events p { margin: 6px 0; color: var(--muted); }
+.taiwan-research-history-more { margin-top: 10px; }
+.taiwan-research-view-label { margin: 10px 0 -8px; color: var(--muted); font-size: 12px; }
+.taiwan-portfolio-workspace { padding: 20px; display: grid; gap: 16px; }
+.taiwan-portfolio-message { display: flex; align-items: center; gap: 8px; border-radius: 10px; padding: 10px 13px; font-size: 13px; }
+.taiwan-portfolio-message.error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; }
+.taiwan-portfolio-message.success { color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; }
+.taiwan-portfolio-message button { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.taiwan-portfolio-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.taiwan-portfolio-overview article { display: grid; gap: 5px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.taiwan-portfolio-overview span, .taiwan-portfolio-overview small { color: var(--muted); font-size: 12px; }
+.taiwan-portfolio-overview strong { font-size: 20px; }
+.taiwan-portfolio-overview .up, .taiwan-portfolio-row .up { color: #b91c1c; }
+.taiwan-portfolio-overview .down, .taiwan-portfolio-row .down { color: #047857; }
+.taiwan-portfolio-concentration { border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px; background: var(--surface); }
+.taiwan-portfolio-concentration header, .taiwan-portfolio-concentration div { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.taiwan-portfolio-concentration header { margin-bottom: 9px; }
+.taiwan-portfolio-concentration div span { border-radius: 999px; padding: 5px 9px; background: #f1f5f9; font-size: 12px; }
+.taiwan-portfolio-concentration p { margin: 0; color: var(--muted); font-size: 13px; }
+.taiwan-portfolio-layout { display: grid; grid-template-columns: minmax(270px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.taiwan-portfolio-form, .taiwan-portfolio-holdings { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 15px; }
+.taiwan-portfolio-form > header, .taiwan-portfolio-holdings > header, .taiwan-portfolio-form > header div, .taiwan-portfolio-holdings > header div { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+.taiwan-portfolio-form > header button { display: inline-flex; align-items: center; gap: 5px; }
+.taiwan-portfolio-form label { display: grid; gap: 6px; margin-top: 13px; color: var(--muted); font-size: 12px; }
+.taiwan-portfolio-form input, .taiwan-portfolio-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: #fff; color: var(--text); box-sizing: border-box; }
+.taiwan-portfolio-form textarea { min-height: 68px; resize: vertical; }
+.taiwan-portfolio-search { display: flex; gap: 7px; }
+.taiwan-portfolio-search button, .taiwan-portfolio-save { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.taiwan-portfolio-matches { display: grid; margin-top: 7px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.taiwan-portfolio-matches button { display: flex; justify-content: space-between; gap: 8px; padding: 9px; border: 0; border-bottom: 1px solid var(--line); background: #fff; text-align: left; }
+.taiwan-portfolio-matches button:last-child { border-bottom: 0; }
+.taiwan-portfolio-selected { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; padding: 8px; border-radius: 8px; background: #eff6ff; font-size: 12px; }
+.taiwan-portfolio-save { width: 100%; margin-top: 14px; padding: 10px; border: 0; border-radius: 8px; background: #175ea9; color: #fff; }
+.taiwan-portfolio-save:disabled { opacity: .55; }
+.taiwan-portfolio-holdings { display: grid; gap: 11px; }
+.taiwan-portfolio-holdings > header { margin-bottom: 2px; }
+.taiwan-portfolio-row { border: 1px solid var(--line); border-radius: 10px; padding: 13px; }
+.taiwan-portfolio-row > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.taiwan-portfolio-row > header div { display: grid; gap: 3px; }
+.taiwan-portfolio-row > header span, .taiwan-portfolio-row > p { color: var(--muted); font-size: 12px; }
+.taiwan-portfolio-row > header em { border-radius: 999px; padding: 4px 8px; font-size: 11px; font-style: normal; background: #f1f5f9; }
+.taiwan-portfolio-row > header em.available { color: #166534; background: #dcfce7; }
+.taiwan-portfolio-row > header em.stale { color: #92400e; background: #fef3c7; }
+.taiwan-portfolio-values { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 9px; margin-top: 12px; }
+.taiwan-portfolio-values span { display: grid; gap: 3px; }
+.taiwan-portfolio-values small { color: var(--muted); font-size: 11px; }
+.taiwan-portfolio-values strong { font-size: 13px; overflow-wrap: anywhere; }
+.taiwan-portfolio-values i { display: block; font-size: 11px; font-style: normal; }
+.taiwan-portfolio-row footer { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.taiwan-portfolio-row footer button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.taiwan-portfolio-row footer button.danger { color: #b91c1c; }
+@media (max-width: 1000px) { .taiwan-portfolio-overview { grid-template-columns: repeat(2, 1fr); } .taiwan-portfolio-layout { grid-template-columns: 1fr; } .taiwan-portfolio-values { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px) { .taiwan-portfolio-workspace { padding: 12px; } .taiwan-portfolio-overview { grid-template-columns: 1fr; } .taiwan-portfolio-values { grid-template-columns: repeat(2, 1fr); } }

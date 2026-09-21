@@ -2,7 +2,7 @@
 
 mystocktracer 的目標是建立一套理解台股語境、證據可追溯、本機優先的研究工作台。路線圖用於表達優先方向，不代表固定發布日期；實際順序會依資料來源穩定性、使用回饋與維護成本調整。
 
-本專案由 [jundizhou/easy-stock](https://github.com/jundizhou/easy-stock) 衍生。文件中的「舊版 A 股能力」指的是仍留在 repository 中的上游功能，不是 mystocktracer 的產品方向。
+本專案由 [jundizhou/easy-stock](https://github.com/jundizhou/easy-stock) 衍生。舊版 A 股 runtime 已於 Phase B1 移除；上游署名、歷史與目前授權仍保留。
 
 ---
 
@@ -53,19 +53,35 @@ mystocktracer 的目標是建立一套理解台股語境、證據可追溯、本
 
 本階段的目標是讓 mystocktracer 具備獨立維護的 repository identity，並為未來可能切換到 OSI 相容授權做好準備。授權條款在稽核與替換完成前不會變更。
 
-### Phase A：來源稽核與 repository hygiene（進行中）
+### Phase A：來源稽核與 repository hygiene（已完成）
 
 - 完整盤點仍繼承自上游 easy-stock 的程式碼、素材與文件；
 - 分離「原創 mystocktracer 實作」與「仍依賴上游框架的部分」；
 - 修正 repository identity（package 名稱、支援連結、貢獻文件、Issue／PR 模板）；
 - 建立 [OSS 來源稽核文件](./docs/oss-provenance-audit.md)。
 
-### Phase B：繼承程式碼替換（規劃中）
+### Phase B1：Legacy A-share 與 supply-chain independence（已完成）
 
-- 依稽核結果替換或移除 runtime 關鍵的繼承程式碼；
-- 桌面 shell、封裝與更新識別的遷移（需處理使用者資料相容性）；
-- 舊版 A 股模組的處置；
-- 素材與圖示原創化。
+- 已移除 legacy A-share runtime、舊登入 bridges、上游 A 股文件／素材與 AGPL-only WeChat 元件；
+- updater 已切換為 mystocktracer GitHub Releases。
+
+### Phase B2：Core Runtime Independence（本輪完成）
+
+- Go module、backend bootstrap、settings persistence、HTTP boundary 與 foundation 已原創替換；
+- frontend API transport、Taiwan-only app shell 與 global styling foundation 已原創替換；
+- `MYSTOCKTRACER_*` 成為 canonical runtime env，`A_STOCK_*` 僅保留 deprecated read fallback；
+- Hermes AI 核心與 desktop identity 刻意留待後續階段。
+
+### Phase B3：AI Runtime Independence（下一階段）
+
+- 原創替換 Hermes model runtime、AI transport／chat UI 與高度相依的 settings UI；
+- 保持既有 AI Research schema、tool behavior 與歷史資料相容。
+
+### Phase B4：Desktop Identity Independence（後續）
+
+- 原創替換 desktop shell、封裝 identity 與共用 logger；
+- 先完成可回復的 userData migration，再評估 `app.setName`、`appId`、`productName`；
+- 原創替換圖示與 favicon。
 
 詳細清單、難度與相依順序見 [OSS 來源稽核 — Phase B replacement plan](./docs/oss-provenance-audit.md#phase-b-replacement-plan)。
 
@@ -76,9 +92,9 @@ mystocktracer 的目標是建立一套理解台股語境、證據可追溯、本
 
 ---
 
-## 舊版 A 股能力（上游繼承，非產品方向）
+## 舊版 A 股能力（Phase B1 已移除）
 
-以下能力來自上游 easy-stock，目前仍存在於 repository 中，但不在台股產品導覽中：
+下列上游能力已不在目前 runtime tree：
 
 - A 股行情總覽、指數、資金、產業、題材；
 - 趨勢題材雷達、漲停梯隊、超短情緒；

@@ -6,8 +6,10 @@ test('buildBackendEnv injects address and token', () => {
   const env = buildBackendEnv({ addr: '127.0.0.1:20001', token: 'abc123', baseEnv: { PATH: '/bin' } });
 
   assert.equal(env.PATH, '/bin');
-  assert.equal(env.A_STOCK_ADDR, '127.0.0.1:20001');
-  assert.equal(env.A_STOCK_TOKEN, 'abc123');
+  assert.equal(env.MYSTOCKTRACER_ADDR, '127.0.0.1:20001');
+  assert.equal(env.MYSTOCKTRACER_TOKEN, 'abc123');
+  assert.equal(env.A_STOCK_ADDR, undefined);
+  assert.equal(env.A_STOCK_TOKEN, undefined);
 });
 
 test('findFreePort allocates from the 20000+ desktop range', async () => {

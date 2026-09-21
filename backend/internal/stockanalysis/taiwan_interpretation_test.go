@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/sector"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/sector"
 )
 
 func TestTaiwanPriceInterpretationSignedDirectionBoundaries(t *testing.T) {

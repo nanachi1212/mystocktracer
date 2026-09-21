@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/stockanalysis"
-	"easy-stock/backend/internal/taiwanwatchlist"
+	"github.com/nanachi1212/mystocktracer/backend/internal/stockanalysis"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
 
 func seedHTTPResearchHistory(t *testing.T, store *taiwanwatchlist.Store, runID string, at time.Time) {

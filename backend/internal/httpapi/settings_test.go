@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
+	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 func TestSettingsAPIStoresSecretsWithoutReturningThem(t *testing.T) {

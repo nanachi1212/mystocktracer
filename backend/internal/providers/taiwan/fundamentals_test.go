@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 )
 
 func TestFundamentalNumberSemanticsAndROCDates(t *testing.T) {

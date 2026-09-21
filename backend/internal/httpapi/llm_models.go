@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 const maxModelListResponseBytes = 2 << 20
@@ -65,11 +65,11 @@ func (s *Server) settingsLLMModels(w http.ResponseWriter, r *http.Request) {
 	apiKey := ""
 	if input.APIKey != nil {
 		apiKey = strings.TrimSpace(*input.APIKey)
-	} else if s.hermesGateway != nil {
-		if gateway, ok := s.hermesGateway.(hermes.ProfileGateway); ok && strings.TrimSpace(input.ProfileID) != "" {
+	} else if s.agentRuntime != nil {
+		if gateway, ok := s.agentRuntime.(hermes.ProfileGateway); ok && strings.TrimSpace(input.ProfileID) != "" {
 			apiKey, err = gateway.ModelAPIKeyForProfile(strings.TrimSpace(input.ProfileID))
 		} else {
-			apiKey, err = s.hermesGateway.ModelAPIKey()
+			apiKey, err = s.agentRuntime.ModelAPIKey()
 		}
 		if err != nil {
 			writeError(w, http.StatusServiceUnavailable, "读取已保存模型密钥失败")
@@ -89,7 +89,7 @@ func (s *Server) settingsLLMModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("User-Agent", "easy-stock/model-discovery")
+	request.Header.Set("User-Agent", "mystocktracer/model-discovery")
 	if apiKey != "" {
 		if provider == "anthropic" {
 			request.Header.Set("x-api-key", apiKey)
@@ -131,7 +131,7 @@ func (s *Server) settingsLLMModels(w http.ResponseWriter, r *http.Request) {
 	}
 	models, err := decodeModelList(body)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeUpstreamError(w, "decode_model_list", "模型服務未回傳可用的模型列表", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": llmModelsResult{Models: models, SourceURL: modelsURL}})

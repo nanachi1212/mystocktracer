@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 )
 
 func (c *Client) MarketBreadth(ctx context.Context, now time.Time) (foundation.TaiwanMarketBreadth, error) {

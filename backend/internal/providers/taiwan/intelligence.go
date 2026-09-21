@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/marketemotion"
-	"easy-stock/backend/internal/sector"
-	"easy-stock/backend/internal/stockanalysis"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/marketemotion"
+	"github.com/nanachi1212/mystocktracer/backend/internal/sector"
+	"github.com/nanachi1212/mystocktracer/backend/internal/stockanalysis"
 )
 
 func (c *Client) StockIntelligenceCore(ctx context.Context, canonical string, now time.Time) (stockanalysis.TaiwanStockIntelligenceCore, error) {

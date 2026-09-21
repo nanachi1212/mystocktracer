@@ -1,4 +1,4 @@
-module easy-stock/backend
+module github.com/nanachi1212/mystocktracer/backend
 
 go 1.26
 

@@ -1,6 +1,6 @@
 package marketemotion
 
-import "easy-stock/backend/internal/foundation"
+import "github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 
 const TaiwanEmotionModelVersion = "taiwan_emotion_v1"
 

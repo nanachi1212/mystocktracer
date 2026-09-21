@@ -28,7 +28,7 @@ if (selectedUserDataPath !== defaultUserDataPath) {
   app.setPath('userData', selectedUserDataPath);
 }
 
-const runtimeLogDirectory = path.resolve(process.env.A_STOCK_LOG_DIR || path.join(app.getPath('userData'), 'logs'));
+const runtimeLogDirectory = path.resolve(process.env.MYSTOCKTRACER_LOG_DIR || process.env.A_STOCK_LOG_DIR || path.join(app.getPath('userData'), 'logs'));
 fs.mkdirSync(runtimeLogDirectory, { recursive: true, mode: 0o700 });
 app.setAppLogsPath(runtimeLogDirectory);
 const desktopLogger = createRotatingLogger({
@@ -222,8 +222,8 @@ function initializeUpdateManager() {
 
 function buildRuntimeEnv(resourcesRoot) {
   const userData = app.getPath('userData');
-  const hermesHome = process.env.A_STOCK_HERMES_HOME || path.join(userData, 'hermes-home');
-  const hermesWorkDir = process.env.A_STOCK_HERMES_WORKDIR || path.join(userData, 'hermes-workspace');
+  const hermesHome = process.env.MYSTOCKTRACER_HERMES_HOME || process.env.A_STOCK_HERMES_HOME || path.join(userData, 'hermes-home');
+  const hermesWorkDir = process.env.MYSTOCKTRACER_HERMES_WORKDIR || process.env.A_STOCK_HERMES_WORKDIR || path.join(userData, 'hermes-workspace');
   const bundledRuntime = path.join(resourcesRoot, 'hermes-runtime');
   const packagedBrowserWrapperDir = path.join(resourcesRoot, 'agent-browser');
   const developmentBrowserWrapperDir = path.join(__dirname, 'scripts', 'browser-bin');
@@ -234,23 +234,26 @@ function buildRuntimeEnv(resourcesRoot) {
   const developmentBrowserReal = path.resolve(__dirname, '..', 'node_modules', 'agent-browser', 'bin', agentBrowserBinaryName());
   const browserReal = fs.existsSync(packagedBrowserReal) ? packagedBrowserReal : developmentBrowserReal;
   const hermesRuntimeRoot = resolveHermesRuntimeRoot({
-    configuredRoot: process.env.A_STOCK_HERMES_RUNTIME_ROOT,
+    configuredRoot: process.env.MYSTOCKTRACER_HERMES_RUNTIME_ROOT || process.env.A_STOCK_HERMES_RUNTIME_ROOT,
     bundledRoot: resourcesRoot,
     projectRoot: path.resolve(__dirname, '..'),
   });
   fs.mkdirSync(hermesHome, { recursive: true });
   fs.mkdirSync(hermesWorkDir, { recursive: true });
   return {
-		A_STOCK_LOG_DIR: runtimeLogDirectory,
-		A_STOCK_APP_VERSION: app.getVersion(),
-    A_STOCK_SETTINGS_PATH: path.join(userData, 'settings.json'),
-    A_STOCK_TAIWAN_PORTFOLIO_DB: path.join(userData, 'taiwan-portfolio.db'),
-    A_STOCK_HERMES_HOME: hermesHome,
-    A_STOCK_HERMES_WORKDIR: hermesWorkDir,
-    A_STOCK_HERMES_RUNTIME_ROOT: hermesRuntimeRoot,
+		MYSTOCKTRACER_LOG_DIR: runtimeLogDirectory,
+		MYSTOCKTRACER_APP_VERSION: app.getVersion(),
+    MYSTOCKTRACER_SETTINGS_PATH: path.join(userData, 'settings.json'),
+    MYSTOCKTRACER_TAIWAN_WATCHLIST_DB: path.join(userData, 'taiwan-watchlist.db'),
+    MYSTOCKTRACER_TAIWAN_PORTFOLIO_DB: path.join(userData, 'taiwan-portfolio.db'),
+    MYSTOCKTRACER_HERMES_HOME: hermesHome,
+    MYSTOCKTRACER_HERMES_WORKDIR: hermesWorkDir,
+    MYSTOCKTRACER_HERMES_RUNTIME_ROOT: hermesRuntimeRoot,
     A_STOCK_AGENT_BROWSER_WRAPPER_DIR: browserWrapperDir,
     A_STOCK_AGENT_BROWSER_REAL: browserReal,
-    ...(process.env.A_STOCK_HERMES_PYTHON ? { A_STOCK_HERMES_PYTHON: process.env.A_STOCK_HERMES_PYTHON } : {}),
+    ...(process.env.MYSTOCKTRACER_HERMES_PYTHON || process.env.A_STOCK_HERMES_PYTHON
+      ? { MYSTOCKTRACER_HERMES_PYTHON: process.env.MYSTOCKTRACER_HERMES_PYTHON || process.env.A_STOCK_HERMES_PYTHON }
+      : {}),
   };
 }
 

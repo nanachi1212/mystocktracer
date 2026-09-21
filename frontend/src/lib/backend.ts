@@ -144,6 +144,20 @@ export type ResolveInput = {
   env?: Record<string, string | undefined>;
 };
 
+export class BackendRequestError extends Error {
+	readonly status: number;
+	readonly requestID: string;
+	readonly code?: string;
+
+	constructor(message: string, options: { status?: number; requestID?: string; code?: string } = {}) {
+		super(message);
+		this.name = 'BackendRequestError';
+		this.status = options.status ?? 0;
+		this.requestID = options.requestID ?? '';
+		this.code = options.code;
+	}
+}
+
 export type SourceMeta = {
   source: string;
   source_url?: string;
@@ -246,17 +260,22 @@ export async function resolveBackendConfig(input: ResolveInput = {}): Promise<Ba
 
   const env = input.env ?? import.meta.env;
   return normalizeConfig({
-    backendUrl: env.VITE_A_STOCK_BACKEND_URL || 'http://127.0.0.1:20081',
-    token: env.VITE_A_STOCK_TOKEN || '',
+    backendUrl: env.VITE_MYSTOCKTRACER_BACKEND_URL ?? env.VITE_A_STOCK_BACKEND_URL ?? 'http://127.0.0.1:20081',
+    token: env.VITE_MYSTOCKTRACER_TOKEN ?? env.VITE_A_STOCK_TOKEN ?? '',
   });
 }
 
 export async function requestJSON<T>(config: BackendConfig, path: string, init: RequestInit = {}): Promise<T> {
+	const safeConfig = normalizeConfig(config);
 	const headers = new Headers(init.headers);
-	if (config.token) headers.set('Authorization', `Bearer ${config.token}`);
+	if (safeConfig.token) headers.set('Authorization', 'Bearer ' + safeConfig.token);
 	const requestID = createRuntimeRequestID();
 	headers.set('X-Request-ID', requestID);
-	const requestURL = new URL(path, config.backendUrl);
+	const requestURL = new URL(path, safeConfig.backendUrl);
+	const backendOrigin = new URL(safeConfig.backendUrl).origin;
+	if (requestURL.origin !== backendOrigin) {
+		throw new BackendRequestError('後端請求不得離開已設定的本機來源', { requestID, code: 'cross_origin_backend_request' });
+	}
 	let response: Response;
 	try {
 		response = await fetch(requestURL, { ...init, headers });
@@ -264,24 +283,45 @@ export async function requestJSON<T>(config: BackendConfig, path: string, init: 
 		logRuntimeEvent('error', runtimeFeatureForPath(requestURL.pathname), {
 			event: 'network_failure', request_id: requestID, method: init.method || 'GET', path: requestURL.pathname, error: runtimeErrorDetails(error),
 		});
-		throw error;
+		if (error instanceof DOMException && error.name === 'AbortError') throw error;
+		throw new BackendRequestError(error instanceof Error ? error.message : '無法連線至本機後端', {
+			requestID,
+			code: 'network_error',
+		});
 	}
+	const responseRequestID = response.headers.get('X-Request-ID') || requestID;
   if (!response.ok) {
-		const responseRequestID = response.headers.get('X-Request-ID') || requestID;
 		logRuntimeEvent('warn', runtimeFeatureForPath(requestURL.pathname), {
 			event: 'http_failure', request_id: responseRequestID, method: init.method || 'GET', path: requestURL.pathname, status: response.status,
 		});
     const text = await response.text();
-		let message = text;
+		let message = text.trim();
+		let code: string | undefined;
 		try {
-			message = (JSON.parse(text) as { error?: string }).error || text;
+			const payload = JSON.parse(text) as { error?: string; code?: string };
+			message = payload.error || message;
+			code = payload.code;
 		} catch {
-			// Keep plain-text upstream errors readable.
+			// A local proxy can still return plain text; preserve it as the diagnostic message.
 		}
-		throw new Error(message || `HTTP ${response.status}`);
+		throw new BackendRequestError(message || 'HTTP ' + response.status, {
+			status: response.status,
+			requestID: responseRequestID,
+			code,
+		});
   }
-	if (response.status === 204) return undefined as T;
-	return response.json() as Promise<T>;
+	if (response.status === 204 || response.status === 205) return undefined as T;
+	const text = await response.text();
+	if (text.trim() === '') return undefined as T;
+	try {
+		return JSON.parse(text) as T;
+	} catch {
+		throw new BackendRequestError('後端回應不是有效的 JSON', {
+			status: response.status,
+			requestID: responseRequestID,
+			code: 'invalid_json',
+		});
+	}
 }
 
 function createRuntimeRequestID() {
@@ -290,8 +330,18 @@ function createRuntimeRequestID() {
 }
 
 function normalizeConfig(config: BackendConfig): BackendConfig {
+	let url: URL;
+	try {
+		url = new URL(config.backendUrl);
+	} catch {
+		throw new BackendRequestError('後端網址無效', { code: 'invalid_backend_url' });
+	}
+	const hostname = url.hostname.toLowerCase();
+	if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !['localhost', '127.0.0.1', '::1'].includes(hostname)) {
+		throw new BackendRequestError('後端網址必須是使用 HTTP 或 HTTPS 的本機 loopback 位址', { code: 'invalid_backend_url' });
+	}
   return {
-    backendUrl: config.backendUrl.replace(/\/+$/, ''),
+    backendUrl: url.toString().replace(/\/+$/, ''),
     token: config.token || '',
   };
 }

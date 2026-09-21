@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/marketemotion"
-	"easy-stock/backend/internal/sector"
-	"easy-stock/backend/internal/stockanalysis"
-	"easy-stock/backend/internal/taiwanportfolio"
-	"easy-stock/backend/internal/taiwanwatchlist"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/marketemotion"
+	"github.com/nanachi1212/mystocktracer/backend/internal/sector"
+	"github.com/nanachi1212/mystocktracer/backend/internal/stockanalysis"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanportfolio"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
 
 type dashboardMarketFake struct {

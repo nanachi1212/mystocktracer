@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"easy-stock/backend/internal/appsettings"
+	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
 	"gopkg.in/yaml.v3"
 )
 

@@ -4,8 +4,8 @@ const net = require('node:net');
 function buildBackendEnv({ addr, token, baseEnv = process.env, extraEnv = {} }) {
   return {
     ...baseEnv,
-    A_STOCK_ADDR: addr,
-    A_STOCK_TOKEN: token,
+    MYSTOCKTRACER_ADDR: addr,
+    MYSTOCKTRACER_TOKEN: token,
     ...extraEnv,
   };
 }

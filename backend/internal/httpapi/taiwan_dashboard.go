@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/stockanalysis"
-	"easy-stock/backend/internal/taiwanportfolio"
-	"easy-stock/backend/internal/taiwanwatchlist"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/stockanalysis"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanportfolio"
+	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
 
 const (

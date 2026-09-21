@@ -29,7 +29,7 @@ describe('M6B — Watchlist navigation exists', () => {
 		expect(app).toContain("'taiwan-watchlist'");
 		expect(resolveTaiwanWorkspace('#taiwan-watchlist')).toBe('taiwan-watchlist');
 		expect(app).toContain('return resolveTaiwanWorkspace(window.location.hash)');
-		expect(app).toContain('onClick={() => switchWorkspace(mode)}');
+		expect(app).toContain('onWorkspaceChange={switchWorkspace}');
 		expect(taiwanPrimaryNavigation).toContainEqual(['taiwan-watchlist', '自選股']);
 	});
 

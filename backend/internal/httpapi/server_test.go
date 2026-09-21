@@ -101,6 +101,19 @@ func TestServerCORSPreflightAllowsDelete(t *testing.T) {
 	}
 }
 
+func TestServerCORSDoesNotReflectUntrustedOrigin(t *testing.T) {
+	server := NewServer(Config{})
+	request := httptest.NewRequest(http.MethodOptions, "/api/v1/settings", nil)
+	request.Header.Set("Origin", "https://attacker.example")
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, request)
+
+	if origin := recorder.Header().Get("Access-Control-Allow-Origin"); origin != "" {
+		t.Fatalf("untrusted origin was reflected: %q", origin)
+	}
+}
+
 // The legacy A-share surface was removed in Phase B1; these routes must stay gone so a future
 // refactor cannot quietly re-register a China-market endpoint.
 func TestServerNoLongerServesLegacyAShareRoutes(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/foundation"
+	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
 )
 
 // taiwanScreenerRow is the wire shape of one screened Taiwan security. M7A covers market-snapshot
