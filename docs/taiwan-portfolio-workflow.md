@@ -44,4 +44,4 @@ SQLite 使用單連線、busy timeout、非 memory DB 的 WAL，並以 transacti
 
 本 MVP 不包含 cash ledger、已實現損益、股利、稅務、多幣別、券商匯入、下單或投資建議。集中度僅呈現單一持股、Top 3 / Top 5 與 directory industry 的描述性統計，沒有任意風險門檻。
 
-舊 `portfolioinspection` 保留原樣；其 A 股代碼、權重設定、簡中語意與買賣動作規則不會自動搬入台股 Portfolio。未來若要 retirement，應先定義明確轉換規則與使用者確認流程。
+舊 `portfolioinspection` 模組已在 Phase B1 隨其餘 A 股功能移除；其 A 股代碼、權重設定與買賣動作規則從未搬入台股 Portfolio，兩者沒有共用資料或結構。

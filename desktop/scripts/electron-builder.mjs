@@ -3,12 +3,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolvePackageResourcesDir } from './package-resources.mjs';
+import { createRequire } from 'node:module';
+
+const { UPDATE_REPOSITORY_OWNER, UPDATE_REPOSITORY_NAME } = createRequire(import.meta.url)('../update-feed.cjs');
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(desktopRoot, '..');
 const packageManifest = JSON.parse(fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8'));
 const packageResourcesDir = resolvePackageResourcesDir({ desktopRoot, repoRoot });
-const updateFeedURL = process.env.A_STOCK_UPDATE_FEED_URL || 'https://easy-stock-fs.oss-cn-beijing.aliyuncs.com/updates/desktop';
+// Update metadata (latest.yml / latest-mac.yml) must name this repository's GitHub Releases, so a
+// packaged build never resolves updates from the upstream easy-stock distribution channel.
+const updatePublishTarget = { provider: 'github', owner: UPDATE_REPOSITORY_OWNER, repo: UPDATE_REPOSITORY_NAME };
 const platform = process.argv[2];
 const mode = process.argv[3] || 'release';
 const arch = process.env.A_STOCK_DESKTOP_ARCH || process.arch;
@@ -46,24 +51,19 @@ const config = {
   productName: 'easy-stock',
   electronVersion: process.env.A_STOCK_ELECTRON_VERSION || packageManifest.devDependencies.electron,
   ...(process.env.A_STOCK_ELECTRON_DIST ? { electronDist: process.env.A_STOCK_ELECTRON_DIST } : {}),
-  copyright: 'Copyright © easy-stock contributors',
+  copyright: 'Copyright © mystocktracer contributors; portions © jundizhou (easy-stock)',
   directories: { output: outputDirectory, buildResources: path.join(desktopRoot, 'assets') },
   files: [
     'main.cjs',
     'preload.cjs',
-    'review-login-preload.cjs',
-    'xueqiu-login-preload.cjs',
     'backend-process.cjs',
     'runtime-logger.cjs',
-    'browser-auth.cjs',
     'data-protection.cjs',
     'hermes-runtime-root.cjs',
-    'taoguba-browser-bridge.cjs',
     'update-feed.cjs',
     'update-manager.cjs',
     'user-data.cjs',
     'subscription-ai-url.cjs',
-    'xueqiu-browser-bridge.cjs',
     'package.json',
     '!dist{,/**/*}',
     '!resources{,/**/*}',
@@ -72,7 +72,7 @@ const config = {
   ],
   extraResources: [{ from: packageResourcesDir, to: 'resources' }],
   asar: true,
-  publish: [{ provider: 'generic', url: updateFeedURL }],
+  publish: [updatePublishTarget],
   mac: {
     category: 'public.app-category.finance',
     icon: path.join(desktopRoot, 'assets', 'easy-stock.icns'),

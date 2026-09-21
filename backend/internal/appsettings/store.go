@@ -46,38 +46,10 @@ type LLMProfile struct {
 	APIKeyConfigured bool   `json:"api_key_configured,omitempty"`
 }
 
-type Credentials struct {
-	TushareToken    string `json:"tushare_token"`
-	THSCookie       string `json:"ths_cookie"`
-	XueqiuCookie    string `json:"xueqiu_cookie"`
-	EastMoneyCookie string `json:"eastmoney_cookie"`
-	WeChatAPIToken  string `json:"wechat_api_token"`
-}
-
-type ReviewAutomation struct {
-	Profiles     []ReviewSourceProfile `json:"profiles"`
-	WeChatAPIURL string                `json:"wechat_api_url,omitempty"`
-	SyncHour     int                   `json:"sync_hour,omitempty"`
-	AutoAnalyze  bool                  `json:"auto_analyze,omitempty"`
-}
-
-type ReviewSourceProfile struct {
-	ID          string `json:"id"`
-	Source      string `json:"source"`
-	Name        string `json:"name"`
-	BaseURL     string `json:"base_url"`
-	Credential  string `json:"credential"`
-	SyncHour    int    `json:"sync_hour"`
-	AutoAnalyze bool   `json:"auto_analyze"`
-	Enabled     bool   `json:"enabled"`
-}
-
 type Values struct {
 	LLM                LLM              `json:"llm"`
 	LLMProfiles        []LLMProfile     `json:"llm_profiles,omitempty"`
 	ActiveLLMProfileID string           `json:"active_llm_profile_id,omitempty"`
-	Credentials        Credentials      `json:"credentials"`
-	ReviewAutomation   ReviewAutomation `json:"review_automation"`
 	BrokerCommission   BrokerCommission `json:"broker_commission,omitempty"`
 	TaiwanAlerts       TaiwanAlerts     `json:"taiwan_alerts"`
 	UpdatedAt          time.Time        `json:"updated_at,omitempty"`
@@ -148,13 +120,6 @@ func (s *Store) load() error {
 	if err := json.Unmarshal(data, &s.values); err != nil {
 		return fmt.Errorf("decode settings: %w", err)
 	}
-	var raw map[string]json.RawMessage
-	if json.Unmarshal(data, &raw) == nil {
-		if _, exists := raw["review_automation"]; !exists {
-			s.values.ReviewAutomation = defaultValues().ReviewAutomation
-		}
-	}
-	s.normalizeReviewProfiles()
 	s.normalizeLLMProfiles()
 	if err := os.Chmod(s.path, 0o600); err != nil {
 		return fmt.Errorf("secure settings permissions: %w", err)
@@ -217,33 +182,7 @@ func llmFromProfile(profile LLMProfile, responseTimeoutSeconds int) LLM {
 }
 
 func defaultValues() Values {
-	return Values{TaiwanAlerts: TaiwanAlerts{CorporateEventsEnabled: true}, ReviewAutomation: ReviewAutomation{Profiles: []ReviewSourceProfile{
-		{ID: "wechat-default", Source: "wechat", Name: "微信公众号默认配置", SyncHour: 7, AutoAnalyze: true, Enabled: true},
-		{ID: "xueqiu-default", Source: "xueqiu", Name: "雪球默认配置", BaseURL: "https://xueqiu.com", SyncHour: 7, AutoAnalyze: true, Enabled: true},
-		{ID: "taoguba-default", Source: "taoguba", Name: "淘股吧默认配置", BaseURL: "https://www.tgb.cn", SyncHour: 7, AutoAnalyze: true, Enabled: true},
-	}}}
-}
-
-func (s *Store) normalizeReviewProfiles() {
-	if len(s.values.ReviewAutomation.Profiles) == 0 {
-		defaults := defaultValues().ReviewAutomation.Profiles
-		if strings.TrimSpace(s.values.ReviewAutomation.WeChatAPIURL) != "" {
-			defaults[0].BaseURL = s.values.ReviewAutomation.WeChatAPIURL
-			defaults[0].Credential = s.values.Credentials.WeChatAPIToken
-		}
-		if strings.TrimSpace(s.values.Credentials.XueqiuCookie) != "" {
-			defaults[1].Credential = s.values.Credentials.XueqiuCookie
-		}
-		if s.values.ReviewAutomation.SyncHour >= 0 {
-			for index := range defaults {
-				defaults[index].SyncHour = s.values.ReviewAutomation.SyncHour
-			}
-		}
-		for index := range defaults {
-			defaults[index].AutoAnalyze = s.values.ReviewAutomation.AutoAnalyze || s.values.UpdatedAt.IsZero()
-		}
-		s.values.ReviewAutomation.Profiles = defaults
-	}
+	return Values{TaiwanAlerts: TaiwanAlerts{CorporateEventsEnabled: true}}
 }
 
 func (s *Store) persist(values Values) error {

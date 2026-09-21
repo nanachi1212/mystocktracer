@@ -176,8 +176,12 @@ describe('Taiwan-first product shell', () => {
 
 	it('mounts no legacy market workspace on the Taiwan default path', () => {
 		const app = fs.readFileSync(path.join(root, 'frontend/src/App.tsx'), 'utf8');
-		expect(app).toContain("return 'taiwan-dashboard'");
+		// Phase B1 removed every legacy workspace from App, so the initial mode now comes straight
+		// from resolveTaiwanWorkspace, whose fallback is the Taiwan dashboard.
+		expect(app).toContain('resolveTaiwanWorkspace(window.location.hash)');
+		expect(taiwanDefaultWorkspace).toBe('taiwan-dashboard');
 		expect(app).toContain("workspaceMode === 'taiwan-dashboard' ? <TaiwanDailyDashboard");
+		expect(app).not.toMatch(/LimitUpWorkspace|TradingMastery|ReviewDiary|StockAIAnalysisWorkspace|PortfolioInspectionWorkspace|MarketOverviewWorkspace/);
 		const taiwanMarket = fs.readFileSync(path.join(root, 'frontend/src/components/TaiwanMarketWorkspace.tsx'), 'utf8');
 		expect(taiwanMarket).not.toMatch(/\/api\/v1\/themes|source=cls|\/api\/v1\/market\/|billboard/);
 	});
@@ -327,11 +331,12 @@ describe('P1C Taiwan product localization (settings drawer)', () => {
 		expect(renderedForm).not.toMatch(/大V复盘自动化|同花顺|雪球|淘股吧|微信公众号|Tushare Pro Token|行情与内容数据源|涨停/);
 	});
 
-	it('keeps the SecretKey credential contract intact even though some fields are hidden from the UI', () => {
+	it('manages only the Hermes model key now that the China credential surface is removed', () => {
 		const source = fs.readFileSync(path.join(root, 'frontend/src/components/SettingsDrawer.tsx'), 'utf8');
-		// Hiding is a UI-only change — the backend credential contract (SecretKey union, emptySecrets)
-		// must not be rewritten or truncated as a side effect.
-		expect(source).toContain("type SecretKey = 'llm_api_key' | 'tushare_token' | 'ths_cookie' | 'xueqiu_cookie' | 'eastmoney_cookie' | 'wechat_api_token';");
+		// Phase B1 removed the China data-provider credentials and review-source automation from both
+		// the settings contract and this drawer; no China credential field may come back silently.
+		expect(source).toContain("type SecretKey = 'llm_api_key';");
+		expect(source).not.toMatch(/tushare_token|ths_cookie|xueqiu_cookie|eastmoney_cookie|wechat_api_token|review_automation/);
 	});
 
 	it('uses Traditional Chinese for the settings drawer chrome that remains active', () => {

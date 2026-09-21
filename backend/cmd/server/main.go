@@ -13,7 +13,6 @@ import (
 
 	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/httpapi"
-	"easy-stock/backend/internal/methodology"
 	"easy-stock/backend/internal/runtimelog"
 )
 
@@ -22,41 +21,21 @@ func main() {
 	if addr == "" {
 		addr = "127.0.0.1:20081"
 	}
-	reviewDBPath := os.Getenv("A_STOCK_REVIEW_DB")
-	portfolioDBPath := os.Getenv("A_STOCK_PORTFOLIO_DB")
-	marketEmotionDBPath := os.Getenv("A_STOCK_MARKET_EMOTION_DB")
-	themeRadarDBPath := os.Getenv("A_STOCK_THEME_RADAR_DB")
 	watchlistDBPath := os.Getenv("A_STOCK_TAIWAN_WATCHLIST_DB")
 	taiwanPortfolioDBPath := os.Getenv("A_STOCK_TAIWAN_PORTFOLIO_DB")
 	settingsPath := os.Getenv("A_STOCK_SETTINGS_PATH")
-	masteryCacheDir := os.Getenv("A_STOCK_MASTERY_CACHE")
 	dataDir := ""
 	if configDir, err := os.UserConfigDir(); err == nil {
 		dataDir = preferredDataDir(configDir)
 	}
-	if reviewDBPath == "" {
-		reviewDBPath = dataPath(dataDir, "reviews.db")
-	}
 	if settingsPath == "" {
 		settingsPath = dataPath(dataDir, "settings.json")
-	}
-	if portfolioDBPath == "" {
-		portfolioDBPath = dataPath(dataDir, "portfolio-inspections.db")
-	}
-	if marketEmotionDBPath == "" {
-		marketEmotionDBPath = dataPath(dataDir, "market-emotion.db")
-	}
-	if themeRadarDBPath == "" {
-		themeRadarDBPath = dataPath(dataDir, "theme-radar.db")
 	}
 	if watchlistDBPath == "" {
 		watchlistDBPath = dataPath(dataDir, "taiwan-watchlist.db")
 	}
 	if taiwanPortfolioDBPath == "" {
 		taiwanPortfolioDBPath = dataPath(dataDir, "taiwan-portfolio.db")
-	}
-	if masteryCacheDir == "" {
-		masteryCacheDir = dataPath(dataDir, "trading-mastery")
 	}
 	cashflowCacheDir := os.Getenv("A_STOCK_CASHFLOW_CACHE")
 	if cashflowCacheDir == "" {
@@ -89,24 +68,12 @@ func main() {
 		WorkDir:     hermesWorkDir,
 		PythonPath:  os.Getenv("A_STOCK_HERMES_PYTHON"),
 	})
-	masteryLibrary := methodology.NewLibrary(methodology.Config{
-		CacheDir:   masteryCacheDir,
-		HermesHome: hermesHome,
-	})
 	server := httpapi.NewServer(httpapi.Config{
 		Token:                  os.Getenv("A_STOCK_TOKEN"),
-		ReviewDBPath:           reviewDBPath,
-		PortfolioDBPath:        portfolioDBPath,
-		RemoteDailyReviewURL:   os.Getenv("A_STOCK_DAILY_REVIEW_BASE_URL"),
-		MarketEmotionDBPath:    marketEmotionDBPath,
-		ThemeRadarDBPath:       themeRadarDBPath,
 		WatchlistDBPath:        watchlistDBPath,
 		TaiwanPortfolioDBPath:  taiwanPortfolioDBPath,
-		DuanxianxiaBaseURL:     os.Getenv("A_STOCK_DUANXIANXIA_BASE_URL"),
-		WeChatAPIURL:           os.Getenv("A_STOCK_WECHAT_API_URL"),
 		SettingsPath:           settingsPath,
 		HermesGateway:          hermesGateway,
-		MasteryLibrary:         masteryLibrary,
 		Logger:                 log.Default(),
 		StrictPersistence:      true,
 		TaiwanCashflowCacheDir: cashflowCacheDir,
@@ -118,10 +85,6 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	go server.RunReviewScheduler(ctx)
-	go server.RunRemoteDailyReviewScheduler(ctx)
-	go server.RunMarketEmotionScheduler(ctx)
-	go server.RunMasteryScheduler(ctx)
 	httpServer := &http.Server{Addr: addr, Handler: server}
 	go func() {
 		<-ctx.Done()
@@ -129,7 +92,7 @@ func main() {
 		defer shutdownCancel()
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
-	log.Printf("easy-stock data foundation listening on http://%s", addr)
+	log.Printf("mystocktracer data foundation listening on http://%s", addr)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

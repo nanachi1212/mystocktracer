@@ -422,16 +422,20 @@ func TestTailBufferKeepsOnlyTheLatestDiagnosticBytes(t *testing.T) {
 	}
 }
 
-func TestGeneralSystemPromptDoesNotClaimAShareProductIdentity(t *testing.T) {
+func TestGeneralSystemPromptCarriesNoChinaMarketSemantics(t *testing.T) {
 	rendered := renderConfig(appsettings.LLM{Provider: "openai", BaseURL: "https://api.openai.com/v1", Model: "gpt-5"}, "")
-	if strings.Contains(rendered, "面向 A 股市场") {
-		t.Fatalf("general Hermes system prompt still claims an A-share product identity: %s", rendered)
-	}
 	if !strings.Contains(rendered, "台灣股票") {
 		t.Fatalf("general Hermes system prompt does not identify the current Taiwan-first product: %s", rendered)
 	}
-	if !strings.Contains(rendered, "不得假設使用者所在市場、貨幣或交易規則為 A 股") {
-		t.Fatalf("general Hermes system prompt does not instruct against assuming A-share market rules: %s", rendered)
+	if !strings.Contains(rendered, "預設市場為台灣股市") {
+		t.Fatalf("general Hermes system prompt does not default to the Taiwan market: %s", rendered)
+	}
+	// Phase B1 removed the A-share modules, so the prompt must no longer name A-share concepts,
+	// the removed trading-mastery skill, or the upstream product identity.
+	for _, forbidden := range []string{"A 股", "A股", "游資", "游资", "a-stock-short-term-masters", "easy-stock"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("general Hermes system prompt still contains %q: %s", forbidden, rendered)
+		}
 	}
 }
 

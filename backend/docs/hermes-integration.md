@@ -6,7 +6,7 @@
 
 - 侧边栏 AI 对话；
 - 设置页真实模型连接探针；
-- 大V复盘文章 AI 提炼。
+- 台股 AI Research。
 
 Go 后端和浏览器不再直接拼装 OpenAI、DeepSeek、Anthropic 等厂商请求。服务商、模型、Base URL 与接口协议仍由用户选择，但它们被转换成 Hermes 的运行配置。
 
@@ -27,7 +27,7 @@ React AI 对话
 
 每次前端生成请求建立一条本地 WebSocket，并启动一个 Hermes TUI gateway 子进程。前端保存 Hermes 的 `stored_session_id`，下一轮用 `session.resume` 恢复上下文；停止生成时发送 `session.interrupt`。
 
-复盘提炼和连接探针使用同一个 Hermes Runtime 的一次性 Prompt 接口，因此不会回退到模型厂商直连。
+台股 AI Research 和連線探針使用同一個 Hermes Runtime 的一次性 Prompt 介面，因此不會回退到模型廠商直連。
 
 ## 配置与密钥
 
@@ -36,7 +36,7 @@ React AI 对话
 - `A_STOCK_HERMES_RUNTIME_ROOT`：安装包内的 `resources/hermes-runtime`；
 - `A_STOCK_HERMES_HOME`：Electron `userData/hermes-home`；
 - `A_STOCK_HERMES_WORKDIR`：Electron `userData/hermes-workspace`；
-- `A_STOCK_SETTINGS_PATH` 和 `A_STOCK_REVIEW_DB`：Electron `userData` 内的应用数据。
+- `A_STOCK_SETTINGS_PATH`：Electron `userData` 內的應用設定。
 
 保存模型设置时：
 
@@ -71,7 +71,7 @@ Electron 开发模式同样读取这两个变量。若 `desktop/resources/hermes
 
 macOS 准备脚本会复制 uv 托管的基础 Python，并把 Runtime 内的符号链接实体化；Windows 准备脚本会复制完整的 uv 托管 Python 到 `hermes-runtime/python`，再把构建用 venv 的 `site-packages` 合并进去并删除带有构建机绝对路径的 venv。两个平台都会拒绝指向 Runtime 目录之外的链接，安装后的应用不依赖 GitHub Actions runner 或开发机上的 Python。
 
-发布包生成前还会直接调用包内 Python，以隔离模式导入 `hermes_cli`、`tui_gateway` 和微信公众号服务入口。只有真实的独立运行时通过检查后才允许生成归档。`runtime-manifest.json` 中记录的是实际安装版本，而不是脚本期望版本。
+發布包生成前還會直接呼叫包內 Python，以隔離模式匯入 `hermes_cli` 與 `tui_gateway`。只有真實的獨立運行時通過檢查後才允許生成歸檔；`runtime-manifest.json` 記錄實際安裝版本，而非腳本期望版本。
 
 生成 macOS 应用：
 

@@ -103,32 +103,12 @@ func requestFeature(path string) string {
 	switch {
 	case path == "/api/health":
 		return "health"
-	case strings.HasPrefix(path, "/api/v1/themes"), strings.HasPrefix(path, "/api/v1/sector-map"):
-		return "theme-radar"
-	case strings.HasPrefix(path, "/api/v1/short-term"):
-		return "short-term"
-	case strings.HasPrefix(path, "/api/v1/stocks/ai-analysis"):
-		return "stock-analysis"
-	case strings.HasPrefix(path, "/api/v1/portfolio-inspections"):
-		return "portfolio-inspection"
-	case strings.HasPrefix(path, "/api/v1/stocks"):
-		return "stocks"
-	case strings.HasPrefix(path, "/api/v1/reviews"):
-		return "reviews"
-	case strings.HasPrefix(path, "/api/v1/market"), strings.HasPrefix(path, "/api/v1/research"):
-		return "market-data"
-	case strings.HasPrefix(path, "/api/v1/quotes"):
-		return "quotes"
+	case strings.HasPrefix(path, "/api/v1/tw/"):
+		return "taiwan"
 	case strings.HasPrefix(path, "/api/v1/settings"):
 		return "settings"
 	case strings.HasPrefix(path, "/api/v1/ai"):
 		return "ai-chat"
-	case strings.HasPrefix(path, "/api/v1/strategy"):
-		return "strategy"
-	case strings.HasPrefix(path, "/api/v1/ws"):
-		return "stream"
-	case strings.HasPrefix(path, "/api/v1/sources"):
-		return "data-sources"
 	default:
 		return "http"
 	}

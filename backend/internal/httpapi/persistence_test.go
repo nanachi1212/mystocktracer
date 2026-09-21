@@ -23,11 +23,9 @@ func TestStrictPersistenceReportsInvalidSettings(t *testing.T) {
 func TestStrictPersistenceReportsInvalidDatabasePaths(t *testing.T) {
 	invalidDatabasePath := t.TempDir()
 	server := NewServer(Config{
-		ReviewDBPath:        invalidDatabasePath,
-		PortfolioDBPath:     invalidDatabasePath,
-		MarketEmotionDBPath: invalidDatabasePath,
-		ThemeRadarDBPath:    invalidDatabasePath,
-		StrictPersistence:   true,
+		WatchlistDBPath:       invalidDatabasePath,
+		TaiwanPortfolioDBPath: invalidDatabasePath,
+		StrictPersistence:     true,
 	})
 	t.Cleanup(func() { _ = server.Close() })
 
@@ -35,7 +33,7 @@ func TestStrictPersistenceReportsInvalidDatabasePaths(t *testing.T) {
 	if err == nil {
 		t.Fatal("StartupError() = nil, want database persistence errors")
 	}
-	for _, message := range []string{"review database", "portfolio inspection database", "market emotion database", "theme radar database"} {
+	for _, message := range []string{"taiwan watchlist database", "Taiwan portfolio database"} {
 		if !strings.Contains(err.Error(), message) {
 			t.Errorf("StartupError() = %q, want %q", err, message)
 		}

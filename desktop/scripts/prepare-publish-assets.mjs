@@ -9,7 +9,10 @@ if (!sourceRoot || !outputRoot || !/^v\d+\.\d+\.\d+(?:[-+].+)?$/.test(releaseTag
 }
 
 const version = releaseTag.slice(1);
-const githubNames = [
+// Phase B1: user downloads and updater metadata now ship in the same GitHub Release. electron-updater
+// reads latest.yml / latest-mac.yml straight from the release assets, so there is no separate
+// object-storage feed to keep in sync (and no upstream-controlled host in the update path).
+const downloadNames = [
   `easy-stock-v${version}-macos-arm64.dmg`,
   `easy-stock-v${version}-macos-x64.dmg`,
   `easy-stock-v${version}-windows-x64-setup.exe`,
@@ -24,17 +27,16 @@ const updaterNames = [
   'latest-mac.yml',
   'latest.yml',
 ];
+const releaseNames = [...new Set([...downloadNames, ...updaterNames])];
 
-for (const name of [...new Set([...githubNames, ...updaterNames])]) {
+for (const name of releaseNames) {
   const source = path.join(sourceRoot, name);
   if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) throw new Error(`Required release asset is missing: ${name}`);
 }
 
-for (const [directory, names] of [['github', githubNames], ['updater', updaterNames]]) {
-  const targetRoot = path.join(outputRoot, directory);
-  fs.rmSync(targetRoot, { recursive: true, force: true });
-  fs.mkdirSync(targetRoot, { recursive: true });
-  for (const name of names) fs.copyFileSync(path.join(sourceRoot, name), path.join(targetRoot, name));
-}
+const targetRoot = path.join(outputRoot, 'github');
+fs.rmSync(targetRoot, { recursive: true, force: true });
+fs.mkdirSync(targetRoot, { recursive: true });
+for (const name of releaseNames) fs.copyFileSync(path.join(sourceRoot, name), path.join(targetRoot, name));
 
-console.log(`Prepared ${githubNames.length} GitHub assets and ${updaterNames.length} updater assets for ${releaseTag}`);
+console.log(`Prepared ${releaseNames.length} GitHub release assets (downloads + updater metadata) for ${releaseTag}`);

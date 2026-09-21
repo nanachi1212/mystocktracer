@@ -243,10 +243,10 @@ Repository：[`Open-Dev-Society/OpenStock`](https://github.com/Open-Dev-Society/
 
 | 項目 | 說明 |
 | --- | --- |
-| `backend/internal/httpapi/server.go`、`config.go`、`settings.go`、`stream.go` | 所有台股路由的掛載點與設定層 |
+| `backend/internal/httpapi/server.go`、`config.go`、`settings.go`、`settings_agent.go`、`ai_chat.go` | 所有台股路由的掛載點、設定層與 AI WebSocket |
 | `backend/cmd/server/main.go` | 程式進入點 |
-| `backend/go.mod` module path `easy-stock/backend` | 影響 230 個 Go 檔案的 import |
-| `backend/internal/foundation/{types,symbol,market_overview,hot_stock}.go` | 台股模組使用的基礎型別 |
+| `backend/go.mod` module path `easy-stock/backend` | Phase B1 後仍影響 70 個 Go 檔案的 import |
+| `backend/internal/foundation/{types,symbol,market_index}.go` | 台股模組使用的基礎型別 |
 | `backend/internal/hermes/runtime.go` | 台股 AI Research 的模型 runtime |
 | `backend/internal/appsettings/store.go` | 設定持久化 |
 | `frontend/src/App.tsx`、`lib/backend.ts`、`styles.css`、`main.tsx`、`index.html` | 前端外殼、請求層與全站樣式 |
@@ -267,10 +267,10 @@ Repository：[`Open-Dev-Society/OpenStock`](https://github.com/Open-Dev-Society/
 
 | 項目 | 需確認什麼 |
 | --- | --- |
-| **桌面更新來源 `easy-stock-fs.oss-cn-beijing.aliyuncs.com`** | `desktop/update-feed.cjs` 與 `.github/workflows/release.yml` 目前指向上游控制的 Alibaba OSS bucket。本 repository 的桌面版會從該來源取得更新。這同時是 identity 與**供應鏈**議題，需要維護者決定自有更新來源後才能變更；本輪不動以免破壞既有安裝的更新路徑。 |
+| **桌面更新來源 `easy-stock-fs.oss-cn-beijing.aliyuncs.com`** | **Phase B1 已解決**：`desktop/update-feed.cjs` 已改為固定使用 `nanachi1212/mystocktracer` GitHub Releases，workflow 不再安裝 `ossutil`、讀取 OSS secret 或上傳至上游 bucket。 |
 | `.github/release-notes/v0.1.0–v0.9.2` | 上游發布紀錄，屬歷史文件，建議保留為 attribution 的一部分；但需確認是否算 relicensing 範圍 |
-| `docs/billboard-seat-mappings.md` 與 `frontend/src/data/billboard-seat-mappings.ts` | 內含市場席位對照資料，原始資料出處未在 repository 中說明 → `unclear` |
-| `backend/internal/methodology` 快取的「游資心法」內容 | 來源為外部 `trading-mastery` 資料，原始授權未記錄 → `unclear` |
+| `docs/billboard-seat-mappings.md` 與 `frontend/src/data/billboard-seat-mappings.ts` | **Phase B1 已解決**：A 股席位對照表與其測試已移除。 |
+| `backend/internal/methodology` 快取的「游資心法」內容 | **Phase B1 已解決**：快取、manifest、library 與對應路由已移除。 |
 | `desktop/assets/easy-stock.svg` 等圖示的原始設計來源 | repository 中無設計出處記錄 → `unclear` |
 
 ---
@@ -281,23 +281,33 @@ Repository：[`Open-Dev-Society/OpenStock`](https://github.com/Open-Dev-Society/
 
 | 模組 | 繼承 | 台股使用 | Runtime 相依 | 移除影響 build | 處置 |
 | --- | --- | --- | --- | --- | --- |
-| `backend/internal/portfolioinspection`（12 檔） | 是 | 否 | `httpapi/portfolio_inspection.go` 路由 | 需一併移除路由與前端畫面 | **remove**（Phase B） |
-| `backend/internal/methodology`（47 檔） | 是 | 否 | `httpapi` 路由 + Hermes skill 安裝 | 需一併移除 | **remove**（Phase B，先釐清快取內容授權） |
-| `backend/internal/review`（12 檔） | 是 | 否 | `httpapi/review_*.go`、桌面登入橋接 | 需一併移除桌面 bridge | **remove**（Phase B） |
-| `backend/internal/strategy`（4 檔） | 是 | 否 | `httpapi/strategy` 路由 | 需一併移除 | **remove**（Phase B） |
-| 中國 providers：`eastmoney`(14)、`duanxianxia`(11)、`sina`(4)、`tencent`(4)、`cls`(2)、`hotstock`(2)、`marketoverview`(2) | 是 | 否 | `httpapi/market_*.go`、`stock_hot.go`、`theme_screen.go`、`limit_up_ladder.go` | 需一併移除對應路由 | **remove**（Phase B） |
-| A 股 HTTP routes（`/api/v1/market`、`/quotes`、`/short-term`、`/themes`、`/reviews`、`/portfolio-inspections`、`/strategy`、`/stocks/hot-ranks`、`/sector-map` 等 33 條非 `/tw/` 路由中的 A 股部分） | 是 | 否 | 目前仍註冊 | 移除需同步前端 | **remove**（Phase B） |
-| 共用 routes（`/api/v1/settings*`、`/api/v1/ai`、`/api/v1/ws`、`/api/v1/sources`、`/api/v1/stocks/directory`） | 是 | **是** | 台股設定與 AI 均使用 | 不可移除 | **replace**（Phase B，原創重寫） |
-| A 股前端畫面（`LimitUpWorkspace`、`MarketOverviewWorkspace`、`PortfolioInspection*`、`ReviewDiary`、`TradingMastery`、`StockAIAnalysisWorkspace`、`AIChatWorkspace`、`market/MarketDataViews` 等，約 15 個元件 + 23 個 lib） | 是 | 否 | `App.tsx` 仍以 hash 路由掛載（`#limit-up`、`#reviews`、`#mastery`、`#stock-ai`、`#portfolio-inspection`、`#themes`、`#market`、`#ai`），台股導覽不顯示 | 需同步移除 `App.tsx` 分支 | **remove**（Phase B） |
+| `backend/internal/portfolioinspection`（12 檔） | 是 | 否 | Phase B1 已移除 | 台股 Portfolio 使用獨立 `taiwanportfolio` | **removed**（Phase B1） |
+| `backend/internal/methodology`（47 檔） | 是 | 否 | Phase B1 已移除 | Hermes 只保留台股／共用 runtime | **removed**（Phase B1） |
+| `backend/internal/review`（12 檔） | 是 | 否 | Phase B1 已移除 | Research History 使用獨立 `taiwanwatchlist` store | **removed**（Phase B1） |
+| `backend/internal/strategy`（4 檔） | 是 | 否 | Phase B1 已移除 | 無台股 runtime 相依 | **removed**（Phase B1） |
+| 中國 providers：`eastmoney`(14)、`duanxianxia`(11)、`sina`(4)、`tencent`(4)、`cls`(2)、`hotstock`(2)、`marketoverview`(2) | 是 | 否 | Phase B1 已連同 A 股 handlers 移除 | 已通過 Go test/build | **removed**（Phase B1） |
+| A 股 HTTP routes（`/api/v1/market`、`/quotes`、`/short-term`、`/themes`、`/reviews`、`/portfolio-inspections`、`/strategy`、`/stocks/hot-ranks`、`/sector-map` 等 33 條非 `/tw/` 路由中的 A 股部分） | 是 | 否 | Phase B1 已停止註冊 | 台股 routes 另有回歸測試 | **removed**（Phase B1） |
+| 共用 routes（`/api/v1/settings*`、`/api/v1/ai/ws`、`/api/health`） | 是 | **是** | 台股設定、AI 與健康檢查使用 | 不可移除 | **replace**（Phase B，原創重寫） |
+| A 股前端畫面（`LimitUpWorkspace`、`MarketOverviewWorkspace`、`PortfolioInspection*`、`ReviewDiary`、`TradingMastery`、`StockAIAnalysisWorkspace` 等） | 是 | 否 | Phase B1 已移除元件、request helpers 與 `App.tsx` 分支；共用 `AIChatWorkspace` 保留 | 已通過 TypeScript/Vite build | **removed**（Phase B1） |
 | A 股 prompts（`portfolioinspection/prompt.go`、`expectation_prompt.go`、`review_diary.go` 去識別化 prompt、`hermes/runtime.go` system prompt 中的 A 股段落） | 是 | 部分（Hermes system prompt 為共用） | 有 | — | **replace**（system prompt）／**remove**（其餘） |
 | A 股相關設定（`A_STOCK_*` 環境變數共 20+ 個、`A_STOCK_ADDR`、各資料庫路徑） | 是 | **是**（台股也用同一組前綴） | 有 | 變更會破壞既有安裝的設定與資料路徑 | **investigate**（Phase B，需設計相容遷移） |
-| 桌面 A 股登入橋接（`xueqiu-*`、`taoguba-*`、`review-login-preload.cjs`、`browser-auth.cjs`） | 是 | 否 | `main.cjs` 引用 | 需同步移除 | **remove**（Phase B） |
-| `integrations/wechat-download-api`（AGPL-3.0-only） | 第三方 | 否 | 桌面封裝 | 需移除封裝步驟 | **remove**（Phase B） |
-| `.github/workflows/release.yml` 的 OSS 發布步驟 | 是 | 是（桌面更新） | 有 | — | **investigate**（需自有更新來源） |
+| 桌面 A 股登入橋接（`xueqiu-*`、`taoguba-*`、`review-login-preload.cjs`、`browser-auth.cjs`） | 是 | 否 | Phase B1 已移除 runtime 橋接與 preload | 更新備份仍保護既有本機資料 | **removed**（Phase B1） |
+| `integrations/wechat-download-api`（AGPL-3.0-only） | 第三方 | 否 | Phase B1 已移除整合與封裝步驟 | 桌面 package 不再散布該元件 | **removed**（Phase B1） |
+| `.github/workflows/release.yml` 的 OSS 發布步驟 | 是 | 是（桌面更新） | Phase B1 已改用 GitHub Releases | updater metadata 仍在 CI 驗證 | **replaced**（Phase B1） |
 | `.github/release-notes/v0.1.0–v0.9.2`（13 檔） | 是 | 否 | 無 | 否 | **keep temporarily**（歷史 attribution） |
-| `docs/assets/easy-stock-*`（13 個 A 股截圖） | 是 | 否（README 已不引用） | 無 | 否 | **remove**（Phase B，確認無引用後） |
+| `docs/assets/easy-stock-*`（13 個 A 股截圖） | 是 | 否（README 已不引用） | 無 | 無 | **removed**（Phase B1） |
 
-> 本輪**不執行**任何上述刪除。理由：這些模組目前仍有 runtime 路由註冊與測試覆蓋，大規模刪除會產生無法在單一 PR 內安全審查的 diff，且與本輪的 repository hygiene 目標無關。
+> 上表最初建於 Phase A 盤點。Phase B1 已將可獨立移除的 A 股 runtime、畫面、桌面登入橋接與 AGPL 整合作為單一可驗證變更集執行；共用台股模組只做必要的參照清理。
+
+### Phase B1 執行結果（2026-09-21）
+
+- 移除 224 個 legacy / A 股專屬檔案，包含中國 providers、A 股 HTTP handlers、review / methodology / portfolio inspection / strategy 模組、前端畫面、桌面登入 bridge、專屬文件與截圖；`backend/docs/data-sources.md` 改寫為台股專屬文件。
+- 保留台股共用實作：`marketemotion/taiwan.go`、`sector/taiwan*.go`、`stockanalysis/taiwan*.go`、台股 providers、Watchlist / Portfolio stores、Hermes AI runtime 與設定層。
+- 後端只註冊 health、`/api/v1/tw/*`、settings 與 AI WebSocket；測試明確覆蓋 legacy A 股 routes 不得回復。
+- 台股驗收面保留 Taiwan Daily Dashboard、Watchlist、Portfolio、Corporate Event Alerts、Stock Research、AI Research、Research History 與 Previous Research Comparison。
+- 自動更新改由本 repository 的 GitHub Releases 提供；取消 Alibaba OSS 憑證與發佈步驟，並保留 SHA-512 metadata 驗證；由應用程式內啟動的更新仍會在安裝前建立外部備份。
+- 相容性邊界：Phase B1 以前的 client 固定查詢上游 OSS，無法由新版反向變更；因本 repository 不控制該 bucket，舊版需從 GitHub Releases 手動升級一次。手動執行 NSIS 或 DMG 會沿用既有使用者資料目錄，但不會觸發應用程式內建的更新備份，因此使用者必須先自行建立外部備份。
+- 資料保護測試仍列出舊 review DB、browser-auth 與 WeChat 目錄，是為了防止更新過程刪除舊使用者資料，不代表 runtime 功能仍存在。
 
 ---
 
@@ -311,11 +321,11 @@ Repository：[`Open-Dev-Society/OpenStock`](https://github.com/Open-Dev-Society/
 
 | # | Path / module | Provenance | 目前用途 | Taiwan 相依 | 處置 | 替換方式 | TWstock MIT 可替換 | 難度 | 相依順序 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| B1-1 | `backend/go.mod` module path | confirmed-inherited | Go module 名稱 | 全部 | replace | 改為 `mystocktracer/backend`，同步 272 檔 import | 否 | 低（機械性，但 diff 大） | 最先做，其餘後端工作都受益 |
+| B1-1 | `backend/go.mod` module path | confirmed-inherited | Go module 名稱 | 全部 | replace | 改為 `mystocktracer/backend`，Phase B1 後同步 70 檔 import | 否 | 低（機械性，但 diff 大） | 最先做，其餘後端工作都受益 |
 | B1-2 | `backend/cmd/server/main.go` | likely-inherited | 進入點、設定載入、userData 路徑 | 有 | replace | 原創重寫（約 200 行） | 否 | 低 | B1-1 之後 |
 | B1-3 | `backend/internal/httpapi/server.go` | likely-inherited | 路由註冊、middleware、CORS | 有 | replace | 拆成 `twserver` 原創 router，只掛台股路由 | 否 | 中 | B1-1 之後，與 B1-5 併行 |
-| B1-4 | `httpapi/config.go`、`settings.go`、`settings_agent.go`、`stream.go` | likely-inherited | 設定 API、SSE | 有 | replace | 原創重寫，同時處理 `A_STOCK_*` 前綴遷移 | 否 | 中 | B1-3 之後 |
-| B1-5 | `foundation/{types,symbol,market_overview,hot_stock}.go` | confirmed / likely | 基礎型別 | 有 | replace | 台股所需部分原創重寫；A 股型別隨模組移除 | **部分可**（Security Master、symbol 正規化） | 中 | 與 B1-3 併行 |
+| B1-4 | `httpapi/config.go`、`settings.go`、`settings_agent.go`、`ai_chat.go` | likely-inherited | 設定 API、AI WebSocket | 有 | replace | 原創重寫，同時處理 `A_STOCK_*` 前綴遷移 | 否 | 中 | B1-3 之後 |
+| B1-5 | `foundation/{types,symbol,market_index}.go` | confirmed / likely | 基礎型別 | 有 | replace | 台股所需部分原創重寫；A 股型別已隨模組移除 | **部分可**（Security Master、symbol 正規化） | 中 | 與 B1-3 併行 |
 | B1-6 | `backend/internal/hermes/runtime.go`(+test) | likely-inherited | AI 模型 runtime（1,418 行） | **有**（AI Research 唯一路徑） | replace | 原創重寫模型呼叫層，或改用標準 SDK | 否（TWstock 無對應） | **高** | B1-3 之後；Phase B 最大單項 |
 | B1-7 | `internal/appsettings/store.go` | likely-inherited | 設定持久化 | 有 | replace | 原創重寫 | 否 | 低 | B1-4 之前 |
 | B1-8 | `internal/runtimelog`、`internal/narrative` | confirmed-inherited | 日誌與敘述工具 | 部分 | replace | 原創重寫或改用標準庫 | 否 | 低 | 任意 |
@@ -337,7 +347,7 @@ Repository：[`Open-Dev-Society/OpenStock`](https://github.com/Open-Dev-Society/
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | B3-1 | `desktop/main.cjs` `app.setName('easy-stock')` | likely-inherited | 決定 userData 目錄 | 有 | replace | **需資料遷移**：改名會使既有安裝讀不到自選股、持倉、研究歷史。必須先寫遷移邏輯（偵測舊目錄 → 複製 → 標記完成） | 中 | 必須在 B3-2 之前 |
 | B3-2 | `desktop/scripts/electron-builder.mjs` `appId: com.jundizhou.easystock`、`productName: easy-stock`；`package-mac.mjs` `appBundleId` | likely-inherited | 安裝檔識別 | 有 | replace | **會破壞安裝升級路徑**：既有使用者會得到並存的第二份安裝。需搭配版本公告 | 中 | B3-1 之後 |
-| B3-3 | `desktop/update-feed.cjs` 預設更新來源 = 上游 OSS bucket | confirmed-inherited | 自動更新 | 有 | investigate → replace | 需先建立自有更新來源（GitHub Releases 或自有物件儲存），再切換 | 中 | 獨立，但屬**優先處理**（供應鏈） |
+| B3-3 | `desktop/update-feed.cjs` 自有更新來源 | confirmed-inherited → replaced | 自動更新 | 有 | **completed**（Phase B1） | 固定使用 `nanachi1212/mystocktracer` GitHub Releases，不允許設定或環境變數重定向 | — | 已完成 |
 | B3-4 | `desktop/*.cjs` 其餘 shell 檔案 | confirmed / likely | 桌面 shell | 有 | replace | 原創重寫 | 中 | B3-1 之後 |
 | B3-5 | `desktop/scripts/*`（16 檔）、`desktop/test/*`（15 檔） | confirmed / likely | 封裝與測試 | 有 | replace | 原創重寫 | 中 | B3-2 之後 |
 
@@ -379,7 +389,7 @@ Repository：[`Open-Dev-Society/OpenStock`](https://github.com/Open-Dev-Society/
 
 | # | 範圍 | 處置 | 難度 |
 | --- | --- | --- | --- |
-| B8-1 | `backend/docs/{architecture,data-sources,roadmap,api-routes,hermes-integration,inflection-*,live-tests,sector-map}.md`（10 檔） | replace（台股相關重寫）／remove（A 股專屬） | 低 |
+| B8-1 | `backend/docs/{api-routes,hermes-integration,live-tests}.md` | 繼續原創化；`data-sources.md` 已於 Phase B1 改寫為台股專屬，其餘 A 股專屬文件已移除 | 低 |
 | B8-2 | `docs/{user-guide,development,market-overview-plan,billboard-seat-mappings,daily-review-oss-sync}.md` | replace / remove | 低 |
 | B8-3 | `.github/release-notes/v0.1.0–v0.9.2`（13 檔） | keep（歷史 attribution） | — |
 | B8-4 | `frontend/src/lib/hermes.ts` 的 `client: 'easy-stock-frontend'` 協定識別字串 | replace（隨 B1-6／B2-4，需前後端同步） | 低 |
@@ -390,7 +400,7 @@ Repository：[`Open-Dev-Society/OpenStock`](https://github.com/Open-Dev-Society/
 B4-1  移除中國 providers 與路由        ← 面積最大、風險最低，先做
 B4-2  移除 A 股後端模組
 B4-3  移除 A 股前端畫面
-B3-3  建立自有更新來源                  ← 供應鏈優先，可與上列併行
+B3-3  建立自有更新來源                  ← Phase B1 已完成；舊版需一次手動升級
 B1-1  Go module rename
 B1-7  appsettings → B1-2 main.go → B1-3 server.go → B1-4 config/settings
 B1-5  foundation 型別（可與 B1-3 併行）
@@ -423,11 +433,10 @@ B8    文件
 ### Reasons
 
 1. `LICENSE` 的著作權人為 jundizhou，本專案維護者沒有變更授權條款的權利。
-2. HEAD 仍含 370 個繼承自上游的檔案（約 66,700 行繼承程式碼）。
-3. 所有已完成的台股功能——包含 Taiwan Daily Dashboard——都在繼承的 HTTP server、設定層、AI runtime、前端外殼與桌面 shell 之內執行，無法單獨切離。
-4. Go module path 仍為 `easy-stock/backend`，230 個 Go 檔案以此匯入。
-5. 桌面安裝包內建 AGPL-3.0-only 的第三方服務。
-6. 部分素材與資料（圖示、席位對照表、游資心法快取）的原始出處在 repository 中無記錄，provenance 為 `unclear`。
+2. Phase B1 已移除 224 個 legacy 檔案，但 runtime-critical 後端、前端外殼、桌面 shell 與素材仍含待替換的繼承表達；尚未完成新的全 repository 逐檔統計。
+3. 所有已完成的台股功能——包含 Taiwan Daily Dashboard——仍在尚待原創替換的 HTTP server、設定層、AI runtime、前端外殼與桌面 shell 之內執行，無法單獨切離。
+4. Go module path 仍為 `easy-stock/backend`，Phase B1 後仍有 70 個 Go 檔案以此匯入。
+5. 部分素材（圖示與 favicon）的原始出處在 repository 中無記錄，provenance 為 `unclear`。Phase B1 已移除席位對照表、游資心法快取與 AGPL WeChat 元件。
 
 ### Remaining blockers
 
@@ -437,10 +446,8 @@ B8    文件
 | 2 | B1 runtime-critical 後端替換（含 `hermes/runtime.go`） | 工程 |
 | 3 | B2 runtime-critical 前端替換（含 `App.tsx`、`backend.ts`、`styles.css`） | 工程 |
 | 4 | B3 桌面 shell 與封裝識別替換（含使用者資料遷移） | 工程 |
-| 5 | B4 legacy A 股模組移除（含 AGPL 元件） | 工程 |
-| 6 | B7 繼承素材原創化 | 設計 |
-| 7 | `unclear` 項目的出處確認：席位對照資料、游資心法快取內容、圖示設計來源 | 人工調查 |
-| 8 | 桌面更新來源仍指向上游控制的 OSS bucket | 工程／人工決策 |
+| 5 | B7 繼承素材原創化 | 設計 |
+| 6 | `unclear` 項目的出處確認：圖示與 favicon 設計來源 | 人工調查 |
 
 ---
 
@@ -461,9 +468,9 @@ B8    文件
 | --- | --- |
 | 變更 root `LICENSE` | 需著作權人同意；且 provenance 尚未清理完成 |
 | 移除 easy-stock attribution | 衍生關係屬事實，必須保留 |
-| Go module rename | 影響 230 個 Go 檔案，會使本 PR 無法有效審查；列為 B1-1 |
+| Go module rename | Phase B1 後仍影響 70 個 Go 檔案；為保持本 PR 可審查，仍列為 B1-1 |
 | 桌面 `app.setName` / `appId` / `productName` 變更 | 會造成使用者資料遺失與安裝升級路徑中斷；列為 B3-1／B3-2 |
-| `desktop/update-feed.cjs` 更新來源變更 | 尚無自有更新來源，直接改會使既有安裝無法更新；列為 B3-3 |
+| `desktop/update-feed.cjs` 更新來源變更 | Phase A 時尚無自有來源；Phase B1 已切換為本 repository 的 GitHub Releases 並完成 package 驗證 |
 | `frontend/src/lib/hermes.ts` 的 `client` 協定字串 | 屬 runtime 協定識別，變更需前後端同步；列為 B8-4 |
 | 大規模刪除 legacy A 股模組 | 仍有 runtime 路由與測試覆蓋，屬 Phase B 範圍 |
 | 引入任何 OpenStock 或 TWstock 程式碼 | 本輪為稽核，不做程式碼搬遷 |

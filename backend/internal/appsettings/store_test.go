@@ -17,7 +17,6 @@ func TestStorePersistsSecretsWithPrivatePermissions(t *testing.T) {
 	if _, err := store.Update(func(values *Values) error {
 		values.LLM.Provider = "openai"
 		values.LLM.APIKey = "sk-secret-value"
-		values.Credentials.TushareToken = "tushare-secret"
 		return nil
 	}); err != nil {
 		t.Fatalf("update settings: %v", err)
@@ -34,7 +33,7 @@ func TestStorePersistsSecretsWithPrivatePermissions(t *testing.T) {
 		t.Fatalf("reopen settings: %v", err)
 	}
 	values := reopened.Snapshot()
-	if values.LLM.APIKey != "sk-secret-value" || values.Credentials.TushareToken != "tushare-secret" {
+	if values.LLM.APIKey != "sk-secret-value" {
 		t.Fatalf("settings did not persist: %+v", values)
 	}
 }

@@ -1,18 +1,13 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"easy-stock/backend/internal/hermes"
-	"easy-stock/backend/internal/methodology"
 	"github.com/gorilla/websocket"
 )
 
@@ -56,38 +51,6 @@ func TestAIChatRelaysHermesJSONRPCOverWebSocket(t *testing.T) {
 	params, _ := complete["params"].(map[string]any)
 	if params["type"] != "message.complete" {
 		t.Fatalf("complete frame = %+v", complete)
-	}
-}
-
-func TestEnrichHermesPromptInjectsMatchingMasteryContext(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/tree" {
-			fmt.Fprint(w, `{"sha":"commit-ai","truncated":false,"tree":[{"path":"游资心法/92科比/深度研读报告.md","type":"blob"}]}`)
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/raw/") {
-			fmt.Fprint(w, "# 92科比深度研读报告\n\n## 首板\n首板交易需要结合赚钱效应和次日预期。")
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer upstream.Close()
-	library := methodology.NewLibrary(methodology.Config{
-		CacheDir:        filepath.Join(t.TempDir(), "cache"),
-		HermesHome:      filepath.Join(t.TempDir(), "hermes"),
-		TreeURL:         upstream.URL + "/tree",
-		RawBaseURL:      upstream.URL + "/raw/",
-		RefreshInterval: time.Hour,
-		DisableBuiltin:  true,
-	})
-	if _, err := library.Snapshot(context.Background(), false); err != nil {
-		t.Fatal(err)
-	}
-	server := &Server{masteryLibrary: library}
-	payload := []byte(`{"jsonrpc":"2.0","id":"2","method":"prompt.submit","params":{"session_id":"s1","text":"92科比怎么看首板？"}}`)
-	enriched := server.enrichHermesPrompt(context.Background(), payload)
-	if !strings.Contains(string(enriched), "本地游资心法知识库") || !strings.Contains(string(enriched), "首板交易需要结合赚钱效应") || !strings.Contains(string(enriched), "92科比怎么看首板") {
-		t.Fatalf("prompt was not enriched: %s", enriched)
 	}
 }
 

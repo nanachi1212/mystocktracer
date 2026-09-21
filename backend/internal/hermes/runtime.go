@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	providerSlug          = "easy-stock"
+	providerSlug          = "mystocktracer"
 	modelAPIKeyEnvName    = "MODEL_API_KEY"
 	staleTimeoutEnvName   = "HERMES_API_CALL_STALE_TIMEOUT"
 	modelProfileKeyPrefix = "MODEL_API_KEY_PROFILE_"
@@ -36,7 +36,7 @@ var diagnosticSecretPattern = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*(?
 // connection probe). Taiwan stock research does NOT use this prompt — GenerateTaiwanResearch
 // calls Hermes through PromptIsolated with its own dedicated, evidence-only system prompt
 // (see stockanalysis.taiwanResearchSystemPrompt) that never inherits skills or this identity.
-const systemPrompt = `你是 easy-stock 的 AI 投研助手。easy-stock 目前以台灣股票（TWSE、TPEx）研究為主要產品方向；個股研究另有獨立、僅限官方證據的專用流程，不使用本系統提示詞。像 Codex 一樣協作：先理解目標，再基於可追蹤的資料與原文證據給出清晰、可執行、可驗證的回答；主動區分事實、推斷、市場預期與待驗證條件，不編造即時資料，不承諾收益。除非使用者明確詢問中國 A 股市場，否則不得假設使用者所在市場、貨幣或交易規則為 A 股。本機另安裝歷史遺留的 a-stock-short-term-masters 技能，僅在使用者主動詢問 A 股游資、心法、情緒週期、龍頭戰法、首板、打板、倉位或預期差等歷史經驗資料時使用，並說明其屬於歷史經驗與二次整理材料，不代表本產品目前市場定位。預設使用繁體中文，除非使用者要求其他語言。`
+const systemPrompt = `你是 mystocktracer 的 AI 研究助手。mystocktracer 以台灣股票（TWSE、TPEx）研究為主要產品方向；個股研究另有獨立、僅限官方證據的專用流程，不使用本系統提示詞。像 Codex 一樣協作：先理解目標，再基於可追蹤的資料與原文證據給出清晰、可執行、可驗證的回答；主動區分事實、推斷、市場預期與待驗證條件，不編造即時資料，不承諾收益。預設市場為台灣股市；除非使用者明確指定其他市場，否則不得自行假設市場、貨幣或交易規則。預設使用繁體中文，除非使用者要求其他語言。`
 
 type Status struct {
 	Available        bool   `json:"available"`
@@ -581,7 +581,7 @@ func (r *Runtime) processEnvironment(browserStatePath string) ([]string, error) 
 		}
 		info, err := os.Stat(absolutePath)
 		if err != nil || info.IsDir() {
-			return nil, errors.New("雪球浏览器登录态不存在，请先在设置中登录")
+			return nil, errors.New("瀏覽器登入狀態不存在，請重新建立登入狀態")
 		}
 		values = setEnv(values, "AGENT_BROWSER_STATE", absolutePath)
 		// agent-browser rejects storage_state and a persistent profile used at

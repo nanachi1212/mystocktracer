@@ -1,6 +1,6 @@
-# easy-stock 开发者文档
+# mystocktracer 开发者文档
 
-本文面向需要从源码运行、调试、测试、扩展或打包 easy-stock 的开发者。普通用户请直接前往 [GitHub Releases](https://github.com/jundizhou/easy-stock/releases/latest) 下载桌面版本。
+本文面向需要从源码运行、调试、测试、扩展或打包 mystocktracer 的开发者。普通用户请直接前往 [GitHub Releases](https://github.com/nanachi1212/mystocktracer/releases/latest) 下载桌面版本。
 
 ## 目录
 
@@ -30,8 +30,8 @@
 
 | 工具 | 使用场景 |
 | --- | --- |
-| Python 3.11 与 `uv` | 准备包含 Hermes 和微信公众号服务的桌面发布包 |
-| Hermes Runtime | 本地调试 AI 对话、文章分析、每日共识和模型连接 |
+| Python 3.11 与 `uv` | 准备包含 Hermes Runtime 的桌面发布包 |
+| Hermes Runtime | 本地调试 AI 对话、台股 AI 研究和模型连接 |
 | macOS `hdiutil` | 生成 macOS DMG |
 | PowerShell | 生成 Windows 发布压缩包 |
 
@@ -40,8 +40,8 @@
 ## 获取代码与安装依赖
 
 ```bash
-git clone https://github.com/jundizhou/easy-stock.git
-cd easy-stock
+git clone https://github.com/nanachi1212/mystocktracer.git
+cd mystocktracer
 npm ci
 ```
 
@@ -153,14 +153,10 @@ Electron 桌面模式
 | 变量 | 说明 |
 | --- | --- |
 | `A_STOCK_SETTINGS_PATH` | 设置文件路径 |
+| `A_STOCK_TAIWAN_WATCHLIST_DB` | 台股自選股 SQLite 路徑；未設定時使用應用資料目錄下的 `taiwan-watchlist.db` |
 | `A_STOCK_TAIWAN_PORTFOLIO_DB` | 台股持倉 SQLite 路徑；未設定時使用應用資料目錄下的 `taiwan-portfolio.db` |
-| `A_STOCK_REVIEW_DB` | 复盘文章 SQLite 路径 |
-| `A_STOCK_MARKET_EMOTION_DB` | 市场情绪历史 SQLite 路径 |
-| `A_STOCK_THEME_RADAR_DB` | 趋势题材与短线侠快照 SQLite 路径 |
-| `A_STOCK_MASTERY_CACHE` | 游资心法缓存目录 |
+| `A_STOCK_CASHFLOW_CACHE` | 台股現金流量快取目錄 |
 | `A_STOCK_LOG_DIR` | 运行日志目录；桌面端默认使用用户数据目录下的 `logs` |
-| `A_STOCK_DUANXIANXIA_BASE_URL` | 短线侠服务地址覆盖，主要用于测试 |
-| `A_STOCK_WECHAT_API_URL` | 微信公众号采集服务地址 |
 
 ### Hermes 开发配置
 
@@ -293,13 +289,11 @@ Go 后端在未显式配置路径时，会使用操作系统用户配置目录�
 
 ## 相关技术文档
 
-- [后端架构](../backend/docs/architecture.md)
 - [API 路由](../backend/docs/api-routes.md)
-- [数据源与降级规则](../backend/docs/data-sources.md)
 - [Hermes 集成](../backend/docs/hermes-integration.md)
-- [趋势题材地图](../backend/docs/sector-map.md)
 - [实时数据源测试](../backend/docs/live-tests.md)
-- [个股拐点引擎](../backend/docs/inflection-engine.md)
+- [台股市場資料契約](./taiwan-market-contract-v1.1.md)
+- [OSS 來源稽核](./oss-provenance-audit.md)
 
 ## 常见问题
 
@@ -328,6 +322,6 @@ tail -f .runtime/backend.log
 
 确认 `A_STOCK_HERMES_RUNTIME_ROOT` 指向完整 Runtime，并在设置页执行模型连接测试。更详细的运行链路和密钥规则见 [Hermes 集成文档](../backend/docs/hermes-integration.md)。
 
-### 行情或题材数据暂时为空
+### 台股行情数据暂时为空
 
-先查看页面显示的来源、更新时间和降级信息，再检查 [数据源文档](../backend/docs/data-sources.md)。东方财富、新浪、财联社和短线侠等公共接口可能临时限流或调整字段。
+先查看页面显示的来源、交易日和新鲜度状态。TWSE、TPEx 与 MOPS 的公开接口可能临时限流或调整字段；无法取得的资料会明确标示为不可用，不会显示为 0。

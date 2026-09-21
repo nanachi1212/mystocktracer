@@ -24,20 +24,17 @@ func TestSettingsAPIStoresSecretsWithoutReturningThem(t *testing.T) {
 	}
 	gateway := &fakeHermesGateway{status: hermes.Status{Available: true}}
 	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
-	body := `{
-		"llm":{"provider":"deepseek","base_url":"https://api.deepseek.com","model":"deepseek-chat","api_mode":"chat_completions","api_key":"sk-private-12345678"},
-		"credentials":{"tushare_token":"tushare-private-87654321"}
-	}`
+	body := `{"llm":{"provider":"deepseek","base_url":"https://api.deepseek.com","model":"deepseek-chat","api_mode":"chat_completions","api_key":"sk-private-12345678"}}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), "sk-private") || strings.Contains(rec.Body.String(), "tushare-private") {
+	if strings.Contains(rec.Body.String(), "sk-private") {
 		t.Fatalf("settings response leaked a secret: %s", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"api_key":{"configured":true}`) || !strings.Contains(rec.Body.String(), "••••••4321") {
+	if !strings.Contains(rec.Body.String(), `"api_key":{"configured":true}`) {
 		t.Fatalf("settings response missing masked status: %s", rec.Body.String())
 	}
 
@@ -46,7 +43,7 @@ func TestSettingsAPIStoresSecretsWithoutReturningThem(t *testing.T) {
 		t.Fatalf("reopen settings: %v", err)
 	}
 	values := reopened.Snapshot()
-	if values.LLM.APIKey != "" || values.LLM.APIMode != "chat_completions" || values.Credentials.TushareToken != "tushare-private-87654321" {
+	if values.LLM.APIKey != "" || values.LLM.APIMode != "chat_completions" {
 		t.Fatalf("stored settings mismatch: %+v", values)
 	}
 	if gateway.lastKey == nil || *gateway.lastKey != "sk-private-12345678" {
@@ -170,39 +167,29 @@ func TestSettingsAPIValidatesAndClearsSecrets(t *testing.T) {
 	}
 }
 
-func TestSettingsAPISupportsMultipleReviewProfilesAndMasksCredentials(t *testing.T) {
+func TestSettingsAPIRejectsRemovedChinaSettingsSurface(t *testing.T) {
 	store, err := appsettings.Open("")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("open memory settings: %v", err)
 	}
-	server := NewServer(Config{SettingsStore: store})
-	body := `{"review_automation":{"profiles":[
-		{"id":"wx-1","source":"wechat","name":"微信实例一","base_url":"http://127.0.0.1:5000","credential":"wx-secret-1234","sync_hour":7,"auto_analyze":true,"enabled":true},
-		{"id":"wx-2","source":"wechat","name":"微信实例二","base_url":"http://127.0.0.1:5001","sync_hour":9,"auto_analyze":false,"enabled":true},
-		{"id":"xq-1","source":"xueqiu","name":"雪球账号一","base_url":"https://xueqiu.com","credential":"xq-cookie-5678","sync_hour":8,"auto_analyze":true,"enabled":true}
-	]}}`
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	server := NewServer(Config{SettingsStore: store, HermesGateway: &fakeHermesGateway{status: hermes.Status{Available: true}}})
+	for _, body := range []string{
+		`{"credentials":{"tushare_token":"t"}}`,
+		`{"review_automation":{"profiles":[]}}`,
+		`{"clear_secrets":["xueqiu_cookie"]}`,
+	} {
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body)))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d, want %d", body, rec.Code, http.StatusBadRequest)
+		}
 	}
-	if strings.Contains(rec.Body.String(), "wx-secret") || strings.Contains(rec.Body.String(), "xq-cookie") {
-		t.Fatalf("profile secret leaked: %s", rec.Body.String())
-	}
-	values := store.Snapshot()
-	if len(values.ReviewAutomation.Profiles) != 3 || values.ReviewAutomation.Profiles[0].Credential != "wx-secret-1234" {
-		t.Fatalf("profiles=%+v", values.ReviewAutomation.Profiles)
-	}
-	if values.ReviewAutomation.Profiles[2].Credential != "" {
-		t.Fatalf("legacy xueqiu cookie should be discarded: %+v", values.ReviewAutomation.Profiles[2])
-	}
-	update := `{"review_automation":{"profiles":[{"id":"wx-1","source":"wechat","name":"微信实例一改名","base_url":"http://127.0.0.1:5000","sync_hour":10,"auto_analyze":true,"enabled":true}]}}`
-	req = httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(update))
-	rec = httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || store.Snapshot().ReviewAutomation.Profiles[0].Credential != "wx-secret-1234" {
-		t.Fatalf("credential was not preserved: status=%d values=%+v", rec.Code, store.Snapshot().ReviewAutomation.Profiles)
+	getRec := httptest.NewRecorder()
+	server.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
+	for _, field := range []string{"credentials", "review_automation"} {
+		if strings.Contains(getRec.Body.String(), field) {
+			t.Fatalf("settings view still exposes %q: %s", field, getRec.Body.String())
+		}
 	}
 }
 

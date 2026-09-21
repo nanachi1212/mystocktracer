@@ -152,19 +152,14 @@ export function requiredLocalRuntimeModules() {
 	return [
 		'main.cjs',
 		'preload.cjs',
-		'review-login-preload.cjs',
-		'xueqiu-login-preload.cjs',
 		'backend-process.cjs',
-		'browser-auth.cjs',
 		'data-protection.cjs',
 		'hermes-runtime-root.cjs',
 		'runtime-logger.cjs',
 		'subscription-ai-url.cjs',
-		'taoguba-browser-bridge.cjs',
 		'update-feed.cjs',
 		'update-manager.cjs',
 		'user-data.cjs',
-		'xueqiu-browser-bridge.cjs',
 	];
 }
 

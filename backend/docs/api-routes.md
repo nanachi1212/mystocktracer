@@ -1,45 +1,81 @@
 # Backend API Routes
 
+Phase B1 removed the inherited A-share surface. Everything the backend serves now is either the
+Taiwan product (`/api/v1/tw/…`), the market-neutral settings/AI plumbing, or the health check.
+
 ## Auth
 
-`GET /api/health` 始终公开。其他路由在服务设置 `A_STOCK_TOKEN` 时需要带 token：
+`GET /api/health` is always public. Every other route requires a token when the server is started
+with `A_STOCK_TOKEN`:
 
 ```text
 Authorization: Bearer <token>
 ```
 
-WebSocket 可以通过 query 传 token：
+The AI WebSocket accepts the token as a query parameter:
 
 ```text
-/api/v1/ws/stream?symbols=000001.SZ&token=<token>
+/api/v1/ai/ws?token=<token>
 ```
 
-未设置 `A_STOCK_TOKEN` 时所有本机开发路由保持开放。
+With no `A_STOCK_TOKEN` set, all local development routes stay open.
 
-## Routes
+## Taiwan market data
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/tw/securities?query=2330` | Cached TWSE/TPEx official security directory; searches code, canonical symbol, short name, or full name. |
+| `GET` | `/api/v1/tw/quotes?symbols=2330.TWSE` | Official quotes for canonical Taiwan symbols. |
+| `GET` | `/api/v1/tw/kline?symbol=2330.TWSE` | Daily OHLCV history. |
+| `GET` | `/api/v1/tw/indexes` | Taiwan index snapshots and series. |
+| `GET` | `/api/v1/tw/institutional?symbol=2330.TWSE` | Three-institution net flow history. |
+| `GET` | `/api/v1/tw/margin?symbol=2330.TWSE` | Margin financing / securities-lending history. |
+| `GET` | `/api/v1/tw/fundamentals?symbol=2330.TWSE` | Monthly revenue, financial statements, valuation and dividends. |
+| `GET` | `/api/v1/tw/data-status` | Per-domain freshness for the Taiwan data layer. |
+| `GET` | `/api/v1/tw/market-breadth?scope=combined` | Advancers/decliners and traded amount direction. |
+| `GET` | `/api/v1/tw/market-emotion?scope=twse` | Deterministic market participation and signal-divergence view. |
+| `GET` | `/api/v1/tw/industry-radar?scope=tpex` | Relative breadth by official industry classification. |
+| `GET` | `/api/v1/tw/screener?scope=combined&sort=amount` | Filter and sort securities from the official market snapshot. |
+
+## Taiwan research
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/tw/stocks/{symbol}/intelligence` | Full official-evidence view for one security. |
+| `GET` | `/api/v1/tw/stocks/{symbol}/intelligence/core` | First-paint subset of the above. |
+| `POST` | `/api/v1/tw/stocks/{symbol}/research` | Generate one grounded AI research run. Always user-triggered; never called automatically. |
+| `GET` | `/api/v1/tw/stocks/{symbol}/research-history` | List saved research runs for one security. |
+| `GET` | `/api/v1/tw/stocks/{symbol}/research-history/{runID}` | Read one saved run. |
+| `GET` | `/api/v1/tw/stocks/{symbol}/research-history/{runID}/comparison` | Compare one run against the previous run's evidence. |
+| `GET` | `/api/v1/tw/stocks/{symbol}/corporate-events` | Corporate-event feed for one security. |
+| `POST` | `/api/v1/tw/corporate-events/sync` | Sync corporate events and create alerts. |
+
+## Taiwan product state
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/tw/dashboard` | Daily dashboard: market, holdings, watchlist, alerts, research updates, needs-attention. Each section keeps its own `as_of`. |
+| `GET` `POST` | `/api/v1/tw/watchlist` | List or add saved securities. |
+| `DELETE` | `/api/v1/tw/watchlist/{symbol}` | Remove one saved security. |
+| `GET` `POST` | `/api/v1/tw/portfolio` | List holdings, or add/idempotently update one canonical holding. |
+| `PUT` `DELETE` | `/api/v1/tw/portfolio/{symbol}` | Update or delete one holding without changing Watchlist or alert history. |
+| `GET` | `/api/v1/tw/portfolio/summary` | TWD totals, P/L, weights and descriptive concentration. |
+| `GET` | `/api/v1/tw/alerts` | Corporate-event alert inbox. |
+| `PUT` | `/api/v1/tw/alerts/read-all` | Mark every alert read. |
+| `PUT` | `/api/v1/tw/alerts/{id}/read` | Mark one alert read. |
+
+## Settings, AI and health
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/health` | Backend health check. |
-| `GET` | `/api/v1/sources` | Data source catalog and coarse status. |
-| `GET` | `/api/v1/quotes/realtime?symbols=000001.SZ,600000.SH` | Realtime quotes. Current implementation uses Sina. |
-| `GET` | `/api/v1/quotes/kline?symbol=000001.SZ&period=day&limit=120` | K-line data. Current implementation tries EastMoney then falls back to Sina. |
-| `GET` | `/api/v1/quotes/kline/batch?symbols=000001.SZ,600000.SH&period=day&limit=40` | Batch K-line histories for up to 30 symbols, with per-symbol fallback and error reporting. |
-| `GET` | `/api/v1/market/margin-balance?limit=120` | Aggregated Shanghai, Shenzhen, and Beijing margin-financing and securities-lending balances by trading day. |
-| `GET` | `/api/v1/market/news?source=cls&limit=20` | Market news. Current implementation supports `cls`. |
-| `GET` | `/api/v1/stocks/directory` | Cached A-share stock names and codes for local fuzzy search. |
-| `GET` | `/api/v1/tw/securities?query=2330` | Cached TWSE/TPEx official security directory; searches code, canonical symbol, short name, or full name. |
-| `GET` | `/api/v1/tw/portfolio` | List persisted Taiwan holdings enriched with current canonical identity. |
-| `POST` | `/api/v1/tw/portfolio` | Add or idempotently update one canonical Taiwan holding. |
-| `PUT` / `DELETE` | `/api/v1/tw/portfolio/{symbol}` | Update or delete one holding without changing Watchlist or alert history. |
-| `GET` | `/api/v1/tw/portfolio/summary` | Enrich holdings with current Taiwan quotes and calculate TWD totals, P/L, weights, and descriptive concentration. |
-| `GET` | `/api/v1/stocks/hot-ranks` | Deduplicated union of the Tonghuashun and EastMoney A-share hot-stock Top 100 lists, including each source rank. |
-| `GET` | `/api/v1/themes/overview` | One-snapshot overview of all configured themes, including average change, breadth, fund flow, and strongest node. |
-| `GET` | `/api/v1/sector-map?theme=semiconductor_materials` | Industry chain map. Current implementation uses a local theme rule layer, EastMoney board quotes, and EastMoney board constituents. |
-| `POST` | `/api/v1/strategy/inflections/evaluate` | Evaluate one market snapshot for old anchors, new carriers, and big/small inflection signals. |
-| `GET` | `/api/v1/ws/stream?symbols=000001.SZ,600000.SH&interval_ms=3000` | WebSocket stream for quote snapshots. |
+| `GET` `PUT` | `/api/v1/settings` | Read or update model settings and Taiwan alert preferences. Secrets are never returned; only a masked/configured status. |
+| `GET` `PUT` | `/api/v1/settings/agent` | Read or update Hermes agent settings (reasoning effort, skills, MCP servers). |
+| `POST` | `/api/v1/settings/llm/models` | Query the configured model service for its model list. |
+| `POST` | `/api/v1/settings/llm/test` | Send a minimal prompt through Hermes to verify the model connection. |
+| `GET` | `/api/v1/ai/ws` | WebSocket bridge to the local Hermes runtime for the general AI chat workspace. |
 
-## Response Shape
+## Response shape
 
 Most successful data routes return:
 
@@ -47,13 +83,14 @@ Most successful data routes return:
 {
   "data": [
     {
-      "symbol": "000001.SZ",
-      "price": 11.06,
+      "symbol": "2330.TWSE",
+      "price": 1050,
       "meta": {
-        "source": "sina",
-        "source_url": "https://hq.sinajs.cn/...",
-        "fetched_at": "2026-06-15T15:00:01+08:00",
+        "source": "twse",
+        "source_url": "https://openapi.twse.com.tw/...",
+        "fetched_at": "2026-09-18T14:30:01+08:00",
         "latency_ms": 188,
+        "trade_date": "2026-09-18",
         "stale": false
       }
     }
@@ -69,89 +106,17 @@ Errors return:
 }
 ```
 
-Sector map responses return one theme map:
-
-```json
-{
-  "data": {
-    "theme": "semiconductor_materials",
-    "name": "半导体材料",
-    "tabs": ["半导体", "半导体材料", "人形机器人"],
-    "theme_tabs": [
-      {"id": "semiconductor", "name": "半导体"},
-      {"id": "semiconductor_materials", "name": "半导体材料"},
-      {"id": "battery", "name": "电池"}
-    ],
-    "groups": [
-      {
-        "id": "materials_core",
-        "name": "半导体材料",
-        "nodes": [
-          {
-            "id": "photoresist",
-            "name": "光刻胶",
-            "board_code": "BK0891",
-            "board_name": "光刻胶",
-            "board_source": "eastmoney",
-            "change_percent": -1.2,
-            "main_net_inflow": -2000000,
-            "stocks": [],
-            "stock_source": "eastmoney:board-constituents",
-            "match_status": "matched",
-            "matched_by": ["keyword:光刻胶"],
-            "warnings": []
-          }
-        ]
-      }
-    ],
-    "meta": {
-      "source": "sector-map:eastmoney",
-      "fetched_at": "2026-06-23T15:00:01+08:00",
-      "latency_ms": 188,
-      "stale": false
-    }
-  }
-}
-```
-
-WebSocket quote messages return:
-
-```json
-{
-  "type": "quotes",
-  "quotes": [
-    {
-      "symbol": "000001.SZ",
-      "price": 11.06,
-      "meta": {
-        "source": "sina",
-        "fetched_at": "2026-06-15T15:00:01+08:00",
-        "latency_ms": 188,
-        "stale": false
-      }
-    }
-  ],
-  "fetched_at": "2026-06-15T15:00:01+08:00"
-}
-```
-
-## Inflection Evaluation
-
-`POST /api/v1/strategy/inflections/evaluate` accepts a normalized market
-snapshot and candidate anchors. Scores are explainable and return their factor
-breakdown, selected anchors, ambiguity warnings, and whether a signal is only a
-candidate or is confirmed by the current V1 rules.
-
-The strategy semantics, field definitions, and example payload are documented
-in [`inflection-engine.md`](./inflection-engine.md).
+Unavailable data is reported as unavailable — it is never returned as `0`. Every response keeps its
+own source, trade date and freshness so callers can tell `available`, `stale`, `partial`,
+`unavailable` and "not queried" apart.
 
 ## Symbols
 
-The MVP normalizes common A-share inputs:
+Taiwan symbols are canonicalized to `<code>.<exchange>`:
 
-| Input | Canonical | Sina | EastMoney `secid` |
-| --- | --- | --- | --- |
-| `000001.SZ` | `000001.SZ` | `sz000001` | `0.000001` |
-| `sz000001` | `000001.SZ` | `sz000001` | `0.000001` |
-| `600000` | `600000.SH` | `sh600000` | `1.600000` |
-| `830799` | `830799.BJ` | `bj830799` | `0.830799` |
+| Input | Canonical |
+| --- | --- |
+| `2330` | `2330.TWSE` |
+| `2330.TW` | `2330.TWSE` |
+| `6488` | `6488.TPEX` |
+| `6488.TWO` | `6488.TPEX` |
