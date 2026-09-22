@@ -3,12 +3,12 @@ package httpapi
 import (
 	"strings"
 
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 )
 
 const legacyMainlandSkillName = "a-stock-short-term-masters"
 
-func buildAgentSettingsView(settings hermes.AgentSettings) agentSettingsView {
+func buildAgentSettingsView(settings agent.Settings) agentSettingsView {
 	view := agentSettingsView{ReasoningEffort: settings.ReasoningEffort, Skills: taiwanFirstSkills(settings.Skills), MCPServers: make([]mcpServerView, 0, len(settings.MCPServers))}
 	for _, server := range settings.MCPServers {
 		item := mcpServerView{Name: server.Name, Enabled: server.Enabled, Transport: server.Transport, Command: server.Command, Args: server.Args, URL: server.URL, Timeout: server.Timeout, ConnectTimeout: server.ConnectTimeout, SupportsParallelToolCall: server.SupportsParallelToolCall}
@@ -30,8 +30,8 @@ func protectedMapView(values map[string]string) map[string]secretSettingStatus {
 	return result
 }
 
-func taiwanFirstSkills(skills []hermes.SkillInfo) []hermes.SkillInfo {
-	result := make([]hermes.SkillInfo, 0, len(skills))
+func taiwanFirstSkills(skills []agent.SkillSetting) []agent.SkillSetting {
+	result := make([]agent.SkillSetting, 0, len(skills))
 	for _, skill := range skills {
 		if skill.Name != legacyMainlandSkillName {
 			result = append(result, skill)
@@ -40,7 +40,7 @@ func taiwanFirstSkills(skills []hermes.SkillInfo) []hermes.SkillInfo {
 	return result
 }
 
-func mergeAgentSettings(current hermes.AgentSettings, update agentSettingsUpdateRequest) hermes.AgentSettings {
+func mergeAgentSettings(current agent.Settings, update agentSettingsUpdateRequest) agent.Settings {
 	if update.ReasoningEffort != nil {
 		current.ReasoningEffort = strings.ToLower(strings.TrimSpace(*update.ReasoningEffort))
 	}
@@ -58,11 +58,11 @@ func mergeAgentSettings(current hermes.AgentSettings, update agentSettingsUpdate
 	if update.MCPServers == nil {
 		return current
 	}
-	existing := make(map[string]hermes.MCPServerInfo, len(current.MCPServers))
+	existing := make(map[string]agent.MCPServerSetting, len(current.MCPServers))
 	for _, server := range current.MCPServers {
 		existing[server.Name] = server
 	}
-	current.MCPServers = make([]hermes.MCPServerInfo, 0, len(*update.MCPServers))
+	current.MCPServers = make([]agent.MCPServerSetting, 0, len(*update.MCPServers))
 	for _, input := range *update.MCPServers {
 		name := strings.TrimSpace(input.Name)
 		lookup := strings.TrimSpace(input.OriginalName)

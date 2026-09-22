@@ -71,7 +71,7 @@ func NewServer(value any) *Server {
 		watchlistStore:              config.WatchlistStore,
 		taiwanPortfolioStore:        config.TaiwanPortfolioStore,
 		settingsStore:               config.SettingsStore,
-		agentRuntime:                config.HermesGateway,
+		agentRuntime:                config.AgentRuntime,
 		startupError:                startupError,
 		logger:                      config.Logger,
 	}

@@ -2,14 +2,16 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
 )
 
-const llmProbeMarker = "A_STOCK_HERMES_OK"
+const llmProbeMarker = agent.ConnectionProbeMarker
 
 type llmConnectionTestResult struct {
 	OK        bool   `json:"ok"`
@@ -23,30 +25,26 @@ type llmConnectionTestResult struct {
 
 func (s *Server) settingsLLMTest(w http.ResponseWriter, r *http.Request) {
 	if s.agentRuntime == nil {
-		writeError(w, http.StatusServiceUnavailable, "Hermes 模型執行環境不可用")
+		writeError(w, http.StatusServiceUnavailable, "AI 模型執行環境不可用")
 		return
 	}
-	status := s.agentRuntime.Status()
-	if !status.Available {
-		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Hermes 執行環境不可用"))
-		return
-	}
-	if !status.Configured {
-		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "請先設定 Hermes 使用的模型"))
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), s.modelResponseTimeout())
 	defer cancel()
-	startedAt := time.Now()
-	result, err := s.agentRuntime.Prompt(ctx, "这是模型连接探针。请仅回复 "+llmProbeMarker+"，不要添加任何其他文字。")
+	result, err := agent.ProbeConnection(ctx, s.agentRuntime)
 	if err != nil {
-		writeUpstreamError(w, "llm_connection_probe", "Hermes 模型連線失敗", err)
-		return
-	}
-	content := strings.TrimSpace(result.Content)
-	if !strings.Contains(strings.ToUpper(content), llmProbeMarker) {
-		writeError(w, http.StatusBadGateway, "Hermes 已啟動，但模型未回傳預期的探測標記")
+		if errors.Is(err, agent.ErrRuntimeUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		if errors.Is(err, agent.ErrRuntimeUnconfigured) {
+			writeError(w, http.StatusPreconditionFailed, err.Error())
+			return
+		}
+		if errors.Is(err, agent.ErrProbeMismatch) {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeUpstreamError(w, "llm_connection_probe", "AI 模型連線失敗", err)
 		return
 	}
 
@@ -67,14 +65,14 @@ func (s *Server) settingsLLMTest(w http.ResponseWriter, r *http.Request) {
 		Provider:  firstNonEmpty(strings.TrimSpace(cfg.Provider), "openai"),
 		Model:     strings.TrimSpace(cfg.Model),
 		APIMode:   apiMode,
-		Runtime:   "hermes",
-		LatencyMS: time.Since(startedAt).Milliseconds(),
-		Response:  truncateRunes(content, 200),
+		Runtime:   "agent-runtime",
+		LatencyMS: result.Latency.Milliseconds(),
+		Response:  result.Response,
 	}})
 }
 
 // modelResponseTimeout keeps synchronous AI endpoints from cancelling a
-// request before Hermes' configured stale timeout has elapsed. The small
+// request before the configured provider timeout has elapsed. The small
 // grace period covers the final retry/error frame and process cleanup.
 func (s *Server) modelResponseTimeout() time.Duration {
 	seconds := appsettings.DefaultLLMResponseTimeoutSeconds
@@ -82,12 +80,4 @@ func (s *Server) modelResponseTimeout() time.Duration {
 		seconds = appsettings.NormalizeLLMResponseTimeoutSeconds(s.settingsStore.Snapshot().LLM.ResponseTimeoutSeconds)
 	}
 	return time.Duration(seconds)*time.Second + 15*time.Second
-}
-
-func truncateRunes(value string, limit int) string {
-	runes := []rune(strings.TrimSpace(value))
-	if len(runes) <= limit {
-		return string(runes)
-	}
-	return string(runes[:limit]) + "…"
 }

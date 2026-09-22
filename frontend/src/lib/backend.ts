@@ -58,6 +58,13 @@ export type SecretSettingStatus = {
 };
 
 export type AppSettings = {
+	agent?: {
+		available: boolean;
+		configured: boolean;
+		api_key_configured: boolean;
+		version?: string;
+		message?: string;
+	};
 	hermes: {
 		available: boolean;
 		configured: boolean;
@@ -91,14 +98,14 @@ export type LLMProfile = {
 	api_key: SecretSettingStatus;
 };
 
-export type HermesSkillSetting = {
+export type AgentSkillSetting = {
 	name: string;
 	description: string;
 	category: string;
 	enabled: boolean;
 };
 
-export type HermesMCPServerSetting = {
+export type AgentMCPServerSetting = {
 	name: string;
 	enabled: boolean;
 	transport: 'stdio' | 'http' | 'sse';
@@ -112,11 +119,12 @@ export type HermesMCPServerSetting = {
 	supports_parallel_tool_calls?: boolean;
 };
 
-export type HermesAgentSettings = {
+export type AgentSettings = {
   reasoning_effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | string;
-  skills: HermesSkillSetting[];
-  mcp_servers: HermesMCPServerSetting[];
+  skills: AgentSkillSetting[];
+  mcp_servers: AgentMCPServerSetting[];
 };
+
 
 export type LLMConnectionTestResult = {
 	ok: boolean;

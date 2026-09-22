@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 )
 
 type secretSettingStatus struct {
@@ -13,7 +13,8 @@ type secretSettingStatus struct {
 }
 
 type settingsView struct {
-	Hermes             hermes.Status    `json:"hermes"`
+	Agent              agent.Status     `json:"agent"`
+	Hermes             agent.Status     `json:"hermes"`
 	ActiveLLMProfileID string           `json:"active_llm_profile_id"`
 	LLMProfiles        []llmProfileView `json:"llm_profiles"`
 	LLM                struct {

@@ -35,6 +35,7 @@ desktop/.cache/
 backend/tmp/
 backend/bin/
 backend/server
+backend/server.exe
 
 # Hermes and model/provider credentials.
 **/hermes-home/

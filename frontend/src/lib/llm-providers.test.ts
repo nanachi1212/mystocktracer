@@ -28,12 +28,12 @@ describe('LLM provider definitions', () => {
 		expect(llmLocalConnectionError('http://127.0.0.1:1234/v1', new Error('fetch failed'))).toBe('無法連線 LM Studio，請確認 Local Server 已啟動');
 	});
 
-	it('SettingsDrawer keeps cloud/local UI and profile secret isolation wired to existing state', () => {
-		const source = fs.readFileSync(new URL('../components/SettingsDrawer.tsx', import.meta.url), 'utf8');
-		expect(source).toContain('雲端 API');
+	it('ModelSettingsPanel keeps cloud/local UI and profile secret isolation wired to existing state', () => {
+		const source = fs.readFileSync(new URL('../components/settings/ModelSettingsPanel.tsx', import.meta.url), 'utf8');
+		expect(source).toContain('Provider');
 		expect(source).toContain('本地模型');
 		expect(source).toContain("setProvider('custom')");
-		expect(source).toContain('profileKeyValues[current.id]');
-		expect(source).toContain('API Key 可留空');
+		expect(source).toContain('profile_id: activeID');
+		expect(source).toContain('API Key');
 	});
 });

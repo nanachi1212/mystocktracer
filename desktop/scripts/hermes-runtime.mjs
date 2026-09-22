@@ -52,6 +52,7 @@ export function prepareHermesRuntime({
 	if (!fs.existsSync(python)) throw new Error(`Hermes runtime Python not found: ${python}`);
 	run(python, ['-c', 'import hermes_cli, tui_gateway'], runtimeRoot, { PYTHONNOUSERSITE: '1' });
 	const installedVersion = readHermesVersion(python, runtimeRoot);
+	copyRuntimeLicense(runtimeRoot);
 	const manifest = {
 		schema_version: 1,
 		package: 'hermes-agent',
@@ -64,6 +65,16 @@ export function prepareHermesRuntime({
 	if (installedVersion !== HERMES_AGENT_VERSION) manifest.requested_version = HERMES_AGENT_VERSION;
 	fs.writeFileSync(path.join(runtimeRoot, 'runtime-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 	return manifest;
+}
+
+function copyRuntimeLicense(runtimeRoot) {
+	const candidates = [];
+	walk(runtimeRoot, (entryPath, entry) => {
+		if (!entry.isFile() || !/^LICENSE(?:\.txt)?$/i.test(entry.name)) return;
+		if (/hermes[_-]agent|hermes_agent/i.test(entryPath)) candidates.push(entryPath);
+	});
+	if (candidates.length === 0) throw new Error('Hermes runtime license was not found in the installed distribution');
+	fs.copyFileSync(candidates.sort()[0], path.join(runtimeRoot, 'LICENSE'));
 }
 
 function readHermesVersion(python, cwd) {

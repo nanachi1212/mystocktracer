@@ -8,12 +8,12 @@ import (
 	"testing"
 
 	"github.com/gorilla/websocket"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 )
 
-func TestAIChatRelaysHermesJSONRPCOverWebSocket(t *testing.T) {
-	gateway := &fakeHermesGateway{status: hermes.Status{Available: true, Configured: true, APIKeyConfigured: true}}
-	httpServer := httptest.NewServer(NewServer(Config{HermesGateway: gateway}))
+func TestAIChatUsesProductProtocolOverWebSocket(t *testing.T) {
+	gateway := &fakeAgentRuntime{status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true}}
+	httpServer := httptest.NewServer(NewServer(Config{AgentRuntime: gateway}))
 	defer httpServer.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/v1/ai/ws"
@@ -34,32 +34,31 @@ func TestAIChatRelaysHermesJSONRPCOverWebSocket(t *testing.T) {
 		}
 		return frame
 	}
-	if frame := readFrame(); frame["method"] != "event" {
-		t.Fatalf("first frame = %+v, want gateway.ready event", frame)
+	if frame := readFrame(); frame["type"] != "runtime.ready" || frame["version"] != float64(1) {
+		t.Fatalf("first frame = %+v, want product runtime.ready event", frame)
 	}
-	if err := connection.WriteJSON(map[string]any{"jsonrpc": "2.0", "id": "1", "method": "session.create", "params": map[string]any{"client": "test"}}); err != nil {
+	if err := connection.WriteJSON(map[string]any{"version": 1, "type": "session.start", "payload": map[string]any{}}); err != nil {
 		t.Fatal(err)
 	}
-	if frame := readFrame(); frame["id"] != "1" {
+	if frame := readFrame(); frame["type"] != "session.ready" {
 		t.Fatalf("session response = %+v", frame)
 	}
-	if err := connection.WriteJSON(map[string]any{"jsonrpc": "2.0", "id": "2", "method": "prompt.submit", "params": map[string]any{"session_id": "live-1", "text": "你好"}}); err != nil {
+	if err := connection.WriteJSON(map[string]any{"version": 1, "type": "prompt.submit", "payload": map[string]any{"session_id": "stored-1", "text": "你好"}}); err != nil {
 		t.Fatal(err)
 	}
 	_ = readFrame()
 	complete := readFrame()
-	params, _ := complete["params"].(map[string]any)
-	if params["type"] != "message.complete" {
+	if complete["type"] != "message.complete" {
 		t.Fatalf("complete frame = %+v", complete)
 	}
 }
 
-func TestAIChatRequiresAvailableHermesRuntime(t *testing.T) {
-	server := NewServer(Config{HermesGateway: &fakeHermesGateway{status: hermes.Status{Message: "Hermes 运行时不可用"}}})
+func TestAIChatRequiresAvailableRuntime(t *testing.T) {
+	server := NewServer(Config{AgentRuntime: &fakeAgentRuntime{status: agent.Status{Message: "AI 執行環境不可用"}}})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/ai/ws", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "Hermes") {
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "AI 執行環境") {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

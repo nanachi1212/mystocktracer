@@ -4,23 +4,23 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 )
 
-func (s *Server) settingsAgentGateway() (hermes.SettingsGateway, bool) {
-	gateway, ok := s.agentRuntime.(hermes.SettingsGateway)
+func (s *Server) settingsAgentGateway() (agent.CapabilityConfigurator, bool) {
+	gateway, ok := s.agentRuntime.(agent.CapabilityConfigurator)
 	return gateway, ok
 }
 
 func (s *Server) settingsAgentGet(w http.ResponseWriter, _ *http.Request) {
 	gateway, ok := s.settingsAgentGateway()
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "Hermes Skill/MCP 設定服務不可用")
+		writeError(w, http.StatusServiceUnavailable, "AI Skill/MCP 設定服務不可用")
 		return
 	}
 	settings, err := gateway.AgentSettings()
 	if err != nil {
-		writeInternalError(w, "read_agent_settings", "無法讀取 Hermes Skill/MCP 設定", err)
+		writeInternalError(w, "read_agent_settings", "無法讀取 AI Skill/MCP 設定", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": buildAgentSettingsView(settings)})
@@ -29,7 +29,7 @@ func (s *Server) settingsAgentGet(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) settingsAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	gateway, ok := s.settingsAgentGateway()
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "Hermes Skill/MCP 設定服務不可用")
+		writeError(w, http.StatusServiceUnavailable, "AI Skill/MCP 設定服務不可用")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
@@ -50,11 +50,11 @@ func (s *Server) settingsAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	current, err := gateway.AgentSettings()
 	if err != nil {
-		writeInternalError(w, "read_agent_settings_for_update", "無法讀取現有 Hermes 設定", err)
+		writeInternalError(w, "read_agent_settings_for_update", "無法讀取現有 AI 設定", err)
 		return
 	}
 	if err := gateway.SyncAgentSettings(mergeAgentSettings(current, update)); err != nil {
-		writeInternalError(w, "save_agent_settings", "無法儲存 Hermes Skill/MCP 設定", err)
+		writeInternalError(w, "save_agent_settings", "無法儲存 AI Skill/MCP 設定", err)
 		return
 	}
 	updated, err := gateway.AgentSettings()

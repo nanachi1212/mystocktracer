@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 func TestSettingsLLMModelsUsesSavedKeyAndNormalizesResults(t *testing.T) {
@@ -22,8 +22,8 @@ func TestSettingsLLMModelsUsesSavedKeyAndNormalizesResults(t *testing.T) {
 	defer upstream.Close()
 
 	store, _ := appsettings.Open("")
-	gateway := &fakeHermesGateway{status: hermes.Status{Available: true, APIKeyConfigured: true}, modelAPIKey: "saved-private-key"}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
+	gateway := &fakeAgentRuntime{status: agent.Status{Available: true, APIKeyConfigured: true}, modelAPIKey: "saved-private-key"}
+	server := NewServer(Config{SettingsStore: store, AgentRuntime: gateway})
 	body := `{"provider":"custom","base_url":"` + upstream.URL + `/v1"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -123,10 +123,10 @@ func TestSupportedLLMProvidersBuildTheirOfficialModelsURLs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.provider, func(t *testing.T) {
-			if !supportedLLMProvider(tt.provider) {
+			if !agent.SupportedModelProvider(tt.provider) {
 				t.Fatalf("provider %q is not supported", tt.provider)
 			}
-			got, err := buildModelsURL(tt.provider, tt.baseURL)
+			got, err := agent.ModelsURL(tt.provider, tt.baseURL)
 			if err != nil {
 				t.Fatal(err)
 			}

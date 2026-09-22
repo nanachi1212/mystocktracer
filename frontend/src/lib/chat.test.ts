@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearHermesSessionIDs, deriveChatTitle, parseStoredConversations, storeableConversations, type ChatConversation } from './chat';
+import { clearAgentSessionIDs, deriveChatTitle, parseStoredConversations, storeableConversations, type ChatConversation } from './chat';
 
 describe('AI chat history helpers', () => {
 	it('derives a compact title from the first message', () => {
@@ -22,14 +22,14 @@ describe('AI chat history helpers', () => {
 		expect(storeableConversations(values)).toHaveLength(30);
 	});
 
-	it('clears Hermes sessions after changing the global chat model without removing messages', () => {
+	it('clears runtime sessions after changing the global chat model without removing messages', () => {
 		const current = conversation('current', '2026-08-07T00:00:00.000Z');
-		current.hermes_session_id = 'hermes-old-model';
+		current.session_id = 'previous-runtime-session';
 		current.messages = [{ id: 'message-1', role: 'user', content: '保留这条消息', created_at: current.created_at }];
 
-		const [next] = clearHermesSessionIDs([current]);
+		const [next] = clearAgentSessionIDs([current]);
 
-		expect(next.hermes_session_id).toBeUndefined();
+		expect(next.session_id).toBeUndefined();
 		expect(next.messages).toEqual(current.messages);
 	});
 });

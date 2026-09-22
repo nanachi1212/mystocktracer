@@ -26,6 +26,8 @@ export function verifyReleasePackage(packageRoot, platform) {
 		runtimePython,
 		path.join(resourcesRoot, 'frontend', 'dist', 'index.html'),
 		path.join(resourcesRoot, 'hermes-runtime', 'runtime-manifest.json'),
+		path.join(resourcesRoot, 'hermes-runtime', 'LICENSE'),
+		path.join(resourcesRoot, 'THIRD_PARTY_NOTICES.md'),
 		path.join(resourcesRoot, 'agent-browser'),
 	];
 	for (const requiredPath of requiredPaths) {

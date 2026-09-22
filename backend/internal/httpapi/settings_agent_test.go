@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 func TestTaiwanFirstSkillsExcludesLegacyAShareSkillOnly(t *testing.T) {
-	skills := []hermes.SkillInfo{
+	skills := []agent.SkillSetting{
 		{Name: legacyMainlandSkillName, Description: "A股游资心法资料库", Category: "trading", Enabled: true},
 		{Name: "some-other-skill", Description: "generic", Category: "general", Enabled: true},
 	}
@@ -23,13 +23,13 @@ func TestTaiwanFirstSkillsExcludesLegacyAShareSkillOnly(t *testing.T) {
 
 func TestAgentSettingsGETExcludesLegacyAShareSkillFromTaiwanFirstView(t *testing.T) {
 	store, _ := appsettings.Open("")
-	gateway := &fakeHermesGateway{agentSettings: hermes.AgentSettings{
-		Skills: []hermes.SkillInfo{
+	gateway := &fakeAgentRuntime{agentSettings: agent.Settings{
+		Skills: []agent.SkillSetting{
 			{Name: legacyMainlandSkillName, Description: "A股游资心法资料库", Category: "trading", Enabled: true},
 			{Name: "some-other-skill", Description: "generic", Category: "general", Enabled: true},
 		},
 	}}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
+	server := NewServer(Config{SettingsStore: store, AgentRuntime: gateway})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings/agent", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -46,12 +46,12 @@ func TestAgentSettingsGETExcludesLegacyAShareSkillFromTaiwanFirstView(t *testing
 
 func TestAgentSettingsAPIUpdatesSkillsAndMCPWithoutLeakingSecrets(t *testing.T) {
 	store, _ := appsettings.Open("")
-	gateway := &fakeHermesGateway{agentSettings: hermes.AgentSettings{
+	gateway := &fakeAgentRuntime{agentSettings: agent.Settings{
 		ReasoningEffort: "medium",
-		Skills:          []hermes.SkillInfo{{Name: "test-skill", Description: "test", Category: "trading", Enabled: true}},
-		MCPServers:      []hermes.MCPServerInfo{{Name: "github", Enabled: true, Transport: "stdio", Command: "npx", Env: map[string]string{"TOKEN": "old-secret"}}},
+		Skills:          []agent.SkillSetting{{Name: "test-skill", Description: "test", Category: "trading", Enabled: true}},
+		MCPServers:      []agent.MCPServerSetting{{Name: "github", Enabled: true, Transport: "stdio", Command: "npx", Env: map[string]string{"TOKEN": "old-secret"}}},
 	}}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
+	server := NewServer(Config{SettingsStore: store, AgentRuntime: gateway})
 	body := `{"skills":[{"name":"test-skill","enabled":false}],"mcp_servers":[{"name":"github-renamed","original_name":"github","enabled":true,"transport":"stdio","command":"npx","args":["-y","server"],"env":{},"clear_env":[],"headers":{},"clear_headers":[],"timeout":120,"connect_timeout":30,"supports_parallel_tool_calls":true}]}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/agent", strings.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -76,12 +76,12 @@ func TestAgentSettingsAPIUpdatesSkillsAndMCPWithoutLeakingSecrets(t *testing.T) 
 
 func TestAgentSettingsAPIUpdatesOnlyReasoningEffort(t *testing.T) {
 	store, _ := appsettings.Open("")
-	gateway := &fakeHermesGateway{agentSettings: hermes.AgentSettings{
+	gateway := &fakeAgentRuntime{agentSettings: agent.Settings{
 		ReasoningEffort: "medium",
-		Skills:          []hermes.SkillInfo{{Name: "test-skill", Enabled: true}},
-		MCPServers:      []hermes.MCPServerInfo{{Name: "github", Enabled: true, Transport: "stdio", Command: "npx"}},
+		Skills:          []agent.SkillSetting{{Name: "test-skill", Enabled: true}},
+		MCPServers:      []agent.MCPServerSetting{{Name: "github", Enabled: true, Transport: "stdio", Command: "npx"}},
 	}}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
+	server := NewServer(Config{SettingsStore: store, AgentRuntime: gateway})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/agent", strings.NewReader(`{"reasoning_effort":"xhigh"}`))
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -95,7 +95,7 @@ func TestAgentSettingsAPIUpdatesOnlyReasoningEffort(t *testing.T) {
 
 func TestAgentSettingsAPIRejectsInvalidReasoningEffort(t *testing.T) {
 	store, _ := appsettings.Open("")
-	server := NewServer(Config{SettingsStore: store, HermesGateway: &fakeHermesGateway{}})
+	server := NewServer(Config{SettingsStore: store, AgentRuntime: &fakeAgentRuntime{}})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/agent", strings.NewReader(`{"reasoning_effort":"turbo"}`))
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -106,7 +106,7 @@ func TestAgentSettingsAPIRejectsInvalidReasoningEffort(t *testing.T) {
 
 func TestAgentSettingsAPIRejectsInvalidMCP(t *testing.T) {
 	store, _ := appsettings.Open("")
-	server := NewServer(Config{SettingsStore: store, HermesGateway: &fakeHermesGateway{}})
+	server := NewServer(Config{SettingsStore: store, AgentRuntime: &fakeAgentRuntime{}})
 	for _, body := range []string{
 		`{"mcp_servers":[{"name":"bad name","enabled":true,"transport":"stdio","command":"npx"}]}`,
 		`{"mcp_servers":[{"name":"remote","enabled":true,"transport":"http","url":"file:///tmp/server"}]}`,

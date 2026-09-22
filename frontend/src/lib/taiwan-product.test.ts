@@ -331,11 +331,12 @@ describe('P1C Taiwan product localization (settings drawer)', () => {
 		expect(renderedForm).not.toMatch(/大V复盘自动化|同花顺|雪球|淘股吧|微信公众号|Tushare Pro Token|行情与内容数据源|涨停/);
 	});
 
-	it('manages only the Hermes model key now that the China credential surface is removed', () => {
-		const source = fs.readFileSync(path.join(root, 'frontend/src/components/SettingsDrawer.tsx'), 'utf8');
+	it('keeps model secrets isolated now that the China credential surface is removed', () => {
+		const source = fs.readFileSync(path.join(root, 'frontend/src/components/settings/ModelSettingsPanel.tsx'), 'utf8');
 		// Phase B1 removed the China data-provider credentials and review-source automation from both
 		// the settings contract and this drawer; no China credential field may come back silently.
-		expect(source).toContain("type SecretKey = 'llm_api_key';");
+		expect(source).toContain('profileKeyValues');
+		expect(source).toContain('clearProfileKeys');
 		expect(source).not.toMatch(/tushare_token|ths_cookie|xueqiu_cookie|eastmoney_cookie|wechat_api_token|review_automation/);
 	});
 
@@ -350,8 +351,8 @@ describe('P1C Taiwan product localization (settings drawer)', () => {
 });
 
 describe('P1C.1 Taiwan-first localization completion', () => {
-	it('uses Traditional Chinese for the always-visible Hermes Skill/MCP panel', () => {
-		const source = fs.readFileSync(path.join(root, 'frontend/src/components/HermesAgentSettingsPanel.tsx'), 'utf8');
+	it('uses Traditional Chinese for the always-visible AI Skill/MCP panel', () => {
+		const source = fs.readFileSync(path.join(root, 'frontend/src/components/AgentCapabilitiesPanel.tsx'), 'utf8');
 		expect(source).toContain('Skill 與 MCP');
 		expect(source).not.toMatch(/设置|连接|读取|获取|删除|启用|添加/);
 	});

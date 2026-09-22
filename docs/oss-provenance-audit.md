@@ -20,16 +20,16 @@
 
 ## Current-tree 統計
 
-| 指標 | Phase B2 前 | Phase B2 後 |
+| 指標 | Phase B2 前 | Phase B3 後 |
 | --- | ---: | ---: |
-| 納入統計檔案 | 278 | 292 |
-| 繼承檔案合計 | 128 | 113 |
-| `confirmed-inherited` | 66 | 54 |
-| `likely-inherited` | 62 | 59 |
-| `original` | 134 | 163 |
+| 納入統計檔案 | 278 | 297 |
+| 繼承檔案合計 | 128 | 100 |
+| `confirmed-inherited` | 66 | 42 |
+| `likely-inherited` | 62 | 58 |
+| `original` | 134 | 181 |
 | `unclear` | 16 | 16 |
-| inherited code LOC | 19,153 | 9,069 |
-| original code LOC | 35,174 | 38,859 |
+| inherited code LOC | 19,153 | 5,142 |
+| original code LOC | 35,174 | 40,775 |
 
 新增檔案數包含把大型檔案拆成小型責任邊界的結果，不能用總檔案數推論來源狀態。
 
@@ -48,6 +48,15 @@ Phase B2 完成下列原創 runtime replacement：
 
 本階段沒有修改 Electron `app.setName`、`appId`、`productName` 或 `userData` root；`settings.json`、`taiwan-watchlist.db`、`taiwan-portfolio.db`、研究歷史與 alert inbox 路徑保持相容。
 
+## Phase B3 結果
+
+- 移除 `backend/internal/hermes` 的 inherited runtime，改由 `internal/agent` 的產品契約與 `internal/agent/hermesadapter` 可替換 adapter 承接；HTTP、台股研究與 bootstrap 僅依賴產品窄介面。
+- 前端對話改採產品版 WebSocket v1，renderer 不接觸第三方 runtime frame；一般聊天與台股 AI Research 的 capability boundary 分離，並以 packaged fake-runtime 完成多段 streaming smoke。
+- 移除舊 Hermes settings panel 與前端 transport；`SettingsDrawer` 僅負責產品設定組合，模型與 Skill/MCP 各自抽成產品面板，secret 僅顯示遮罩狀態，支援保留與明確清除。
+- 模型清單與連線探測移到 `internal/agent` 產品服務；HTTP handler 不再實作 provider discovery 或 runtime probe 規則。
+- 封裝 Hermes Agent `0.18.2` 時，隨 runtime 放置其 MIT `LICENSE`，並隨 release resources 放置 `THIRD_PARTY_NOTICES.md`；封裝驗證器會要求兩者存在。
+- 本輪完整替換的 AI 邊界與 Markdown safe-link renderer 已列入 provenance audit 的 replacement contract；其餘 desktop lifecycle 與非 AI runtime 仍維持原分類。
+
 ## 目前原創且可獨立維護的 runtime 區域
 
 - 官方台股 provider、ToAlpha/MOPS 補充、PIT／freshness contracts。
@@ -61,13 +70,11 @@ Phase B2 完成下列原創 runtime replacement：
 
 | 區域 | 目前分類 | 狀態／後續 |
 | --- | --- | --- |
-| `backend/internal/hermes/runtime.go` | likely-inherited | AI model runtime 核心；已隔離在 `httpapi.AgentRuntime` 窄介面後，Phase B3 原創替換 |
-| `frontend/src/lib/hermes.ts`、`AIChatWorkspace.tsx` | confirmed-inherited | AI transport／對話 UI，Phase B3 |
-| `SettingsDrawer.tsx`、`HermesAgentSettingsPanel.tsx` | likely-inherited | 高度依賴 Hermes 設定 schema，Phase B3 |
-| `frontend/src/components/MarkdownContent.tsx` | confirmed-inherited / trivial | 30 行標準 Markdown wrapper；不是目前 runtime independence blocker，但 relicensing 前仍需替換或取得權利 |
+| `backend/internal/hermes/runtime.go`、`frontend/src/lib/hermes.ts`、`HermesAgentSettingsPanel.tsx` | removed | Phase B3 已刪除；產品契約與 adapter 取代其 runtime/transport/settings responsibility |
+| `AIChatWorkspace.tsx`、`SettingsDrawer.tsx`、`MarkdownContent.tsx` | original | Phase B3 依產品 contract 完整替換；對話協定、設定組合與 safe-link renderer 均有回歸測試 |
 | `AppUpdatePanel.tsx` | likely-inherited | 與現有 desktop identity／更新 UX 綁定，Phase B4 |
-| `backend/internal/httpapi/llm_connection.go`、`llm_models.go` | likely-inherited | Hermes provider boundary；本輪已修正 secret／provider error 外洩，完整替換併入 Phase B3 |
-| `backend/internal/narrative/narrative.go` | confirmed-inherited | AI narrative helper，Phase B3 評估或替換 |
+| `backend/internal/httpapi/llm_connection.go`、`llm_models.go` | original | Phase B3 完整替換成薄 HTTP handler；模型 discovery 與 probe 規則由產品 `internal/agent` 服務持有 |
+| `backend/internal/narrative/narrative.go` | removed | 沒有 production consumer，Phase B3 已移除 |
 | `backend/internal/runtimelog/writer.go` | confirmed-inherited | 共用 bounded/redacted logger；桌面/runtime phase 原創替換 |
 | `backend/internal/marketemotion/types.go` | confirmed-inherited | 小型 shared types；台股實作仍使用，後續薄化或原創替換 |
 | `desktop/main.cjs`、`preload.cjs`、`backend-process.cjs`、user-data/update/package scripts | confirmed／likely-inherited | 桌面 lifecycle、封裝與資料 migration，Phase B4；本輪只做 canonical env emission |
@@ -85,8 +92,8 @@ Phase B2 完成下列原創 runtime replacement：
 
 原因：
 
-1. 目前仍有上表所列的 Hermes、AI UI、desktop shell 與共用 runtime inherited expression。
+1. 目前仍有上表所列的 desktop shell 與共用 runtime inherited expression；Hermes 僅作為有獨立 MIT notice 的可替換第三方 adapter/runtime。
 2. 圖示／favicon provenance 仍為 `unclear`。
 3. 目前維護者沒有單方面重新授權上游著作權表達的權利；工程替換完成後仍需合法權利基礎與人工法律判斷。
 
-推薦下一階段：**Phase B3 — AI Runtime Independence**。其後進行 **Phase B4 — Desktop Identity Independence**，並以可回復的使用者資料 migration 保護既有安裝。
+推薦下一階段：**Phase B4 — Desktop Identity Independence**，並以可回復的使用者資料 migration 保護既有安裝。

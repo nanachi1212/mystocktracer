@@ -72,7 +72,7 @@ export function AppUpdatePanel() {
 				</div>
 				{status.installMode === 'manual' && status.latestVersion && status.latestVersion !== status.currentVersion && <p className="settings-field-note app-update-manual-note">目前 macOS 安裝檔未使用 Apple Developer ID 簽署，系統暫不允許應用程式內替換。請結束 easy-stock，前往發布頁下載新版 DMG 後覆蓋安裝，不會刪除本機模型設定、文章、登入狀態或資料庫。</p>}
 			</div>
-			<p className="settings-field-note">{status.installMode === 'manual' ? '應用程式與使用者資料分開存放，覆蓋安裝只會替換 easy-stock 應用程式本身，不會清除本機模型密鑰、匯入文章、AI 摘要、Hermes 記憶、瀏覽器/微信登入狀態或資料庫。' : '應用程式內安裝前會停止背景同步，並在應用程式資料目錄外建立完整備份，保留模型設定與密鑰、匯入文章、AI 摘要、Hermes 記憶、瀏覽器/微信登入狀態及本機資料庫；僅排除可重建的快取，最近保留 3 份。'}</p>
+			<p className="settings-field-note">{status.installMode === 'manual' ? '應用程式與使用者資料分開存放，覆蓋安裝只會替換 easy-stock 應用程式本身，不會清除本機模型密鑰、匯入文章、AI 記憶與摘要、瀏覽器登入狀態或資料庫。' : '應用程式內安裝前會停止背景同步，並在應用程式資料目錄外建立完整備份，保留模型設定與密鑰、匯入文章、AI 記憶與摘要、瀏覽器登入狀態及本機資料庫；僅排除可重建的快取，最近保留 3 份。'}</p>
 		</section>
 	);
 }

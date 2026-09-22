@@ -9,20 +9,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 	"github.com/nanachi1212/mystocktracer/backend/internal/marketemotion"
 	"github.com/nanachi1212/mystocktracer/backend/internal/sector"
 	"github.com/nanachi1212/mystocktracer/backend/internal/stockanalysis"
 )
 
 type fakeTaiwanResearchGateway struct {
-	*fakeHermesGateway
+	*fakeAgentRuntime
 	content string
 }
 
-func (g *fakeTaiwanResearchGateway) PromptIsolated(context.Context, string, string) (hermes.PromptResult, error) {
-	return hermes.PromptResult{Content: g.content}, nil
+func (g *fakeTaiwanResearchGateway) PromptIsolated(context.Context, string, string) (agent.PromptResult, error) {
+	return agent.PromptResult{Content: g.content}, nil
 }
 
 type fixedTaiwanMarket struct{}
@@ -175,7 +175,7 @@ func TestTaiwanStockIntelligenceCoreRequiresCanonicalIdentity(t *testing.T) {
 }
 
 func TestTaiwanStockResearchIsOptInAndKeepsIntelligenceOnAIFailure(t *testing.T) {
-	server := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}, HermesGateway: &fakeHermesGateway{}})
+	server := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}, AgentRuntime: &fakeAgentRuntime{}})
 	r := httptest.NewRecorder()
 	server.ServeHTTP(r, httptest.NewRequest(http.MethodPost, "/api/v1/tw/stocks/2330.TWSE/research", nil))
 	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `"status":"unavailable"`) || !strings.Contains(r.Body.String(), `"intelligence"`) {

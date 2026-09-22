@@ -7,36 +7,36 @@ import (
 	"io"
 	"sync"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
-type fakeHermesGateway struct {
-	status        hermes.Status
-	promptResult  hermes.PromptResult
+type fakeAgentRuntime struct {
+	status        agent.Status
+	promptResult  agent.PromptResult
 	promptErr     error
 	modelAPIKey   string
 	modelKeyErr   error
-	start         func(context.Context) (hermes.Process, error)
+	start         func(context.Context) (agent.Process, error)
 	lastLLM       appsettings.LLM
 	lastKey       *string
-	agentSettings hermes.AgentSettings
+	agentSettings agent.Settings
 }
 
-func (g *fakeHermesGateway) Status() hermes.Status { return g.status }
-func (g *fakeHermesGateway) ModelAPIKey() (string, error) {
+func (g *fakeAgentRuntime) Status() agent.Status { return g.status }
+func (g *fakeAgentRuntime) ModelAPIKey() (string, error) {
 	return g.modelAPIKey, g.modelKeyErr
 }
-func (g *fakeHermesGateway) Prompt(context.Context, string) (hermes.PromptResult, error) {
+func (g *fakeAgentRuntime) Prompt(context.Context, string) (agent.PromptResult, error) {
 	return g.promptResult, g.promptErr
 }
-func (g *fakeHermesGateway) Start(ctx context.Context) (hermes.Process, error) {
+func (g *fakeAgentRuntime) Start(ctx context.Context) (agent.Process, error) {
 	if g.start != nil {
 		return g.start(ctx)
 	}
 	return newScriptedHermesProcess(), nil
 }
-func (g *fakeHermesGateway) SyncLLM(cfg appsettings.LLM, key *string) error {
+func (g *fakeAgentRuntime) SyncLLM(cfg appsettings.LLM, key *string) error {
 	g.lastLLM = cfg
 	if cfg.Model == "" && cfg.BaseURL == "" && key == nil {
 		return nil
@@ -52,10 +52,10 @@ func (g *fakeHermesGateway) SyncLLM(cfg appsettings.LLM, key *string) error {
 	g.status.Configured = stringsConfigured(cfg, g.status.APIKeyConfigured)
 	return nil
 }
-func (g *fakeHermesGateway) AgentSettings() (hermes.AgentSettings, error) {
+func (g *fakeAgentRuntime) AgentSettings() (agent.Settings, error) {
 	return g.agentSettings, nil
 }
-func (g *fakeHermesGateway) SyncAgentSettings(settings hermes.AgentSettings) error {
+func (g *fakeAgentRuntime) SyncAgentSettings(settings agent.Settings) error {
 	g.agentSettings = settings
 	return nil
 }

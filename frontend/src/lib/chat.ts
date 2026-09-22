@@ -11,7 +11,7 @@ export type ChatMessage = {
 export type ChatConversation = {
 	id: string;
 	title: string;
-	hermes_session_id?: string;
+	session_id?: string;
 	messages: ChatMessage[];
 	created_at: string;
 	updated_at: string;
@@ -48,6 +48,7 @@ export function parseStoredConversations(raw: string | null): ChatConversation[]
 		const parsed: unknown = JSON.parse(raw);
 		if (!Array.isArray(parsed)) return [];
 		return parsed
+			.map(normalizeConversation)
 			.filter(isConversation)
 			.map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-MAX_STORED_MESSAGES) }))
 			.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
@@ -64,12 +65,20 @@ export function storeableConversations(conversations: ChatConversation[]) {
 		.slice(0, MAX_STORED_CONVERSATIONS);
 }
 
-export function clearHermesSessionIDs(conversations: ChatConversation[]): ChatConversation[] {
+export function clearAgentSessionIDs(conversations: ChatConversation[]): ChatConversation[] {
 	return conversations.map((conversation) => {
-		if (!conversation.hermes_session_id) return conversation;
-		const { hermes_session_id: _hermesSessionID, ...next } = conversation;
+		if (!conversation.session_id) return conversation;
+		const { session_id: _sessionID, ...next } = conversation;
 		return next;
 	});
+}
+
+function normalizeConversation(value: unknown): unknown {
+	if (!value || typeof value !== 'object') return value;
+	const legacy = value as Record<string, unknown>;
+	if (typeof legacy.hermes_session_id !== 'string' || typeof legacy.session_id === 'string') return legacy;
+	const { hermes_session_id: legacySessionID, ...conversation } = legacy;
+	return { ...conversation, session_id: legacySessionID };
 }
 
 function isConversation(value: unknown): value is ChatConversation {
@@ -79,7 +88,7 @@ function isConversation(value: unknown): value is ChatConversation {
 		&& typeof item.title === 'string'
 		&& typeof item.created_at === 'string'
 		&& typeof item.updated_at === 'string'
-		&& (item.hermes_session_id === undefined || typeof item.hermes_session_id === 'string')
+		&& (item.session_id === undefined || typeof item.session_id === 'string')
 		&& Array.isArray(item.messages)
 		&& item.messages.every(isMessage);
 }

@@ -25,6 +25,9 @@ fs.cpSync(path.join(repoRoot, 'frontend', 'dist'), path.join(resourcesRoot, 'fro
 prepareAgentBrowser();
 
 const manifest = prepareHermesRuntime({ runtimeRoot: path.join(resourcesRoot, 'hermes-runtime') });
+// The runtime is third-party content. Keep its MIT notice beside the bundled
+// artifact so an extracted release remains attributable without source access.
+fs.copyFileSync(path.join(repoRoot, 'THIRD_PARTY_NOTICES.md'), path.join(resourcesRoot, 'THIRD_PARTY_NOTICES.md'));
 console.log(`Desktop resources ready: Hermes ${manifest.version} (${manifest.mode})`);
 
 function prepareAgentBrowser() {

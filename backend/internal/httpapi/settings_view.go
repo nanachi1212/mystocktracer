@@ -3,17 +3,19 @@ package httpapi
 import (
 	"strings"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 func (s *Server) buildSettingsView(values appsettings.Values) settingsView {
 	var view settingsView
 	if s.agentRuntime == nil {
-		view.Hermes.Message = "Hermes 設定服務不可用"
+		view.Agent.Message = "AI 設定服務不可用"
 	} else {
-		view.Hermes = s.agentRuntime.Status()
+		view.Agent = s.agentRuntime.Status()
 	}
+	// Keep the legacy field during the saved-settings compatibility window.
+	view.Hermes = view.Agent
 	if !values.UpdatedAt.IsZero() {
 		updated := values.UpdatedAt
 		view.UpdatedAt = &updated
@@ -26,16 +28,16 @@ func (s *Server) buildSettingsView(values appsettings.Values) settingsView {
 	view.LLM.Model = values.LLM.Model
 	view.LLM.APIMode = normalizedAPIMode(values.LLM.APIMode, view.LLM.Provider)
 	view.LLM.ResponseTimeoutSeconds = appsettings.NormalizeLLMResponseTimeoutSeconds(values.LLM.ResponseTimeoutSeconds)
-	view.LLM.APIKey.Configured = view.Hermes.APIKeyConfigured
+	view.LLM.APIKey.Configured = view.Agent.APIKeyConfigured
 	view.ActiveLLMProfileID = values.ActiveLLMProfileID
 	view.TaiwanAlerts.CorporateEventsEnabled = values.TaiwanAlerts.CorporateEventsEnabled
 	view.LLMProfiles = make([]llmProfileView, 0, len(values.LLMProfiles))
 
-	profiles, _ := s.agentRuntime.(hermes.ProfileGateway)
+	profiles, _ := s.agentRuntime.(agent.ProfileConfigurator)
 	for _, profile := range values.LLMProfiles {
 		configured := profile.APIKeyConfigured
 		if profile.ID == values.ActiveLLMProfileID {
-			configured = view.Hermes.APIKeyConfigured
+			configured = view.Agent.APIKeyConfigured
 		} else if profiles != nil {
 			if key, err := profiles.ModelAPIKeyForProfile(profile.ID); err == nil {
 				configured = strings.TrimSpace(key) != ""

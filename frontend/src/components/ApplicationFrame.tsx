@@ -19,10 +19,10 @@ export function ApplicationFrame(props: ApplicationFrameProps) {
 	const isTaiwan = props.workspace !== 'ai';
 	const heading = props.workspace !== 'ai'
 		? workspaceTitles[props.workspace]
-		: { title: 'AI 對話', description: '本機 Hermes 對話，與台股研究流程分離' };
+		: { title: 'AI 對話', description: '本機 AI 對話，與台股研究流程分離' };
 	const loadState = props.configError ? 'error' : props.config ? 'ready' : 'loading';
 	const status = props.configError || (props.config ? (isTaiwan ? '後端服務已設定' : 'AI 助手已連接') : '正在取得後端設定');
-	const subStatus = isTaiwan ? 'TWSE · TPEx · 官方資料與可追溯狀態' : '本機 Hermes AI 對話';
+	const subStatus = isTaiwan ? 'TWSE · TPEx · 官方資料與可追溯狀態' : '本機 AI 對話';
 
 	return (
 		<main className={`workspace-frame ${props.sidebarExpanded ? 'sidebar-expanded' : 'sidebar-collapsed'}`}>

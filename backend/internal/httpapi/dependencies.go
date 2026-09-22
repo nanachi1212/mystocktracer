@@ -6,8 +6,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 	"github.com/nanachi1212/mystocktracer/backend/internal/providers/taiwan"
 	"github.com/nanachi1212/mystocktracer/backend/internal/providers/toalpha"
 	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanportfolio"
@@ -26,8 +26,8 @@ func prepareRuntimeDependencies(config Config) (Config, error) {
 	}
 	fillTaiwanProviders(&config)
 	startupError := openPersistence(&config)
-	if config.HermesGateway != nil && (!config.StrictPersistence || startupError == nil) {
-		syncRuntimeSettings(config.SettingsStore, config.HermesGateway)
+	if config.AgentRuntime != nil && (!config.StrictPersistence || startupError == nil) {
+		syncRuntimeSettings(config.SettingsStore, config.AgentRuntime)
 	}
 	return config, startupError
 }
@@ -155,7 +155,7 @@ func syncRuntimeSettings(store *appsettings.Store, runtime AgentRuntime) {
 			values = updated
 		}
 	}
-	if profiles, ok := runtime.(hermes.ProfileGateway); ok {
+	if profiles, ok := runtime.(agent.ProfileConfigurator); ok {
 		if migratedKey == nil {
 			if key, err := runtime.ModelAPIKey(); err == nil && strings.TrimSpace(key) != "" {
 				migratedKey = &key
