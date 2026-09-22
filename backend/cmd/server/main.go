@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent/hermesadapter"
 	"github.com/nanachi1212/mystocktracer/backend/internal/httpapi"
 	"github.com/nanachi1212/mystocktracer/backend/internal/runtimelog"
 )
@@ -35,7 +35,7 @@ func run(ctx context.Context) error {
 		}
 	}
 
-	agent := hermes.NewRuntime(hermes.Config{
+	agent := hermesadapter.New(hermesadapter.Config{
 		RuntimeRoot: cfg.hermesRuntimeRoot,
 		Home:        cfg.hermesHome,
 		WorkDir:     cfg.hermesWorkDir,
@@ -46,7 +46,7 @@ func run(ctx context.Context) error {
 		WatchlistDBPath:        cfg.watchlistDBPath,
 		TaiwanPortfolioDBPath:  cfg.portfolioDBPath,
 		SettingsPath:           cfg.settingsPath,
-		HermesGateway:          agent,
+		AgentRuntime:           agent,
 		Logger:                 log.Default(),
 		StrictPersistence:      true,
 		TaiwanCashflowCacheDir: cfg.cashflowCacheDirectory,

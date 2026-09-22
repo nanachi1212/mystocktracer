@@ -1,11 +1,11 @@
 package httpapi
 
-import "github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+import "github.com/nanachi1212/mystocktracer/backend/internal/agent"
 
 type agentSettingsView struct {
-	ReasoningEffort string             `json:"reasoning_effort"`
-	Skills          []hermes.SkillInfo `json:"skills"`
-	MCPServers      []mcpServerView    `json:"mcp_servers"`
+	ReasoningEffort string               `json:"reasoning_effort"`
+	Skills          []agent.SkillSetting `json:"skills"`
+	MCPServers      []mcpServerView      `json:"mcp_servers"`
 }
 
 type mcpServerView struct {

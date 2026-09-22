@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 const (
@@ -289,7 +289,7 @@ func financialCategoryApplicability(category string) string {
 	return "not_applicable_for_category"
 }
 
-func GenerateTaiwanResearch(ctx context.Context, prompter hermes.IsolatedPrompter, input TaiwanStockIntelligence, now time.Time) TaiwanAIResearch {
+func GenerateTaiwanResearch(ctx context.Context, prompter agent.IsolatedPrompter, input TaiwanStockIntelligence, now time.Time) TaiwanAIResearch {
 	unavailable := func(reason string) TaiwanAIResearch {
 		return TaiwanAIResearch{ModelVersion: TaiwanAIResearchVersion, Symbol: input.Symbol, Status: "unavailable", Reason: reason, Strengths: []TaiwanResearchSection{}, Risks: []TaiwanResearchSection{}, Conflicts: []string{}, DataLimitations: []string{}, ResearchNotes: []string{}}
 	}

@@ -134,7 +134,7 @@ th, td { border-bottom: 1px solid var(--line-soft); }
 .down { color: var(--down); }
 .market-partial-warning, [class*="-error"], [class*="-warning"] { border-radius: 8px; }
 
-/* Settings remain usable while the Hermes-specific UI awaits Phase B3. */
+/* Shared settings presentation for product-owned AI panels. */
 .settings-overlay {
 	position: fixed;
 	inset: 0;
@@ -161,7 +161,7 @@ th, td { border-bottom: 1px solid var(--line-soft); }
 .skill-settings-list, .mcp-server-list, .agent-settings-block { display: grid; gap: 8px; }
 .skill-setting-item, .mcp-server-list > article { padding: 10px; border: 1px solid var(--line-soft); border-radius: 8px; }
 
-/* Temporary Hermes chat presentation; protocol and deeper UI replacement are Phase B3. */
+/* Product AI chat presentation. */
 .ai-chat-workspace { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 110px); }
 .ai-thread-rail { padding: 12px; border-right: 1px solid var(--line); background: #fff; }
 .ai-thread-list { display: grid; gap: 6px; }

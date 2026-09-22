@@ -6,14 +6,14 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 )
 
 var mcpNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func validateAgentSettingsUpdate(update agentSettingsUpdateRequest) error {
-	if update.ReasoningEffort != nil && !hermes.IsValidReasoningEffort(strings.ToLower(strings.TrimSpace(*update.ReasoningEffort))) {
+	if update.ReasoningEffort != nil && !agent.IsValidReasoningEffort(strings.ToLower(strings.TrimSpace(*update.ReasoningEffort))) {
 		return fmt.Errorf("無效的思考等級: %s", *update.ReasoningEffort)
 	}
 	if update.Skills != nil && len(*update.Skills) > 500 || update.MCPServers != nil && len(*update.MCPServers) > 100 {

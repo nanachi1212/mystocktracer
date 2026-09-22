@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 func (s *Server) settingsGet(w http.ResponseWriter, _ *http.Request) {
@@ -22,7 +22,7 @@ func (s *Server) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	secrets := collectSecretUpdates(request)
 	if secrets.hasUpdates() && s.agentRuntime == nil {
-		writeError(w, http.StatusServiceUnavailable, "Hermes 設定服務不可用")
+		writeError(w, http.StatusServiceUnavailable, "AI 設定服務不可用")
 		return
 	}
 	values, err := s.settingsStore.Update(func(values *appsettings.Values) error {
@@ -139,7 +139,7 @@ func (s *Server) syncAgentSettings(values appsettings.Values, updates settingsSe
 	if s.agentRuntime == nil {
 		return nil
 	}
-	if profiles, ok := s.agentRuntime.(hermes.ProfileGateway); ok {
+	if profiles, ok := s.agentRuntime.(agent.ProfileConfigurator); ok {
 		for id, update := range updates.profile {
 			if id != values.ActiveLLMProfileID {
 				if err := profiles.StoreLLMProfileKey(id, update); err != nil {

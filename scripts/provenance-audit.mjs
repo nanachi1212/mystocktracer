@@ -6,7 +6,7 @@ const phaseB2Base = '1b4310da00607a9431d18ccdddd6347f0b94d204';
 const codeExtensions = new Set(['.go', '.ts', '.tsx', '.cjs', '.mjs', '.css', '.html']);
 const excluded = /(^|\/)(node_modules|vendor|dist|build|out|coverage)(\/|$)|(^|\/)(package-lock\.json|go\.sum)$/;
 const unclear = /^(desktop\/assets\/easy-stock\.|frontend\/public\/easy-stock-mark)/;
-const phaseB2Replacements = new Set([
+const reviewedReplacements = new Set([
   'backend/cmd/server/main.go',
   'backend/internal/appsettings/store.go',
   'backend/internal/httpapi/ai_chat.go',
@@ -15,6 +15,11 @@ const phaseB2Replacements = new Set([
   'frontend/src/App.tsx',
   'frontend/src/lib/backend.ts',
   'frontend/src/styles.css',
+  'backend/internal/httpapi/llm_connection.go',
+  'backend/internal/httpapi/llm_models.go',
+  'frontend/src/components/AIChatWorkspace.tsx',
+  'frontend/src/components/MarkdownContent.tsx',
+  'frontend/src/components/SettingsDrawer.tsx',
 ]);
 
 function git(...args) {
@@ -73,7 +78,7 @@ function audit(tree, replacementOverride) {
   for (const path of paths) {
     let category;
     if (unclear.test(path)) category = 'unclear';
-    else if (replacementOverride && phaseB2Replacements.has(path)) category = 'original';
+    else if (replacementOverride && reviewedReplacements.has(path)) category = 'original';
     else if (!forkBlobs.has(path)) category = 'original';
     else {
       const hash = tree === 'WORKTREE' ? currentHashByPath.get(path) : treeBlobMap.get(path);

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 	"github.com/nanachi1212/mystocktracer/backend/internal/stockanalysis"
 	"github.com/nanachi1212/mystocktracer/backend/internal/taiwanwatchlist"
 )
@@ -309,8 +309,8 @@ func (s *Server) taiwanStockResearchHandler(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var prompter hermes.IsolatedPrompter
-	if value, ok := s.agentRuntime.(hermes.IsolatedPrompter); ok {
+	var prompter agent.IsolatedPrompter
+	if value, ok := s.agentRuntime.(agent.IsolatedPrompter); ok {
 		prompter = value
 	}
 	research := stockanalysis.GenerateTaiwanResearch(ctx, prompter, intelligence, time.Now().UTC())

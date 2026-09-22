@@ -69,7 +69,7 @@ func TestSuccessfulTaiwanResearchPersistsIdempotentlyAndFailureDoesNotPersist(t 
 		t.Fatal(err)
 	}
 	defer store.Close()
-	server := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}, HermesGateway: &fakeTaiwanResearchGateway{fakeHermesGateway: &fakeHermesGateway{}, content: validHTTPResearchJSON()}, WatchlistStore: store})
+	server := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}, AgentRuntime: &fakeTaiwanResearchGateway{fakeAgentRuntime: &fakeAgentRuntime{}, content: validHTTPResearchJSON()}, WatchlistStore: store})
 	defer server.Close()
 	for range 2 {
 		request := httptest.NewRequest(http.MethodPost, "/api/v1/tw/stocks/2330.TWSE/research", nil)
@@ -102,7 +102,7 @@ func TestSuccessfulTaiwanResearchPersistsIdempotentlyAndFailureDoesNotPersist(t 
 		t.Fatal(err)
 	}
 	defer failedStore.Close()
-	failedServer := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}, HermesGateway: &fakeHermesGateway{}, WatchlistStore: failedStore})
+	failedServer := NewServer(Config{TaiwanIntelligence: fixedTaiwanIntelligence{}, AgentRuntime: &fakeAgentRuntime{}, WatchlistStore: failedStore})
 	defer failedServer.Close()
 	response := httptest.NewRecorder()
 	failedServer.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/tw/stocks/2330.TWSE/research", nil))

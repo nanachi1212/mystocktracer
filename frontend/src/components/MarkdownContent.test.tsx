@@ -42,6 +42,15 @@ describe('MessageContent', () => {
 		expect(output).not.toContain('alert(1)');
 		expect(output).toContain('href="https://example.com"');
 		expect(output).toContain('target="_blank"');
-		expect(output).toContain('rel="noreferrer"');
+		expect(output).toContain('rel="noreferrer noopener"');
+	});
+
+	it('renders unsafe URL schemes as inert text', () => {
+		const output = renderToStaticMarkup(<MessageContent markdown content={'[script](javascript:alert(1)) [data](data:text/html,unsafe)'} />);
+
+		expect(output).not.toContain('href="javascript:');
+		expect(output).not.toContain('href="data:');
+		expect(output).toContain('script');
+		expect(output).toContain('data');
 	});
 });

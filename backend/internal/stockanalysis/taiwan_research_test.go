@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 	"github.com/nanachi1212/mystocktracer/backend/internal/foundation"
-	"github.com/nanachi1212/mystocktracer/backend/internal/hermes"
 )
 
 type fakeTaiwanResearchPrompter struct {
@@ -19,9 +19,9 @@ type fakeTaiwanResearchPrompter struct {
 	system, prompt string
 }
 
-func (p *fakeTaiwanResearchPrompter) PromptIsolated(_ context.Context, system, prompt string) (hermes.PromptResult, error) {
+func (p *fakeTaiwanResearchPrompter) PromptIsolated(_ context.Context, system, prompt string) (agent.PromptResult, error) {
 	p.system, p.prompt = system, prompt
-	return hermes.PromptResult{Content: p.content}, p.err
+	return agent.PromptResult{Content: p.content}, p.err
 }
 
 func validTaiwanResearchJSON(symbol string) string {
