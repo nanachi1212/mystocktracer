@@ -1,40 +1,39 @@
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const test = require('node:test');
-
+const fixture = require('./fixture.cjs');
 const { createRotatingLogger, redactRuntimeLog } = require('../runtime-logger.cjs');
 
-test('runtime logger redacts secrets before writing', () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-logs-'));
-  const logger = createRotatingLogger({ directory, fileName: 'desktop.log', component: 'desktop' });
-
-	logger.error('Authorization: Bearer live-secret token=abc123 api_key:sk-test cookie=session-value {"credential":"json-secret"}');
-
-  const content = fs.readFileSync(path.join(directory, 'desktop.log'), 'utf8');
-	assert.doesNotMatch(content, /live-secret|abc123|sk-test|session-value|json-secret/);
-  assert.match(content, /<redacted>/);
+test('secret forms are redacted on disk and on the console mirror', t => {
+  const f = fixture(t), mirrored = [];
+  const log = createRotatingLogger({ directory: f.root, fileName: 'events.log', mirror: { error: line => mirrored.push(line) } });
+  for (const input of ['Bearer synthetic-one', 'token=synthetic-two', 'api_key:synthetic-three', 'cookie=synthetic-four', '{"credential":"synthetic-five"}']) log.error(input);
+  const persisted = f.read('events.log').toString();
+  assert.doesNotMatch(persisted + mirrored.join('\n'), /synthetic-(one|two|three|four|five)/);
+  assert.equal(mirrored.length, 5);
+  assert.ok(mirrored.every(line => line.includes('<redacted>')));
+  assert.equal(persisted.split('<redacted>').length - 1, 5);
 });
 
-test('runtime logger rotates and bounds retained files', () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-logs-'));
-  const logger = createRotatingLogger({
-    directory,
-    fileName: 'renderer.log',
-    component: 'renderer',
-    maxBytes: 220,
-    backups: 2,
-  });
-
-  for (let index = 0; index < 12; index += 1) logger.info(`entry-${index}-${'x'.repeat(80)}`);
-
-  const files = fs.readdirSync(directory).filter((name) => name.startsWith('renderer.log')).sort();
-  assert.deepEqual(files, ['renderer.log', 'renderer.log.1', 'renderer.log.2']);
-  assert.match(files.map((name) => fs.readFileSync(path.join(directory, name), 'utf8')).join(''), /entry-11/);
+test('rotation retains exactly the newest bounded records and the requested backup count', t => {
+  const f = fixture(t);
+  const log = createRotatingLogger({ directory: f.root, fileName: 'bounded.log', maxBytes: 128, backups: 2 });
+  for (let n = 0; n < 15; n++) log.info('record-' + n + '-' + 'x'.repeat(200));
+  assert.deepEqual(fs.readdirSync(f.root).sort(), ['bounded.log', 'bounded.log.1', 'bounded.log.2']);
+  for (const file of fs.readdirSync(f.root)) assert.ok(fs.statSync(f.at(file)).size <= 128);
+  assert.match(f.read('bounded.log').toString(), /record-14-/);
+  assert.match(f.read('bounded.log.1').toString(), /record-13-/);
+  assert.match(f.read('bounded.log.2').toString(), /record-12-/);
 });
 
-test('redactor removes secret query parameters without removing route context', () => {
-  const redacted = redactRuntimeLog('GET /api/v1/settings?token=secret&mode=test');
-  assert.equal(redacted, 'GET /api/v1/settings?token=<redacted>&mode=test');
+test('query redaction retains the endpoint and public parameters', () => {
+  assert.equal(redactRuntimeLog('GET /api/v1/settings?token=synthetic&mode=test'), 'GET /api/v1/settings?token=<redacted>&mode=test');
+});
+
+test('zero-backup mode does not accumulate rotated files', t => {
+  const f = fixture(t);
+  const log = createRotatingLogger({ directory: f.root, fileName: 'single.log', backups: 0, maxBytes: 80 });
+  for (let n = 0; n < 6; n++) log.info('entry-' + n + 'x'.repeat(100));
+  assert.deepEqual(fs.readdirSync(f.root), ['single.log']);
+  assert.match(f.read('single.log').toString(), /entry-5/);
 });

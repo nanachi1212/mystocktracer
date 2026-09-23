@@ -1,75 +1,104 @@
 package runtimelog
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestWriterRotatesAndBoundsBackups(t *testing.T) {
-	directory := t.TempDir()
-	w, err := NewWriter(directory, "backend.log", 180, 2)
+func TestLoggingStorageContract(t *testing.T) {
+	for _, retained := range []int{0, 2} {
+		t.Run(fmt.Sprintf("retain-%d", retained), func(t *testing.T) {
+			root := t.TempDir()
+			writer, err := NewWriter(root, "events.log", 128, retained)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for n := 0; n < 15; n++ {
+				record := []byte(fmt.Sprintf("record-%02d %s\n", n, strings.Repeat("x", 160)))
+				written, err := writer.Write(record)
+				if err != nil || written != len(record) {
+					t.Fatalf("write=%d err=%v", written, err)
+				}
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != retained+1 {
+				t.Fatalf("files=%d want=%d", len(entries), retained+1)
+			}
+			for index := 0; index <= retained; index++ {
+				name := "events.log"
+				if index > 0 {
+					name += fmt.Sprintf(".%d", index)
+				}
+				contents, err := os.ReadFile(filepath.Join(root, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(contents) > 128 || !bytes.Contains(contents, []byte(fmt.Sprintf("record-%02d", 14-index))) {
+					t.Fatalf("invalid retained record %s", name)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := writer.Write([]byte("closed")); err != io.ErrClosedPipe {
+				t.Fatalf("closed write=%v", err)
+			}
+		})
+	}
+}
+
+func TestSecretRedactionContract(t *testing.T) {
+	vectors := [][2]string{
+		{"Bearer synthetic-a", "Bearer <redacted>"},
+		{"token=synthetic-b", "token=<redacted>"},
+		{"api_key:synthetic-c", "api_key:<redacted>"},
+		{"cookie=synthetic-d", "cookie=<redacted>"},
+		{"GET /api?token=synthetic-e&mode=test", "GET /api?token=<redacted>&mode=test"},
+		{"{\"credential\":\"synthetic-f\"}", "{\"credential\":<redacted>}"},
+	}
+	root := t.TempDir()
+	writer, err := NewWriter(root, "redacted.log", DefaultMaxBytes, 1)
 	if err != nil {
-		t.Fatalf("NewWriter: %v", err)
+		t.Fatal(err)
 	}
-	defer w.Close()
-	for index := range 12 {
-		_, _ = fmt.Fprintf(w, "entry-%d-%s\n", index, strings.Repeat("x", 70))
-	}
-	for _, name := range []string{"backend.log", "backend.log.1", "backend.log.2"} {
-		if _, err := os.Stat(filepath.Join(directory, name)); err != nil {
-			t.Fatalf("missing rotated file %s: %v", name, err)
+	for _, vector := range vectors {
+		if got := Redact(vector[0]); got != vector[1] {
+			t.Errorf("redaction=%q want=%q", got, vector[1])
+		}
+		if _, err := writer.Write([]byte(vector[0] + "\n")); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(directory, "backend.log.3")); !os.IsNotExist(err) {
-		t.Fatalf("unexpected extra backup: %v", err)
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestRedactRemovesRuntimeSecrets(t *testing.T) {
-	value := Redact(`Authorization: Bearer live-secret token=abc123 api_key:sk-test cookie=session-value /path?key=query-secret&mode=test {"credential":"json-secret"}`)
-	for _, secret := range []string{"live-secret", "abc123", "sk-test", "session-value", "query-secret", "json-secret"} {
-		if strings.Contains(value, secret) {
-			t.Fatalf("secret %q leaked in %q", secret, value)
-		}
-	}
-	if !strings.Contains(value, "mode=test") || !strings.Contains(value, "<redacted>") {
-		t.Fatalf("unexpected redacted value: %q", value)
-	}
-}
-
-func TestWriterRedactsBeforePersisting(t *testing.T) {
-	directory := t.TempDir()
-	w, err := NewWriter(directory, "backend.log", DefaultMaxBytes, 1)
+	persisted, err := os.ReadFile(filepath.Join(root, "redacted.log"))
 	if err != nil {
-		t.Fatalf("NewWriter: %v", err)
+		t.Fatal(err)
 	}
-	if _, err := fmt.Fprintln(w, "Authorization: Bearer live-secret api_key=sk-test"); err != nil {
-		t.Fatalf("write: %v", err)
+	if bytes.Contains(persisted, []byte("synthetic-")) {
+		t.Fatal("synthetic secret reached storage")
 	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("close: %v", err)
+	if bytes.Count(persisted, []byte("<redacted>")) != len(vectors) {
+		t.Fatal("missing redacted record")
 	}
-	content, err := os.ReadFile(filepath.Join(directory, "backend.log"))
-	if err != nil {
-		t.Fatalf("read log: %v", err)
-	}
-	if strings.Contains(string(content), "live-secret") || strings.Contains(string(content), "sk-test") {
-		t.Fatalf("runtime log leaked a secret: %q", content)
+	if !bytes.Contains(persisted, []byte("mode=test")) {
+		t.Fatal("diagnostic context lost")
 	}
 }
 
-func TestRedactPreservesDiagnosticPrefixes(t *testing.T) {
-	cases := map[string]string{
-		"GET /api?token=synthetic&mode=test": "GET /api?token=<redacted>&mode=test",
-		`api_key:synthetic next=value`:       `api_key:<redacted> next=value`,
-		`{"credential":"synthetic"}`:         `{"credential":<redacted>}`,
-	}
-	for input, want := range cases {
-		if got := Redact(input); got != want {
-			t.Errorf("Redact(%q)=%q, want %q", input, got, want)
+func TestLogDestinationRejectsTraversal(t *testing.T) {
+	for _, name := range []string{"", ".", "../escape.log"} {
+		if _, err := NewWriter(t.TempDir(), name, 128, 1); err == nil {
+			t.Fatalf("accepted %q", name)
 		}
 	}
 }

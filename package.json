@@ -2,7 +2,9 @@
   "name": "mystocktracer",
   "private": true,
   "scripts": {
-    "dev:backend": "cd backend && MYSTOCKTRACER_ADDR=127.0.0.1:20081 go run ./cmd/server",
+    "dev:backend": "node scripts/dev.mjs backend",
+    "test:tooling": "node --test scripts/*.test.mjs",
+    "audit:provenance": "node scripts/provenance-audit.mjs",
     "dev:frontend": "npm --workspace frontend run dev",
     "dev:desktop": "npm --workspace desktop run dev",
     "restart": "node scripts/rebuild-restart.mjs",

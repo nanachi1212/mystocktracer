@@ -1,11 +1,19 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  developmentSetting,
   resolveBrowserMode,
   getBrowserLaunchPlan,
   findChromeBinary,
   launchBrowser,
 } from './rebuild-restart.mjs';
+
+test('development settings prefer canonical values including explicit empty values', () => {
+  assert.equal(developmentSetting('ADDR', {}), '');
+  assert.equal(developmentSetting('ADDR', { A_STOCK_ADDR: 'legacy:1' }), 'legacy:1');
+  assert.equal(developmentSetting('ADDR', { A_STOCK_ADDR: 'legacy:1', MYSTOCKTRACER_ADDR: ' canonical:2 ' }), 'canonical:2');
+  assert.equal(developmentSetting('ADDR', { A_STOCK_ADDR: 'legacy:1', MYSTOCKTRACER_ADDR: '' }), '');
+});
 
 test('resolveBrowserMode: defaults to incognito when env is unset or empty', () => {
   assert.equal(resolveBrowserMode(undefined), 'incognito');

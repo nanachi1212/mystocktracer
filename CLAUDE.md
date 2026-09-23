@@ -10,6 +10,11 @@ Point-in-Time semantics, provenance requirements, and reuse-first policy.
 
 ## mystocktracer Repository Rules
 
+本 repository 採 OSS transition / maintenance；下列責任分工用於維護既有行為，
+不再發展平行產品。`TWstockfor_tick-stock-panel` 是唯一長期台股主產品，
+新台股核心功能優先在該專案實作。OSS independence 是否完成須依
+`docs/oss-provenance-audit.md` 判斷，本次不變更 LICENSE。
+
 Before implementing or modifying Taiwan-market-related functionality, also read:
 
 `docs/TAIWAN_DEVELOPMENT_OWNERSHIP.md`

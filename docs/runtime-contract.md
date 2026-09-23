@@ -5,7 +5,7 @@
 ## Backend startup
 
 - 後端預設監聽 `127.0.0.1:20081`；`MYSTOCKTRACER_ADDR` 可覆寫，過渡期在新名稱未設定時接受 `A_STOCK_ADDR`。
-- 原始碼啟動時，資料目錄依使用者設定目錄解析。為保留既有資料，已存在且已設定的 `easy-stock` 目錄優先；否則若歷史 `a-stock-ai` 目錄有設定，繼續使用該目錄。本階段不變更 Electron `userData` 根目錄。
+- 原始碼 backend 依序選擇有既有狀態的 `mystocktracer`、`easy-stock`、`a-stock-ai` 使用者設定目錄；狀態包含 settings、任一台股資料庫或非空 hermes-home。單獨 backend 不搬動資料，沒有既有狀態則使用 canonical 目錄。Electron 的 COPY migration 另依 [桌面身份遷移](./desktop-identity-migration.md) 執行。
 - 設定檔預設為資料目錄下的 `settings.json`；自選股與持倉分別繼續使用 `taiwan-watchlist.db` 與 `taiwan-portfolio.db`。現金流量快取若啟用，路徑不得在無 migration 時變更。
 - `MYSTOCKTRACER_*` 是新的 canonical 環境變數前綴；對台股 runtime 仍需要的設定，若新名稱未設定，才回退讀取對應的 `A_STOCK_*`。新名稱永遠優先。
 - 啟動時只建立當前台股產品所需的 settings、Watchlist、Portfolio、Taiwan provider、cashflow cache、Hermes gateway 與 HTTP server。
@@ -61,4 +61,4 @@
 ## Persisted product data
 
 - 本階段不改 DB schema 或預設路徑。既有 `settings.json`、`taiwan-watchlist.db`、`taiwan-portfolio.db`、研究歷史、研究比較資料與 alert inbox/history 必須可直接繼續讀取。
-- Electron `app.setName`、`appId`、`productName`、安裝升級 identity 與 `userData` root 本階段保持不變。
+- Phase B4 已將 Electron name、appId、productName 與 userData identity 切換至 mystocktracer。舊 profile 僅複製並驗證，來源保留；NSIS GUID 為既有安裝升級相容性保留，不代表使用舊 runtime。完整規則見桌面身份遷移文件。

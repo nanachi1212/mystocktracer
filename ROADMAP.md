@@ -1,6 +1,6 @@
 # mystocktracer 產品路線圖
 
-mystocktracer 的目標是建立一套理解台股語境、證據可追溯、本機優先的研究工作台。路線圖用於表達優先方向，不代表固定發布日期；實際順序會依資料來源穩定性、使用回饋與維護成本調整。
+mystocktracer 現採 OSS transition / maintenance 模式：維護既有安裝、修復問題並完成來源整理。`TWstockfor_tick-stock-panel` 是唯一長期台股主產品，新台股核心功能移往該專案規劃；此 repository 不再作為平行功能主線。來源獨立化仍有 blocker，見 [OSS 來源稽核](./docs/oss-provenance-audit.md)，尚未變更 LICENSE。
 
 本專案由 [jundizhou/easy-stock](https://github.com/jundizhou/easy-stock) 衍生。舊版 A 股 runtime 已於 Phase B1 移除；上游署名、歷史與目前授權仍保留。
 
@@ -26,7 +26,7 @@ mystocktracer 的目標是建立一套理解台股語境、證據可追溯、本
 
 ---
 
-## 台股產品後續方向
+## 歷史產品方向（保留紀錄，非目前開發承諾）
 
 ### 資料可信度
 

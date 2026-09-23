@@ -1,69 +1,50 @@
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const test = require('node:test');
+const fixture = require('./fixture.cjs');
+const backup = require('../data-protection.cjs');
 
-const { createUpdateBackup, listUpdateBackups, resolveBackupRoot } = require('../data-protection.cjs');
-
-function write(root, relativePath, content) {
-  const target = path.join(root, relativePath);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, content);
-}
-
-test('update backup preserves models, articles, memories and login state byte-for-byte', () => {
-  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-backup-'));
-  const userData = path.join(appData, 'easy-stock');
-  fs.mkdirSync(userData);
-  const fixtures = {
-    'settings.json': '{"llm":{"provider":"openai","model":"gpt-test"}}',
-    'reviews.db': Buffer.from([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0, 0xff]),
-    'portfolio-inspections.db': 'portfolio-inspection-history',
-    'taiwan-portfolio.db': 'taiwan-portfolio-holdings',
-    'market-emotion.db': 'emotion-data',
-    'theme-radar.db': 'theme-data',
-    'hermes-home/.env': 'OPENAI_API_KEY=test-secret\n',
-    'hermes-home/config.yaml': 'model: gpt-test\n',
-    'hermes-home/memories/session.json': '{"memory":"keep"}',
-    'hermes-workspace/imported/article.md': '# imported article',
-    'browser-auth/xueqiu.json': '{"cookies":[{"name":"xq_a_token"}]}',
-    'wechat-download-api/.env': 'WX_KEY=keep\n',
-    'wechat-download-api/data/account.json': '{"fakeid":"123"}',
-    'trading-mastery/index.json': '{"items":["keep"]}',
+test('snapshot preserves synthetic settings, databases, secrets, unknown files and nested browser state', t => {
+  const f = fixture(t);
+  const bytes = {
+    'settings.json': '{"model":"synthetic"}',
+    'taiwan-watchlist.db': Buffer.from([0, 17, 255]),
+    'taiwan-portfolio.db': Buffer.from([1, 2, 3]),
+    'hermes-home/.env': 'SYNTHETIC_KEY=fixture-only\n',
+    'hermes-home/config.yaml': 'model: fixture\n',
+    'hermes-home/memories/session.json': '{"synthetic":true}',
+    'hermes-workspace/imported/note.md': 'synthetic note',
+    'unknown-extension/config.json': '{"keep":true}',
+    'unknown-extension/state.bin': Buffer.from([255, 4]),
+    'browser-auth/retained-session.json': '{"synthetic":true}',
+    'Partitions/persist_fixture/Cookies': Buffer.from([8, 9]),
+    'Partitions/persist_fixture/Code Cache/keep.bin': 'nested cache is user state',
   };
-  for (const [relativePath, content] of Object.entries(fixtures)) write(userData, relativePath, content);
-  write(userData, 'Cache/remove.bin', 'cache');
-  write(userData, 'Partitions/persist_xueqiu/Cookies', Buffer.from([1, 2, 3, 4, 5]));
-  write(userData, 'Partitions/persist_xueqiu/Code Cache/remove.bin', 'cache');
-  write(userData, 'Partitions/persist_mystocktracer_ai_chatgpt/Cookies', Buffer.from([6, 7, 8]));
-
-  const backup = createUpdateBackup({ userDataPath: userData, fromVersion: '0.3.0', toVersion: '0.4.0' });
-  for (const [relativePath, content] of Object.entries(fixtures)) {
-    assert.deepEqual(fs.readFileSync(path.join(backup.path, 'data', relativePath)), Buffer.from(content));
+  for (const [name, value] of Object.entries(bytes)) f.put('profile/' + name, value);
+  f.put('profile/Cache/discard.bin');
+  const result = backup.createUpdateBackup({ userDataPath: f.at('profile'), fromVersion: '0.9.2', toVersion: '0.9.3' });
+  for (const [name, value] of Object.entries(bytes)) {
+    assert.deepEqual(fs.readFileSync(require('node:path').join(result.path, 'data', name)), Buffer.from(value));
+    assert.deepEqual(f.read('profile/' + name), Buffer.from(value));
   }
-  assert.equal(fs.existsSync(path.join(backup.path, 'data', 'Cache')), false);
-  assert.equal(fs.existsSync(path.join(backup.path, 'data', 'Partitions')), true);
-  assert.equal(backup.manifest.files.filter((file) => file.type === 'file').length, Object.keys(fixtures).length + 3);
-  assert.equal(listUpdateBackups(backup.backupRoot).length, 1);
+  assert.equal(fs.existsSync(require('node:path').join(result.path, 'data/Cache')), false);
+  assert.equal(result.manifest.files.filter(entry => entry.type === 'file').length, Object.keys(bytes).length);
+  assert.equal(result.manifest.schemaVersion, 2);
+  assert.equal(backup.listUpdateBackups(result.backupRoot).length, 1);
 });
 
-test('backup directory is outside user data and all existing backups remain', () => {
-  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-backup-'));
-  const userData = path.join(appData, 'easy-stock');
-  fs.mkdirSync(userData);
-  write(userData, 'settings.json', '{}');
-  const backupRoot = resolveBackupRoot(userData);
-  assert.equal(backupRoot, path.join(appData, 'mystocktracer-update-backups'));
-  for (let day = 1; day <= 4; day += 1) {
-    createUpdateBackup({ userDataPath: userData, backupRoot, fromVersion: '0.3.0', toVersion: `0.3.${day}`, now: new Date(`2026-08-0${day}T00:00:00.000Z`) });
-  }
-  const backups = listUpdateBackups(backupRoot);
-  assert.equal(backups.length, 4);
-  assert.deepEqual(backups.map((item) => item.manifest.toVersion), ['0.3.4', '0.3.3', '0.3.2', '0.3.1']);
+test('snapshots retain all previous versions outside the profile and list newest first', t => {
+  const f = fixture(t);
+  f.put('profile/settings.json', '{}');
+  assert.equal(backup.resolveBackupRoot(f.at('profile')), f.at('mystocktracer-update-backups'));
+  const targets = ['0.9.3', '0.9.4', '0.9.5', '0.9.6'];
+  for (const [index, version] of targets.entries()) backup.createUpdateBackup({ userDataPath: f.at('profile'), fromVersion: '0.9.2', toVersion: version, now: new Date(Date.UTC(2026, 8, 20 + index)) });
+  const found = backup.listUpdateBackups(f.at('mystocktracer-update-backups'));
+  assert.deepEqual(found.map(item => item.manifest.toVersion), [...targets].reverse());
+  assert.ok(found.every(item => fs.existsSync(require('node:path').join(item.path, 'data/settings.json'))));
 });
 
-test('rejects a backup root nested inside user data', () => {
-  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-backup-'));
-  assert.throws(() => resolveBackupRoot(userData, path.join(userData, 'backups')), /不能位於應用資料目錄內/);
+test('backup cannot target the profile itself or any descendant', t => {
+  const f = fixture(t);
+  for (const relative of ['profile', 'profile/nested/copies']) assert.throws(() => backup.resolveBackupRoot(f.at('profile'), f.at(relative)), /不能位於/);
 });

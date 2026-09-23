@@ -17,9 +17,13 @@ const backendBinary = path.join(
 );
 const viteEntry = path.join(rootDir, "node_modules", "vite", "bin", "vite.js");
 
-const backendAddress = process.env.A_STOCK_ADDR || "127.0.0.1:20081";
-const frontendHost = process.env.A_STOCK_FRONTEND_HOST || "127.0.0.1";
-const frontendPort = parsePort(process.env.A_STOCK_FRONTEND_PORT || "20073", "A_STOCK_FRONTEND_PORT");
+export function developmentSetting(name, env = process.env) {
+  return String(env[`MYSTOCKTRACER_${name}`] ?? env[`A_STOCK_${name}`] ?? "").trim();
+}
+
+const backendAddress = developmentSetting("ADDR") || "127.0.0.1:20081";
+const frontendHost = developmentSetting("FRONTEND_HOST") || "127.0.0.1";
+const frontendPort = parsePort(developmentSetting("FRONTEND_PORT") || "20073", "MYSTOCKTRACER_FRONTEND_PORT");
 const { host: backendHost, port: backendPort } = parseAddress(backendAddress);
 const backendUrl = `http://${urlHost(backendHost)}:${backendPort}`;
 const frontendUrl = `http://${urlHost(frontendHost)}:${frontendPort}`;
@@ -34,7 +38,7 @@ const files = {
 export const DEFAULT_BROWSER_MODE = "incognito";
 export const ALLOWED_BROWSER_MODES = new Set(["incognito", "normal", "none"]);
 
-export function resolveBrowserMode(value = process.env.A_STOCK_BROWSER_MODE) {
+export function resolveBrowserMode(value = developmentSetting("BROWSER_MODE")) {
   if (value === undefined || value === null) {
     return DEFAULT_BROWSER_MODE;
   }
@@ -159,15 +163,15 @@ function parsePort(value, name) {
 function parseAddress(value) {
   const bracketed = /^\[([^\]]+)]:(\d+)$/.exec(value);
   if (bracketed) {
-    return { host: bracketed[1], port: parsePort(bracketed[2], "A_STOCK_ADDR port") };
+    return { host: bracketed[1], port: parsePort(bracketed[2], "MYSTOCKTRACER_ADDR port") };
   }
   const separator = value.lastIndexOf(":");
   if (separator <= 0) {
-    throw new Error("A_STOCK_ADDR must use host:port format.");
+    throw new Error("MYSTOCKTRACER_ADDR must use host:port format.");
   }
   return {
     host: value.slice(0, separator),
-    port: parsePort(value.slice(separator + 1), "A_STOCK_ADDR port"),
+    port: parsePort(value.slice(separator + 1), "MYSTOCKTRACER_ADDR port"),
   };
 }
 
@@ -428,7 +432,7 @@ async function restart() {
     command: backendBinary,
     args: [],
     cwd: rootDir,
-    env: { ...process.env, A_STOCK_ADDR: backendAddress, A_STOCK_TOKEN: process.env.A_STOCK_TOKEN || "" },
+    env: { ...process.env, MYSTOCKTRACER_ADDR: backendAddress, MYSTOCKTRACER_TOKEN: developmentSetting("TOKEN") },
     logFile: files.backendLog,
     pidFile: files.backendPid,
   });
@@ -442,8 +446,8 @@ async function restart() {
     cwd: path.join(rootDir, "frontend"),
     env: {
       ...process.env,
-      VITE_A_STOCK_BACKEND_URL: backendUrl,
-      VITE_A_STOCK_TOKEN: process.env.A_STOCK_TOKEN || "",
+      VITE_MYSTOCKTRACER_BACKEND_URL: backendUrl,
+      VITE_MYSTOCKTRACER_TOKEN: developmentSetting("TOKEN"),
     },
     logFile: files.frontendLog,
     pidFile: files.frontendPid,

@@ -1,49 +1,26 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
-const PACKAGE_RESOURCES_ENV = 'MYSTOCKTRACER_PACKAGE_RESOURCES_DIR';
-
-export function resolvePackageResourcesDir({ desktopRoot, repoRoot, override = process.env[PACKAGE_RESOURCES_ENV] || process.env.A_STOCK_PACKAGE_RESOURCES_DIR } = {}) {
-	if (!desktopRoot || !repoRoot) throw new Error('desktopRoot and repoRoot are required');
-
-	const resolvedDesktopRoot = path.resolve(desktopRoot);
-	const resolvedRepoRoot = path.resolve(repoRoot);
-	const candidate = path.resolve(
-		override
-			? (path.isAbsolute(override) ? override : path.join(resolvedRepoRoot, override))
-			: path.join(resolvedDesktopRoot, 'dist', 'package-resources'),
-	);
-	const protectedRoots = [
-		resolvedRepoRoot,
-		resolvedDesktopRoot,
-		path.join(resolvedDesktopRoot, 'dist'),
-	];
-	const sourceRoots = [
-		path.join(resolvedRepoRoot, 'frontend'),
-		path.join(resolvedRepoRoot, 'backend'),
-		path.join(resolvedDesktopRoot, 'scripts'),
-		path.join(resolvedDesktopRoot, 'assets'),
-		path.join(resolvedDesktopRoot, 'test'),
-		path.join(resolvedDesktopRoot, 'resources'),
-	];
-
-	if (protectedRoots.some((protectedRoot) => isSamePath(candidate, protectedRoot))) {
-		throw new Error(`${PACKAGE_RESOURCES_ENV} must be a dedicated generated directory: ${candidate}`);
-	}
-	if (sourceRoots.some((sourceRoot) => isSamePath(candidate, sourceRoot) || isWithin(candidate, sourceRoot))) {
-		throw new Error(`${PACKAGE_RESOURCES_ENV} must be a dedicated generated directory outside source directories: ${candidate}`);
-	}
-	if ([...protectedRoots, ...sourceRoots].some((protectedRoot) => isWithin(protectedRoot, candidate))) {
-		throw new Error(`${PACKAGE_RESOURCES_ENV} must not be an ancestor of repository or source directories: ${candidate}`);
-	}
-
-	return candidate;
-}
-
-function isSamePath(left, right) {
-	return path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
-}
-
-function isWithin(candidate, root) {
-	const relative = path.relative(path.resolve(root), path.resolve(candidate));
-	return relative !== '' && !relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative);
+// Preparation recursively replaces this output, so overrides may select only a
+// dedicated child of desktop/dist. Source, user data and Git metadata are never outputs.
+export function resolvePackageResourcesDir({ desktopRoot, repoRoot, override = process.env.MYSTOCKTRACER_PACKAGE_RESOURCES_DIR || process.env.A_STOCK_PACKAGE_RESOURCES_DIR } = {}) {
+  if (!desktopRoot || !repoRoot) throw new Error('desktopRoot and repoRoot are required');
+  const repository = path.resolve(repoRoot);
+  const desktop = path.resolve(desktopRoot);
+  const outputRoot = path.join(desktop, 'dist');
+  const candidate = override ? path.resolve(repository, override) : path.join(outputRoot, 'package-resources');
+  const below = (parent, child) => {
+    const relative = path.relative(parent, child);
+    return relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+  };
+  if (!below(repository, desktop) || !below(outputRoot, candidate)) {
+    throw new Error('Package resources must be a dedicated generated directory beneath desktop/dist');
+  }
+  // Check ancestors too: an output parent may be a Windows junction.
+  for (let cursor = candidate; ; cursor = path.dirname(cursor)) {
+    const stat = fs.lstatSync(cursor, { throwIfNoEntry: false });
+    if (stat?.isSymbolicLink()) throw new Error('Package resources cannot traverse a symlink or junction');
+    if (path.dirname(cursor) === cursor) break;
+  }
+  return candidate;
 }

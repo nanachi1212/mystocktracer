@@ -1,85 +1,47 @@
+const test = require('node:test');
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
-const test = require('node:test');
 const vm = require('node:vm');
 
-test('preload exposes updater IPC calls and removes status listeners cleanly', async () => {
-  const invocations = [];
-  const listeners = new Map();
-  let exposed;
-  const ipcRenderer = {
-    invoke: async (channel, ...args) => {
-      invocations.push([channel, ...args]);
-      return { channel };
-    },
-    on: (channel, handler) => listeners.set(channel, handler),
-    removeListener: (channel, handler) => {
-      assert.equal(listeners.get(channel), handler);
-      listeners.delete(channel);
-    },
+test('isolated canonical bridge implements fixed product channels and revocable subscriptions', async () => {
+  const bus = new EventEmitter(), calls = [];
+  let bridge;
+  const electron = {
+    contextBridge: { exposeInMainWorld(name, api) { assert.equal(name, 'mystocktracer'); bridge = api; } },
+    ipcRenderer: Object.assign(bus, { invoke: async (...args) => { calls.push(args); return 'synthetic-response'; } }),
   };
-  const contextBridge = { exposeInMainWorld: (name, api) => { assert.equal(name, 'mystocktracer'); exposed = api; } };
-  const source = fs.readFileSync(path.resolve(__dirname, '..', 'preload.cjs'), 'utf8');
-  vm.runInNewContext(source, {
-    require: (moduleName) => {
-      assert.equal(moduleName, 'electron');
-      return { contextBridge, ipcRenderer };
-    },
-  });
-
-  await exposed.getUpdateStatus();
-  await exposed.checkForUpdates();
-  await exposed.downloadUpdate();
-  await exposed.installUpdate();
-  assert.deepEqual(invocations.slice(-4).map(([channel]) => channel), [
-    'app-update-status',
-    'app-update-check',
-    'app-update-download',
-    'app-update-install',
-  ]);
-  await exposed.getRuntimeLogStatus();
-  await exposed.openRuntimeLogs();
-  await exposed.logRuntimeEvent({ level: 'warn', feature: 'test', message: 'failed' });
-  assert.deepEqual(invocations.slice(-3), [
-    ['runtime-log-status'],
-    ['runtime-open-logs'],
-    ['runtime-log', { level: 'warn', feature: 'test', message: 'failed' }],
-  ]);
-
-  let received;
-  const unsubscribe = exposed.onUpdateStatus((status) => { received = status; });
-  listeners.get('app-update-status-changed')({}, { state: 'downloaded' });
-  assert.equal(received.state, 'downloaded');
-  unsubscribe();
-  assert.equal(listeners.has('app-update-status-changed'), false);
-
-  await exposed.openSubscriptionAI('https://chatgpt.com/');
-  assert.deepEqual(invocations.slice(-1), [
-    ['open-subscription-ai', 'https://chatgpt.com/'],
-  ]);
-
-  assert.equal(exposed.getWechatServiceStatus, undefined);
-  assert.equal(exposed.openWechatLogin, undefined);
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../preload.cjs'), 'utf8'), { require: name => { assert.equal(name, 'electron'); return electron; } });
+  const channels = {
+    getBackendConfig: 'backend-config', getRuntimeLogStatus: 'runtime-log-status', openRuntimeLogs: 'runtime-open-logs',
+    logRuntimeEvent: 'runtime-log', getUpdateStatus: 'app-update-status', checkForUpdates: 'app-update-check',
+    downloadUpdate: 'app-update-download', installUpdate: 'app-update-install', openUpdateRelease: 'app-update-open-release',
+    openUpdateBackups: 'app-update-open-backups', openSubscriptionAI: 'open-subscription-ai',
+  };
+  assert.deepEqual(Object.keys(bridge).sort(), [...Object.keys(channels), 'onUpdateStatus'].sort());
+  assert.equal(Object.isFrozen(bridge), true);
+  for (const [method, channel] of Object.entries(channels)) {
+    const payload = method === 'openSubscriptionAI' ? 'https://chatgpt.com/' : { fixture: method };
+    assert.equal(await bridge[method](payload), 'synthetic-response');
+    assert.deepEqual(calls.pop(), [channel, payload]);
+  }
+  const received = [];
+  const cancel = bridge.onUpdateStatus(value => received.push(value));
+  bus.emit('app-update-status-changed', { privateEvent: true }, { state: 'downloaded' });
+  cancel();
+  bus.emit('app-update-status-changed', {}, { state: 'idle' });
+  assert.deepEqual(received, [{ state: 'downloaded' }]);
+  assert.equal(bus.listenerCount('app-update-status-changed'), 0);
+  assert.throws(() => bridge.onUpdateStatus(null), /must be a function/);
 });
 
-test('production subscription AI URL validator permits only official URLs and rejects arbitrary URLs', () => {
-  const { validateSubscriptionAIURL, ALLOWED_SUBSCRIPTION_AI_URLS } = require('../subscription-ai-url.cjs');
-
-  assert.equal(ALLOWED_SUBSCRIPTION_AI_URLS.size, 3);
-  assert.equal(ALLOWED_SUBSCRIPTION_AI_URLS.has('https://chatgpt.com/'), true);
-  assert.equal(ALLOWED_SUBSCRIPTION_AI_URLS.has('https://claude.ai/'), true);
-  assert.equal(ALLOWED_SUBSCRIPTION_AI_URLS.has('https://gemini.google.com/'), true);
-
-  assert.equal(validateSubscriptionAIURL('https://chatgpt.com/'), true);
-  assert.equal(validateSubscriptionAIURL('https://claude.ai/'), true);
-  assert.equal(validateSubscriptionAIURL('https://gemini.google.com/'), true);
-
-  assert.throws(() => validateSubscriptionAIURL('https://example.com/'), /不允許開啟的外部網址/);
-  assert.throws(() => validateSubscriptionAIURL('javascript:alert(1)'), /不允許開啟的外部網址/);
-  assert.throws(() => validateSubscriptionAIURL('file:///etc/passwd'), /不允許開啟的外部網址/);
-  assert.throws(() => validateSubscriptionAIURL('https://chatgpt.com/evil'), /不允許開啟的外部網址/);
-  assert.throws(() => validateSubscriptionAIURL('https://gemini.google.com.attacker.com/'), /不允許開啟的外部網址/);
-  assert.throws(() => validateSubscriptionAIURL(null), /不允許開啟的外部網址/);
-  assert.throws(() => validateSubscriptionAIURL(''), /不允許開啟的外部網址/);
+test('subscription navigation accepts only the three exact provider home URLs', () => {
+  const urls = require('../subscription-ai-url.cjs');
+  const official = ['https://chatgpt.com/', 'https://claude.ai/', 'https://gemini.google.com/'];
+  assert.deepEqual([...urls.ALLOWED_SUBSCRIPTION_AI_URLS].sort(), [...official].sort());
+  for (const candidate of official) assert.equal(urls.validateSubscriptionAIURL(candidate), true);
+  for (const candidate of [null, '', 'https://example.test/', 'javascript:alert(1)', 'file:///private', 'https://chatgpt.com/evil', 'https://gemini.google.com.attacker.test/']) {
+    assert.throws(() => urls.validateSubscriptionAIURL(candidate), /不允許/);
+  }
 });

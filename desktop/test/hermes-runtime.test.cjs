@@ -1,35 +1,46 @@
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const test = require('node:test');
+const fixture = require('./fixture.cjs');
 
-test('Windows runtime uses a standalone interpreter outside the build venv', async () => {
+test('runtime path contract distinguishes build environments from shipped interpreters', async t => {
+  const f = fixture(t);
   const { hermesRuntimePython, hermesVenvPython } = await import('../scripts/hermes-runtime.mjs');
-  const root = path.join('C:\\', 'easy-stock', 'hermes-runtime');
-  assert.equal(hermesVenvPython(root, 'win32'), path.join(root, 'venv', 'Scripts', 'python.exe'));
-  assert.equal(hermesRuntimePython(root, 'win32'), path.join(root, 'python', 'python.exe'));
+  const layouts = [
+    ['win32', ['python', 'python.exe'], ['venv', 'Scripts', 'python.exe']],
+    ['darwin', ['venv', 'bin', 'python'], ['venv', 'bin', 'python']],
+  ];
+  for (const [platform, shipped, build] of layouts) {
+    assert.equal(hermesRuntimePython(f.root, platform), path.join(f.root, ...shipped));
+    assert.equal(hermesVenvPython(f.root, platform), path.join(f.root, ...build));
+  }
 });
 
-test('bundleWindowsRuntime copies base Python and merges installed packages', async () => {
+test('Windows runtime assembly preserves interpreter, stdlib and packages across a source link', async t => {
+  const f = fixture(t);
   const { bundleWindowsRuntime } = await import('../scripts/hermes-runtime.mjs');
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-hermes-runtime-'));
-  const runtimeRoot = path.join(root, 'runtime');
-  const sourceRoot = path.join(root, 'managed-python');
-  const sourceLink = path.join(root, 'managed-python-link');
-  fs.mkdirSync(path.join(sourceRoot, 'Lib'), { recursive: true });
-  fs.writeFileSync(path.join(sourceRoot, 'python.exe'), 'python');
-  fs.writeFileSync(path.join(sourceRoot, 'Lib', 'os.py'), 'stdlib');
-  fs.symlinkSync(sourceRoot, sourceLink, 'dir');
-  fs.mkdirSync(path.join(runtimeRoot, 'venv', 'Lib', 'site-packages', 'hermes_cli'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'venv', 'Lib', 'site-packages', 'hermes_cli', '__init__.py'), 'hermes');
-  fs.writeFileSync(path.join(runtimeRoot, 'venv', 'pyvenv.cfg'), `home = ${sourceRoot}\n`);
+  const expected = new Map([
+    ['python.exe', Buffer.from([77, 90, 0, 255])],
+    ['Lib/os.py', Buffer.from('# synthetic standard library')],
+    ['Lib/site-packages/hermes_cli/__init__.py', Buffer.from('# synthetic dependency')],
+  ]);
+  for (const [relative, bytes] of expected) {
+    f.put((relative.includes('site-packages') ? 'assembled/venv/' : 'managed/') + relative, bytes);
+  }
+  f.put('assembled/venv/pyvenv.cfg', 'synthetic build-only marker');
+  fs.symlinkSync(f.at('managed'), f.at('linked'), process.platform === 'win32' ? 'junction' : 'dir');
+  bundleWindowsRuntime(f.at('assembled'), f.at('linked'));
+  for (const [relative, bytes] of expected) assert.deepEqual(f.read('assembled/python/' + relative), bytes);
+  assert.equal(fs.lstatSync(f.at('assembled/python')).isSymbolicLink(), false);
+  assert.equal(fs.existsSync(f.at('assembled/venv')), false);
+  assert.deepEqual(f.read('managed/python.exe'), expected.get('python.exe'));
+});
 
-  bundleWindowsRuntime(runtimeRoot, sourceLink);
-
-  assert.equal(fs.lstatSync(path.join(runtimeRoot, 'python')).isSymbolicLink(), false);
-  assert.equal(fs.readFileSync(path.join(runtimeRoot, 'python', 'python.exe'), 'utf8'), 'python');
-  assert.equal(fs.readFileSync(path.join(runtimeRoot, 'python', 'Lib', 'os.py'), 'utf8'), 'stdlib');
-  assert.equal(fs.readFileSync(path.join(runtimeRoot, 'python', 'Lib', 'site-packages', 'hermes_cli', '__init__.py'), 'utf8'), 'hermes');
-  assert.equal(fs.existsSync(path.join(runtimeRoot, 'venv')), false);
+test('invalid or overlapping runtime sources are rejected', async t => {
+  const f = fixture(t);
+  const { bundleWindowsRuntime } = await import('../scripts/hermes-runtime.mjs');
+  f.put('managed/python.exe');
+  assert.throws(() => bundleWindowsRuntime(f.at('managed'), f.at('managed')), /overlap/);
+  assert.throws(() => bundleWindowsRuntime(f.at('output'), f.at('managed')), /Incomplete/);
 });

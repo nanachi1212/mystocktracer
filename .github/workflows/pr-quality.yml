@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -33,12 +35,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set up Python snapshot helper
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Test backend and frontend
         run: npm test
 
       - name: Vet backend
         working-directory: backend
         run: go vet ./...
+
+      - name: Build backend
+        working-directory: backend
+        run: go build ./...
+
+      - name: Test desktop and packaging contracts
+        run: npm --workspace desktop test
+
+      - name: Test tooling and provenance classification
+        run: npm run test:tooling
+
+      - name: Audit provenance evidence
+        run: npm run audit:provenance -- --summary
+
+      - name: Check whitespace
+        run: git diff --check
 
       - name: Build frontend
         run: npm run build:frontend

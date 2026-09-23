@@ -1,329 +1,96 @@
-# mystocktracer 开发者文档
+# mystocktracer 開發與封裝維護
 
-本文面向需要从源码运行、调试、测试、扩展或打包 mystocktracer 的开发者。普通用户请直接前往 [GitHub Releases](https://github.com/nanachi1212/mystocktracer/releases/latest) 下载桌面版本。
+本 repository 進行 OSS transition／maintenance。新的台股核心產品能力優先在 [TWstockfor_tick-stock-panel](https://github.com/nanachi1212/TWstockfor_tick-stock-panel) 實作；此處維護既有功能、資料相容性、測試與封裝。來源與尚未完成事項見 [OSS 稽核](oss-provenance-audit.md)。上游 easy-stock attribution、Git 歷史與目前 LICENSE 保留。
 
-## 目录
+## 環境與安裝
 
-- [开发环境](#开发环境)
-- [获取代码与安装依赖](#获取代码与安装依赖)
-- [启动项目](#启动项目)
-- [项目结构](#项目结构)
-- [配置与环境变量](#配置与环境变量)
-- [测试](#测试)
-- [构建与桌面打包](#构建与桌面打包)
-- [本地数据与日志](#本地数据与日志)
-- [相关技术文档](#相关技术文档)
-- [常见问题](#常见问题)
+使用 Node.js 22 以上、npm、Git，以及 backend/go.mod 指定的 Go。桌面 snapshot tests 需要 Python 3.11 以上；準備完整 Hermes runtime 另需 uv。安裝依賴執行：
 
-## 开发环境
+```powershell
+npm.cmd ci
+```
 
-必需工具：
+完整桌面套件須在目標 OS／CPU 原生建置。Windows 使用 PowerShell；macOS 的 DMG 與 codesign 驗證須在 macOS 執行。實際 dependency versions 以 package-lock.json、backend/go.mod 與 runtime-manifest.json 為準，不因本輪 cleanup 升級。
 
-| 工具 | 建议版本 | 用途 |
-| --- | --- | --- |
-| Git | 当前稳定版 | 获取和管理源码 |
-| Node.js | 22.x | 前端、Electron、工作区脚本和发布流水线 |
-| npm | 随 Node.js 安装 | 管理根目录、`frontend` 和 `desktop` 工作区 |
-| Go | 1.26，以 [`backend/go.mod`](../backend/go.mod) 为准 | Go 后端与桌面内置后端 |
+## 啟動
 
-以下工具只在使用对应能力时需要：
+一鍵建置並重啟 Web 工作台：
 
-| 工具 | 使用场景 |
+```powershell
+npm.cmd run restart
+```
+
+預設 backend 為 http://127.0.0.1:20081、frontend 為 http://127.0.0.1:20073。runner 只停止 .runtime PID 記錄中可確認屬於本工作區的程序；遇到不屬於本工作區的 port listener 會報錯保留，不強殺。舊 scripts/rebuild-restart.sh 只是相同 Node runner 的相容入口。
+
+需要熱更新時，在兩個終端分別執行：
+
+```powershell
+npm.cmd run dev:backend
+```
+
+```powershell
+npm.cmd run dev:frontend
+```
+
+前端啟動後，另一個終端可執行 npm.cmd run dev:desktop。backend 與 desktop 的 npm dev scripts 透過 Node 傳遞環境變數，不依賴 POSIX 的 NAME=value 語法。Electron 會分配 loopback port 與一次性 token；開發環境缺少 desktop/bin/mystocktracer-backend.exe 時才使用 Go fallback。
+
+## 設定與資料位置
+
+| 設定 | 用途 |
 | --- | --- |
-| Python 3.11 与 `uv` | 准备包含 Hermes Runtime 的桌面发布包 |
-| Hermes Runtime | 本地调试 AI 对话、台股 AI 研究和模型连接 |
-| macOS `hdiutil` | 生成 macOS DMG |
-| PowerShell | 生成 Windows 发布压缩包 |
+| MYSTOCKTRACER_ADDR、MYSTOCKTRACER_TOKEN | 直接啟動 backend 的地址與 token |
+| MYSTOCKTRACER_FRONTEND_HOST、MYSTOCKTRACER_FRONTEND_PORT | restart runner 的前端地址與 port |
+| MYSTOCKTRACER_BROWSER_MODE | restart 的 incognito／normal／none |
+| VITE_MYSTOCKTRACER_BACKEND_URL、VITE_MYSTOCKTRACER_TOKEN | Web 開發前端連線 |
+| MYSTOCKTRACER_SETTINGS_PATH | 明確 settings 路徑 |
+| MYSTOCKTRACER_TAIWAN_WATCHLIST_DB、MYSTOCKTRACER_TAIWAN_PORTFOLIO_DB | 既有資料庫 |
+| MYSTOCKTRACER_CASHFLOW_CACHE、MYSTOCKTRACER_LOG_DIR | cache 與日誌 |
+| MYSTOCKTRACER_HERMES_RUNTIME_ROOT、MYSTOCKTRACER_HERMES_PYTHON | runtime 與 interpreter |
+| MYSTOCKTRACER_HERMES_HOME、MYSTOCKTRACER_HERMES_WORKDIR | agent 的設定與工作目錄 |
+| MYSTOCKTRACER_USER_DATA_DIR | 桌面明確 profile，設定後不自動匯入舊目錄 |
+| MYSTOCKTRACER_UPDATE_BACKUP_DIR | profile 外的更新備份位置 |
+| MYSTOCKTRACER_DESKTOP_ARCH | 目標 CPU，必須符合 native runtime |
+| MYSTOCKTRACER_PACKAGE_RESOURCES_DIR | desktop/dist 下的專用 staging 子目錄 |
+| MYSTOCKTRACER_HERMES_RUNTIME_SOURCE | 可選的完整已驗證 runtime 複本來源 |
 
-桌面发布包必须在目标操作系统和目标 CPU 架构的原生环境中构建，不能在单台机器上跨架构打包包含原生运行时的完整版本。
+A_STOCK_* 與 VITE_A_STOCK_* 僅作既有環境的 deprecated fallback；canonical 名稱優先。ELECTRON_RENDERER_URL、UV 與 CSC_* 等為第三方工具介面，保留原名。
 
-## 获取代码与安装依赖
+桌面預設使用 Electron appData/mystocktracer。舊 easy-stock／desktop profile 透過 COPY、hash 與 SQLite 驗證遷移，來源永久保留。直接 backend 依 canonical／easy-stock／a-stock-ai 順序採用有 settings、台股 DB 或 agent state 的 profile，不搬移資料。完整規則見 [migration 契約](desktop-identity-migration.md)。
 
-```bash
-git clone https://github.com/nanachi1212/mystocktracer.git
-cd mystocktracer
-npm ci
+Windows 更新會完整退出並重新啟動，在 Chromium／backend 尚未寫入前做備份，再驗證同一 release 後安裝；需要可用的 release 連線。macOS 未簽署版本採發布頁手動安裝。不要把使用者 profile 當 build output。
+
+## 本機驗證
+
+```powershell
+npm.cmd test
+npm.cmd --workspace desktop test
+npm.cmd run test:tooling
+npm.cmd run build:frontend
+npm.cmd run build:backend
+npm.cmd run audit:provenance
+git diff --check
 ```
 
-`npm ci` 会根据根目录的 `package-lock.json` 安装前端、Electron 和浏览器辅助依赖。日常更新代码后，如果锁文件发生变化，应重新运行该命令。
+在 backend 目錄另執行 go vet ./... 與 go build ./...。現有線上測試分別以 EASY_STOCK_TW_LIVE_TEST=1 啟用 Taiwan provider、A_STOCK_LIVE_TEST=1 啟用 ToAlpha；這些是保留的測試相容旗標，預設不送出 live acceptance requests。本輪未新增 skip，也未將離線套件通過視為線上資料驗收。
 
-## 启动项目
+## 桌面封裝
 
-### 一键启动 Web 工作台
-
-```bash
-npm run restart
+```powershell
+npm.cmd run prepare:desktop-package
+npm.cmd run package:windows
+npm.cmd --workspace desktop run smoke:packaged-desktop
+npm.cmd --workspace desktop run smoke:packaged-runtime
 ```
 
-该命令使用 Node.js 标准库跨平台构建前后端，并在后台启动新的本地服务；Windows、macOS 与 Linux 均不需要额外安装 Bash、`lsof`、`screen` 或 `nohup`：
+package:windows 已包含 preparation 與 verifier；單獨 prepare 僅用於診斷，不代表完成成品驗收。Windows 成品位於 desktop/dist/builder-dir/win-unpacked，執行檔必須為 mystocktracer.exe；backend 必須為 mystocktracer-backend.exe。staging 不允許指向 repository 根、.git、.runtime、來源目錄或 junction／symlink。
 
-| 服务 | 默认地址 |
-| --- | --- |
-| 前端 | `http://127.0.0.1:20073` |
-| 后端 | `http://127.0.0.1:20081` |
-| 运行日志 | `.runtime/` |
+packaged-desktop smoke 使用合成 profile，驗證 PE metadata、canonical bridge、品牌圖片、migration，以及真實 localStorage 持有鎖與完整退出後的備份。packaged-runtime smoke 使用合成 agent runtime 驗證串流，不使用個人模型金鑰。
 
-适合快速验证完整 Web 工作台。修改代码后需要再次执行 `npm run restart` 才会使用新的构建结果。
+macOS 使用 npm run package:mac；release:mac／release:windows 會產生 installer artifacts，正式發布須由維護者明確操作。一般 packaging 呼叫 electron-builder 的 publish: never，不會自動發布。
 
-重启时只会停止 `.runtime/backend.pid` 与 `.runtime/frontend.pid` 中可验证为当前工作区的旧进程。若目标端口仍由未受本项目管理的进程占用，命令会停止启动并保留该进程，不会仅因端口相同而强制终止。
+## 來源與維護邊界
 
-### 分别启动前后端
-
-需要前端热更新时，建议分别启动服务。
-
-终端 1：
-
-```bash
-npm run dev:backend
-```
-
-终端 2：
-
-```bash
-VITE_A_STOCK_BACKEND_URL=http://127.0.0.1:20081 npm run dev:frontend
-```
-
-前端默认运行在 `127.0.0.1:20073`，后端默认运行在 `127.0.0.1:20081`。开发模式未设置 `A_STOCK_TOKEN` 时，本机 API 不要求鉴权。
-
-### 启动 Electron 桌面开发模式
-
-终端 1：
-
-```bash
-npm run dev:frontend
-```
-
-终端 2：
-
-```bash
-npm run dev:desktop
-```
-
-Electron 会自动选择本机空闲端口、生成一次性 Token，并启动 Go 后端。若 `desktop/bin/easy-stock-backend` 不存在，开发模式会使用 `go run ./cmd/server`。
-
-## 项目结构
-
-```text
-backend/                 Go 数据基座、领域模型、Provider、HTTP/WebSocket API
-  cmd/server/            后端入口
-  internal/foundation/   通用行情模型、股票代码规范化和来源元数据
-  internal/providers/    东方财富、新浪、财联社、短线侠等数据源
-  internal/httpapi/      API 路由、缓存、鉴权和业务编排
-  internal/stockanalysis 个股多路径分析引擎
-  docs/                  后端架构、API、数据源和专项设计文档
-frontend/                React + TypeScript + Vite 工作台
-desktop/                 Electron 主进程、浏览器会话、打包和发布脚本
-docs/                    项目级文档与 README 图片资源
-scripts/                 本地构建、重启和开发辅助脚本
-.github/workflows/       GitHub Actions 测试与桌面发布流水线
-```
-
-运行关系：
-
-```text
-React 页面
-  -> Go HTTP / WebSocket API
-     -> 行情与内容 Provider
-     -> SQLite、本地缓存和设置
-     -> Hermes Runtime
-
-Electron 桌面模式
-  -> 启动本机 Go 后端并注入一次性 Token
-  -> 管理用户数据目录和持久浏览器会话
-  -> 加载打包后的 React 页面
-```
-
-## 配置与环境变量
-
-### Web 开发常用变量
-
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `MYSTOCKTRACER_ADDR` | `127.0.0.1:20081` | 後端監聽地址 |
-| `MYSTOCKTRACER_TOKEN` | 空 | 可選的本機 API Bearer Token |
-| `MYSTOCKTRACER_TOALPHA_MOPS_ENABLED` | `false` | 是否啟用 ToAlpha MOPS 重大訊息補充。僅 `1` / `true` / `yes` 會啟用 |
-| `MYSTOCKTRACER_TOALPHA_MOPS_ENDPOINT` | `https://toalpha.tw/mcp/mops` | 可選 MCP Streamable HTTP endpoint 覆寫，主要用於測試 |
-| `A_STOCK_FRONTEND_HOST` | `127.0.0.1` | `npm run restart` 使用的前端地址 |
-| `A_STOCK_FRONTEND_PORT` | `20073` | `npm run restart` 使用的前端端口 |
-| `VITE_MYSTOCKTRACER_BACKEND_URL` | `http://127.0.0.1:20081` | 前端連接的後端地址 |
-| `VITE_MYSTOCKTRACER_TOKEN` | 空 | 前端請求攜帶的後端 Token |
-
-### 数据和运行时变量
-
-| 变量 | 说明 |
-| --- | --- |
-| `MYSTOCKTRACER_SETTINGS_PATH` | 設定檔路徑 |
-| `MYSTOCKTRACER_TAIWAN_WATCHLIST_DB` | 台股自選股 SQLite 路徑；未設定時使用應用資料目錄下的 `taiwan-watchlist.db` |
-| `MYSTOCKTRACER_TAIWAN_PORTFOLIO_DB` | 台股持倉 SQLite 路徑；未設定時使用應用資料目錄下的 `taiwan-portfolio.db` |
-| `MYSTOCKTRACER_CASHFLOW_CACHE` | 台股現金流量快取目錄 |
-| `MYSTOCKTRACER_LOG_DIR` | 運行日誌目錄；桌面端預設使用使用者資料目錄下的 `logs` |
-
-上述台股 runtime 變數以 `MYSTOCKTRACER_*` 為 canonical 名稱。過渡期間，在新名稱完全未設定時才讀取同尾碼的 `A_STOCK_*`；新名稱永遠優先，舊名稱已 deprecated。桌面端只向後端寫出 canonical 名稱，不同時維護兩份狀態。Electron identity 與 `userData` root 本階段未變更。
-
-### Hermes 开发配置
-
-```bash
-export A_STOCK_HERMES_RUNTIME_ROOT=/absolute/path/to/hermes-runtime
-export A_STOCK_HERMES_HOME="$PWD/.runtime/hermes-home"
-export A_STOCK_HERMES_WORKDIR="$PWD/.runtime/hermes-workspace"
-```
-
-可选的 `A_STOCK_HERMES_PYTHON` 用于指定 Runtime 中的 Python。随后在应用的「系统设置 → 模型服务」中配置服务商、模型、Base URL 和 API Key。
-
-模型 API Key 只应保存在 Hermes Home 的 `.env` 中。不要把 `.runtime`、数据库、Cookie、浏览器状态、设置文件或任何密钥提交到 Git。
-
-## 测试
-
-### 默认测试
-
-```bash
-npm test
-```
-
-根目录测试会运行 Go 后端全部测试和前端 Vitest 测试。桌面主进程测试需单独执行：
-
-```bash
-npm --workspace desktop test
-```
-
-### 分模块测试与构建
-
-```bash
-cd backend && go test ./...
-npm --workspace frontend test -- --run
-npm --workspace frontend run build
-npm --workspace desktop test
-```
-
-### 外部数据源实时测试
-
-默认测试不会访问公网数据源。需要检查真实行情或内容接口时：
-
-```bash
-cd backend
-A_STOCK_LIVE_TEST=1 go test ./internal/httpapi ./internal/providers -run Live -v
-```
-
-公网接口可能受到网络、限流、反爬和上游字段变化影响。实时测试失败首先应作为数据源健康信号排查，不应直接视为确定性代码回归。
-
-## 构建与桌面打包
-
-### 常规构建
-
-```bash
-npm run build:backend
-npm run build:frontend
-npm run build:desktop
-```
-
-`build:desktop` 会构建 Go 后端和前端，并运行 Electron 工作区的构建检查；它不会生成最终安装包。
-
-### 准备桌面资源
-
-```bash
-npm run prepare:desktop-package
-```
-
-该步骤会构建前端和 Go 后端，并准备 Hermes、微信公众号服务及浏览器辅助程序到 `desktop/resources/`。
-
-如果已经有验证过的 Hermes Runtime，可以显式指定：
-
-```bash
-HERMES_RUNTIME_SOURCE=/absolute/path/to/hermes-runtime npm run prepare:desktop-package
-```
-
-未指定 Runtime 来源时，脚本会通过 `uv` 创建 Python 3.11 可迁移环境并安装项目锁定的 Hermes 版本。
-
-### macOS
-
-```bash
-npm run package:mac   # 生成 .app
-npm run release:mac   # 生成 DMG 和 ZIP
-```
-
-通过 `A_STOCK_DESKTOP_ARCH=arm64` 或 `A_STOCK_DESKTOP_ARCH=x64` 指定架构；目标架构必须与当前构建机一致。
-
-### Windows
-
-```bash
-npm run package:windows   # 生成应用目录
-npm run release:windows   # 生成 ZIP
-```
-
-Windows 正式发布当前使用 `x64`。构建产物位于 `desktop/dist/`，该目录不会提交到 Git。
-
-### GitHub Release
-
-推送与 `desktop/package.json` 版本一致的 `v*` 标签后，[桌面发布工作流](../.github/workflows/release.yml) 会运行测试，并分别生成 macOS Intel、macOS Apple Silicon 和 Windows x64 产物。工作流会将自动更新所需的 ZIP/EXE、blockmap 和 `latest*.yml` 上传到 OSS，最后只把 DMG、Windows 安装器和 `SHA256SUMS.txt` 发布到 GitHub Releases，避免用户在下载页误选更新内部文件。完整流程和必需 secrets 见 [桌面自动更新文档](../desktop/AUTO_UPDATE.md)。
-
-## 本地数据与日志
-
-Web 开发的一键启动模式使用：
-
-```text
-.runtime/backend.log
-.runtime/frontend.log
-.runtime/backend.pid
-.runtime/frontend.pid
-```
-
-Go 后端在未显式配置路径时，会使用操作系统用户配置目录下的 `easy-stock` 数据目录。Electron 使用系统提供的 `userData` 目录保存：
-
-- 应用设置；
-- 复盘、情绪和题材数据库；
-- Hermes 配置、密钥和会话；
-- 游资心法缓存；
-- 雪球、淘股吧等持久浏览器会话。
-
-桌面端会在用户数据目录的 `logs` 子目录滚动保存三类运行日志：
-
-| 文件 | 内容 |
-| --- | --- |
-| `desktop.log` | 应用启动、自动更新、内置服务、浏览器登录桥接和子进程状态 |
-| `backend.log` | 各功能接口、数据源错误和后台定时任务 |
-| `renderer.log` | 页面未捕获异常、网络失败和非成功接口响应 |
-
-每个文件最大 5 MB，并保留 5 份历史文件，例如 `backend.log.1`。接口日志使用 `X-Request-ID` 关联前端和后端记录，只保存接口路径，不保存查询参数或请求体。日志写入前会隐藏 Token、Cookie、API Key 和 Authorization 等凭据，也不会主动记录用户粘贴的文章正文或对话内容。
-
-普通用户可从「系统设置 → 运行日志」直接打开目录。直接运行后端时，可通过 `A_STOCK_LOG_DIR` 指定相同的日志目录。
-
-可使用 `A_STOCK_USER_DATA_DIR` 覆盖 Electron 用户数据目录。清理这些目录会删除本机配置、登录态和历史数据，操作前应先备份。
-
-## 相关技术文档
-
-- [API 路由](../backend/docs/api-routes.md)
-- [Hermes 集成](../backend/docs/hermes-integration.md)
-- [实时数据源测试](../backend/docs/live-tests.md)
-- [台股市場資料契約](./taiwan-market-contract-v1.1.md)
-- [OSS 來源稽核](./oss-provenance-audit.md)
-
-## 常见问题
-
-### 默认端口被占用
-
-`npm run restart` 只会停止 PID metadata 中可验证为当前工作区的旧进程。若默认端口由其他程序占用，命令会报告冲突并停止；也可以设置新的地址和端口：
-
-```bash
-A_STOCK_ADDR=127.0.0.1:21081 \
-A_STOCK_FRONTEND_PORT=21073 \
-npm run restart
-```
-
-### 页面显示后端未连接
-
-先检查健康接口和后端日志：
-
-```bash
-curl http://127.0.0.1:20081/api/health
-tail -f .runtime/backend.log
-```
-
-分别启动服务时，确认 `VITE_A_STOCK_BACKEND_URL` 与后端实际地址一致；启用了 `A_STOCK_TOKEN` 时，还需同时配置 `VITE_A_STOCK_TOKEN`。
-
-### AI 功能不可用
-
-确认 `A_STOCK_HERMES_RUNTIME_ROOT` 指向完整 Runtime，并在设置页执行模型连接测试。更详细的运行链路和密钥规则见 [Hermes 集成文档](../backend/docs/hermes-integration.md)。
-
-### 台股行情数据暂时为空
-
-先查看页面显示的来源、交易日和新鲜度状态。TWSE、TPEx 与 MOPS 的公开接口可能临时限流或调整字段；无法取得的资料会明确标示为不可用，不会显示为 0。
+- 台股 market truth、PIT 與 canonical provider ownership 依 [ownership 文件](TAIWAN_DEVELOPMENT_OWNERSHIP.md)。
+- dependency 使用各自授權；Hermes 為第三方 runtime，並非 inherited easy-stock implementation。
+- GitHub PR Quality 執行 Go、frontend、desktop 與 tooling tests/build；GitHub Codex Review 處理實際阻擋 findings。
+- 本輪未變更 LICENSE；技術稽核不等於重新授權的法律權利。

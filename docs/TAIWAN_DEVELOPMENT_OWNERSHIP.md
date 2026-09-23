@@ -2,11 +2,17 @@
 
 ## 1. Project Role
 
-`mystocktracer` 的長期定位是：
+2026-09-23 起，`mystocktracer` 採 **OSS transition / maintenance**；
+`TWstockfor_tick-stock-panel` 是唯一長期台股主產品。新的台股核心功能優先於 TWstock 實作，
+此 repository 不再作為平行功能主線。以下分工約束既有資料與功能的維護，
+不授權新增 provider、Quant 或另一套 authoritative 計算。技術 independence 尚有 blocker，
+見 [OSS 來源稽核](./oss-provenance-audit.md)。
+
+`mystocktracer` 既有程式的維護責任是：
 
 > **Investor Product & Research Experience Layer**
 >
-> 投資者主產品、互動介面、追蹤、篩選、比較、通知、研究工作流與 AI 解讀層。
+> 既有互動介面、追蹤、篩選、比較、通知、研究工作流與 AI 解讀層。
 
 本專案的核心責任不是重新建立另一套完整台股資料工程，而是把可信資料轉換成：
 
