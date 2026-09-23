@@ -1,74 +1,61 @@
-# Desktop automatic updates
+# 桌面更新與發布維護
 
-The packaged macOS and Windows apps use `electron-updater` with this repository's own GitHub
-Releases as the update source:
-`https://github.com/nanachi1212/mystocktracer/releases`.
+mystocktracer 使用 electron-updater，更新來源固定為本 repository 的
+[GitHub Releases](https://github.com/nanachi1212/mystocktracer/releases)。
+實作與測試分別在 update-feed.cjs 與 test/update-feed.test.cjs；
+使用者設定或環境變數不能改變更新來源。
 
-Phase B1 replaced the inherited easy-stock Alibaba OSS feed
-(`easy-stock-fs.oss-cn-beijing.aliyuncs.com`), which was controlled by the upstream project. The
-owner/repo pair lives in `desktop/update-feed.cjs` as a hard constant: there is no environment
-variable, setting, or request parameter that can point the updater at another repository or host.
+## 使用者資料與更新順序
 
-- macOS publishes a signed/notarized ZIP, its blockmap and `latest-mac.yml`; DMGs are published in
-  the same release for manual installation.
-- Windows publishes a signed NSIS installer, its blockmap and `latest.yml`.
-- Every downloaded artifact is verified against the SHA-512 digest recorded in `latest*.yml`;
-  `desktop/scripts/verify-updater-artifacts.mjs` re-checks those digests in CI before publishing.
-- The app checks 30 seconds after startup and every 12 hours. Downloads and restarts always require
-  a user action.
-- For updates started inside the app, it stops its local services, flushes Electron sessions, and
-  backs up user data outside the Electron `userData` directory before installation. The latest
-  three backups are retained.
-- A persistence migration/open failure prevents the desktop backend from starting instead of
-  silently opening an empty database.
+- 啟動後 30 秒及每 12 小時檢查一次；下載、安裝均由使用者啟動。
+- Windows 安裝前先寫入一次性更新意圖，完整退出目前 Electron，再重新啟動。
+  新 process 在建立 BrowserWindow、session、backend 或更新網路連線之前，先建立經驗證的資料備份。
+  flushStorageData 本身不會釋放 Windows 的 LevelDB / Cookie handles，不能代替完整退出。
+- 備份成功後重新確認 GitHub 發布版本與使用者選定版本相同，再下載並交給原生 installer。
+  因此重新啟動後仍需網路；離線、版本改變或備份失敗時不安裝，保留資料並正常啟動。
+- 備份包含 settings、資料庫、未知 extension state、Hermes 與瀏覽器狀態。
+  排除根目錄可重建 cache；複製後比對來源與目的 SHA-256，SQLite 需通過 integrity check。
+- 外部 mystocktracer-update-backups 目錄保留所有成功備份，不自動淘汰歷史版本。
+  失敗嘗試僅移除該次 .partial staging；不修改原始資料或已完成備份。
+- 首次身份遷移依 [桌面資料遷移契約](../docs/desktop-identity-migration.md) 執行。
+  新 profile 已有資料時優先使用；舊 easy-stock / desktop 來源保留，未知 state 不刪除。
 
-Release signing secrets expected by `.github/workflows/release.yml`:
+macOS 未簽章套件使用手動下載流程。已簽章套件的自動安裝與 DMG 行為仍需在 macOS 驗證；
+Windows 本機 smoke 不代表 macOS 或正式跨版本 installer 升級已通過。
 
-- macOS: `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`
-- Windows: `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`
+## 歷史版本
 
-No object-storage credentials are required any more; publishing uses the workflow's own
-`GITHUB_TOKEN`.
+Phase B1 之前的 easy-stock 客戶端仍使用上游更新來源。本 repository 無權修改其既有 feed，
+這些安裝需要一次手動安裝 mystocktracer。這是保留舊名稱的相容性原因。
 
-## Legacy installation transition
+直接執行 NSIS 或拖入 DMG 不會走應用程式內的備份流程。先關閉應用程式，
+保存完整 userData 外部副本，再安裝與確認資料。Windows 保留歷史 installer GUID，
+以維持既有安裝登錄與升級路徑；新 appId、執行檔、產品名稱與素材屬於 mystocktracer。
 
-Versions released before Phase B1 only poll the upstream Alibaba OSS feed. A new client cannot
-change that old client's configured feed, and this repository does not control the upstream bucket.
-Those installations therefore require a **one-time manual upgrade** from this repository's GitHub
-Releases. After that installation, automatic checks use GitHub Releases.
+## 發布維護
 
-The manual upgrade reuses the existing Electron user-data location and does not intentionally delete
-settings, Watchlist, Portfolio, research history, alerts, browser-auth data, or legacy databases.
-However, a directly launched NSIS or DMG installer does not run the in-app update manager and does
-not create its external backup. Before this one-time manual upgrade, close the app and copy its
-current user-data directory to a safe external location. Keep that copy until the upgraded app has
-opened successfully and the Taiwan data is visible.
+正式發布需維護者另行授權，本次 OSS cleanup 沒有推 tag、執行 release workflow 或發布套件。
 
-Without signing credentials, CI can still produce packages for smoke testing, but those packages are
-not production-ready for unattended replacement. macOS automatic installation requires a Developer
-ID signature and notarization; Windows should use Authenticode to avoid an untrusted
-installer/update path.
+Desktop Release workflow 接受 v* tag 或明確指定的既有 tag，每個 job 均 checkout 該 tag；
+版本必須等於 desktop/package.json。品質檢查後，各原生 runner 建置 Windows x64、
+macOS x64 與 arm64，再合併 metadata、驗證 SHA-512、產生 SHA256SUMS.txt 與發布。
 
-## Release procedure
+- Windows：NSIS EXE、blockmap、latest.yml。
+- macOS：各架構 ZIP、ZIP blockmap、DMG，以及合併的 latest-mac.yml。
+- 不可從已發布版本移除 metadata 或其引用檔案。
+- 簽章使用既有 WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD 或 MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD。
+  Apple notarization 使用既有 APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID。
+- 無簽章的本機套件只可作已聲明範圍的 smoke；不代表正式簽章發布已驗證。
+- package resources override 僅允許 desktop/dist 專用子目錄，拒絕來源、Git metadata、
+  runtime state、祖先與 junction / symlink；prepare 會替換該專用產物。
 
-Every release must be made by pushing a tag matching `desktop/package.json`, or by manually running
-the `Desktop Release` workflow with an existing tag. The workflow performs the following steps in
-order:
+本機檢查可執行：
 
-1. Build and verify macOS arm64, macOS x64 and Windows x64 assets.
-2. Merge and verify updater metadata.
-3. Assemble one GitHub release asset set containing the user downloads (DMG/EXE) **and** the updater
-   assets (`latest-mac.yml`, `latest.yml`, ZIPs, blockmaps).
-4. Re-verify the updater metadata against the assembled set.
-5. Publish the assets plus `SHA256SUMS.txt` to the GitHub Release.
-
-Do not delete updater assets from a published release. The two `latest*.yml` assets are the update
-channels, and every file they reference must remain available. To validate a local asset directory:
-
-```bash
-node desktop/scripts/verify-updater-artifacts.mjs desktop/dist/release latest-mac.yml latest.yml
+```powershell
+npm.cmd run package:windows
+npm.cmd --workspace desktop run smoke:packaged-desktop
+npm.cmd --workspace desktop run smoke:packaged-runtime
 ```
 
-```bash
-node desktop/scripts/prepare-publish-assets.mjs desktop/dist/release /tmp/mystocktracer-publish v0.4.0
-```
+第三方 runtime、Electron 與相依套件保留各自授權，見
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。它們不是 easy-stock 繼承程式碼的同義詞。

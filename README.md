@@ -41,6 +41,8 @@
 
 ## 專案狀態
 
+本 repository 進入 **OSS transition / maintenance**：維護既有使用者資料、修正問題與完成來源整理。`TWstockfor_tick-stock-panel` 是唯一長期台股主產品；新的台股核心功能應在該專案實作，mystocktracer 不再作為平行功能主線。這項維護方向不代表獨立化或 relicensing 已完成，實際 gate 見 [OSS 來源稽核](./docs/oss-provenance-audit.md)。
+
 mystocktracer 正在進行 **source provenance audit** 與 **independent OSS transition preparation**：盤點仍繼承自上游 easy-stock 的程式碼與素材，並規劃需要原創重寫或移除的部分。
 
 目前授權仍為 **PolyForm Noncommercial License 1.0.0**。在來源稽核與替換工作完成前，本專案**不應被稱為 OSI 定義下的開源軟體**。

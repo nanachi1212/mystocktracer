@@ -15,6 +15,11 @@ repeat general security, Git, testing, communication, or Windows rules.
 
 ## Taiwan Ecosystem Ownership
 
+- 本 repository 採 OSS transition / maintenance，維護既有行為與資料。
+  `TWstockfor_tick-stock-panel` 是唯一長期台股主產品；新台股核心功能優先放在該專案，
+  不在此建立平行功能主線。下列 ownership 僅約束既有程式維護，不授權產品擴張。
+  技術獨立化仍以 `docs/oss-provenance-audit.md` 的 gate 為準，不能由維護定位推定完成。
+
 - TWstock owns canonical Taiwan market truth and deterministic market data.
 - mystocktracer owns product UX, Watchlist, Screener, Alerts, Notifications,
   AI Research presentation, and research workflows.

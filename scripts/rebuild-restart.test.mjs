@@ -1,11 +1,19 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  developmentSetting,
   resolveBrowserMode,
   getBrowserLaunchPlan,
   findChromeBinary,
   launchBrowser,
 } from './rebuild-restart.mjs';
+
+test('development settings prefer canonical values including explicit empty values', () => {
+  assert.equal(developmentSetting('ADDR', {}), '');
+  assert.equal(developmentSetting('ADDR', { A_STOCK_ADDR: 'legacy:1' }), 'legacy:1');
+  assert.equal(developmentSetting('ADDR', { A_STOCK_ADDR: 'legacy:1', MYSTOCKTRACER_ADDR: ' canonical:2 ' }), 'canonical:2');
+  assert.equal(developmentSetting('ADDR', { A_STOCK_ADDR: 'legacy:1', MYSTOCKTRACER_ADDR: '' }), '');
+});
 
 test('resolveBrowserMode: defaults to incognito when env is unset or empty', () => {
   assert.equal(resolveBrowserMode(undefined), 'incognito');
@@ -51,6 +59,7 @@ test('getBrowserLaunchPlan: none mode produces action none', () => {
 test('findChromeBinary: finds existing binary when mock candidates exist', () => {
   const mockExistsSync = (filePath) => filePath === 'C:\\Mock\\chrome.exe';
   const binary = findChromeBinary({
+    platform: 'win32',
     env: {},
     existsSync: mockExistsSync,
     whereLookup: () => null,
@@ -58,11 +67,18 @@ test('findChromeBinary: finds existing binary when mock candidates exist', () =>
   assert.equal(binary, null);
 
   const found = findChromeBinary({
+    platform: 'win32',
     env: { ProgramFiles: 'C:\\Mock' },
     existsSync: (p) => p.includes('Mock'),
     whereLookup: () => null,
   });
   assert.ok(found);
+});
+
+test('findChromeBinary: non-Windows hosts never execute Windows discovery', () => {
+  for (const platform of ['linux', 'darwin']) {
+    assert.equal(findChromeBinary({ platform, env: { ProgramFiles: 'synthetic' }, existsSync: assert.fail, whereLookup: assert.fail }), null);
+  }
 });
 
 test('launchBrowser: none mode logs disabled and does not spawn', () => {
