@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(desktopRoot, '..');
 const packageRoot = path.resolve(process.argv[2] || path.join(desktopRoot, 'dist', 'builder-dir', 'win-unpacked'));
-const backend = path.join(packageRoot, 'resources', 'resources', 'backend', 'easy-stock-backend.exe');
+const backend = path.join(packageRoot, 'resources', 'resources', 'backend', 'mystocktracer-backend.exe');
 if (!fs.existsSync(backend)) throw new Error(`Packaged backend not found: ${backend}`);
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'mystocktracer-packaged-smoke-'));

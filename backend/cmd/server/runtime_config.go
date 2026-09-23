@@ -73,16 +73,19 @@ func envBool(suffix string) bool {
 	return value == "1" || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
 }
 
+// preferredDataDir picks the data directory for a standalone backend run. The desktop app never
+// relies on it — it passes every path explicitly — so this only covers development and direct
+// `go run` usage. Phase B4 made "mystocktracer" the canonical name; the two historical names are
+// still read in place when they already hold settings, so an existing local profile keeps working.
+// Nothing is copied or renamed here: adopting a directory is the whole behaviour.
 func preferredDataDir(configDirectory string) string {
-	current := filepath.Join(configDirectory, "easy-stock")
-	if isFile(filepath.Join(current, "settings.json")) {
-		return current
+	canonical := filepath.Join(configDirectory, "mystocktracer")
+	for _, candidate := range []string{canonical, filepath.Join(configDirectory, "easy-stock"), filepath.Join(configDirectory, "a-stock-ai")} {
+		if isFile(filepath.Join(candidate, "settings.json")) {
+			return candidate
+		}
 	}
-	legacy := filepath.Join(configDirectory, "a-stock-ai")
-	if isFile(filepath.Join(legacy, "settings.json")) {
-		return legacy
-	}
-	return current
+	return canonical
 }
 
 func isFile(path string) bool {

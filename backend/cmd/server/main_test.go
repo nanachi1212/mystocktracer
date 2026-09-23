@@ -37,6 +37,38 @@ func TestPreferredDataDirUsesRenamedDirectoryWhenConfigured(t *testing.T) {
 	}
 }
 
+// Phase B4: a standalone backend with no existing profile must create the canonical directory
+// rather than resurrecting the upstream name.
+func TestPreferredDataDirDefaultsToCanonicalNameWhenNothingExists(t *testing.T) {
+	configDir := t.TempDir()
+	want := filepath.Join(configDir, "mystocktracer")
+	if got := preferredDataDir(configDir); got != want {
+		t.Fatalf("preferredDataDir() = %q, want %q", got, want)
+	}
+}
+
+// An existing canonical profile wins over both historical directories, and none of them is moved.
+func TestPreferredDataDirPrefersCanonicalOverHistoricalDirectories(t *testing.T) {
+	configDir := t.TempDir()
+	canonical := filepath.Join(configDir, "mystocktracer")
+	for _, directory := range []string{canonical, filepath.Join(configDir, "easy-stock"), filepath.Join(configDir, "a-stock-ai")} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, "settings.json"), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := preferredDataDir(configDir); got != canonical {
+		t.Fatalf("preferredDataDir() = %q, want %q", got, canonical)
+	}
+	for _, directory := range []string{filepath.Join(configDir, "easy-stock"), filepath.Join(configDir, "a-stock-ai")} {
+		if !isFile(filepath.Join(directory, "settings.json")) {
+			t.Fatalf("historical directory was mutated: %q", directory)
+		}
+	}
+}
+
 func TestRuntimeEnvPrefersMystocktracerNameAndFallsBackToLegacy(t *testing.T) {
 	t.Setenv("A_STOCK_ADDR", "127.0.0.1:21001")
 	if got := runtimeEnv("ADDR"); got != "127.0.0.1:21001" {

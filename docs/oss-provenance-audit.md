@@ -60,6 +60,7 @@ Phase B2 完成下列原創 runtime replacement：
 ## 目前原創且可獨立維護的 runtime 區域
 
 - 官方台股 provider、ToAlpha/MOPS 補充、PIT／freshness contracts。
+- Phase B4 的桌面 identity（`com.nanachi1212.mystocktracer`）、啟動 lifecycle、使用者資料 migration 與品牌素材產生流程。
 - Dashboard、Watchlist、Portfolio、Alerts、Stock Research、Research History、Previous Comparison 與 Screener。
 - 本輪的 Go bootstrap、settings persistence、HTTP boundary、frontend transport、Taiwan shell 與 styling foundation。
 - updater 已由 Phase B1 改為本 repository GitHub Releases。
@@ -72,13 +73,15 @@ Phase B2 完成下列原創 runtime replacement：
 | --- | --- | --- |
 | `backend/internal/hermes/runtime.go`、`frontend/src/lib/hermes.ts`、`HermesAgentSettingsPanel.tsx` | removed | Phase B3 已刪除；產品契約與 adapter 取代其 runtime/transport/settings responsibility |
 | `AIChatWorkspace.tsx`、`SettingsDrawer.tsx`、`MarkdownContent.tsx` | original | Phase B3 依產品 contract 完整替換；對話協定、設定組合與 safe-link renderer 均有回歸測試 |
-| `AppUpdatePanel.tsx` | likely-inherited | 與現有 desktop identity／更新 UX 綁定，Phase B4 |
+| `AppUpdatePanel.tsx` | likely-inherited | Phase B4 已改綁 canonical identity 與 GitHub Releases 更新流程；UI 表達仍待原創替換 |
 | `backend/internal/httpapi/llm_connection.go`、`llm_models.go` | original | Phase B3 完整替換成薄 HTTP handler；模型 discovery 與 probe 規則由產品 `internal/agent` 服務持有 |
 | `backend/internal/narrative/narrative.go` | removed | 沒有 production consumer，Phase B3 已移除 |
 | `backend/internal/runtimelog/writer.go` | confirmed-inherited | 共用 bounded/redacted logger；桌面/runtime phase 原創替換 |
 | `backend/internal/marketemotion/types.go` | confirmed-inherited | 小型 shared types；台股實作仍使用，後續薄化或原創替換 |
-| `desktop/main.cjs`、`preload.cjs`、`backend-process.cjs`、user-data/update/package scripts | confirmed／likely-inherited | 桌面 lifecycle、封裝與資料 migration，Phase B4；本輪只做 canonical env emission |
-| `desktop/assets/easy-stock.*`、`frontend/public/easy-stock-mark.*` | `unclear` | 原始設計來源無 repository 證據，需原創素材替換 |
+| `desktop/main.cjs`、`app-lifecycle.cjs`、`identity.cjs`、`user-data-migration.cjs`、packaging scripts | original | Phase B4 依產品契約重寫桌面 lifecycle、identity 與資料 migration；`main.cjs` 僅保留薄 entry point |
+| `desktop/preload.cjs`、`backend-process.cjs`、`hermes-runtime-root.cjs`、`runtime-logger.cjs`、`data-protection.cjs`、`update-*.cjs` | likely-inherited | 檔案結構沿用上游輪廓，內容已隨 B1–B4 大幅替換；剩餘表達量小 |
+| `desktop/assets/easy-stock.*`、`frontend/public/easy-stock-mark.*` | removed | Phase B4 已移除，改用本 repository 產生的 `mystocktracer.*` / `mystocktracer-mark.*` 原創素材（見 `docs/brand-assets.md`） |
+| `desktop/scripts/*`、`desktop/test/*`、部分 `frontend/src` 測試 | likely-inherited | 封裝流程與測試骨架；非產品 runtime，不是 relicensing 的主要 blocker |
 
 ## 第三方相依與授權狀態
 
@@ -86,14 +89,38 @@ Phase B2 完成下列原創 runtime replacement：
 - Phase B1 已移除套件中的 AGPL-3.0-only WeChat download API。
 - 上游 easy-stock 的衍生關係、作者署名、Git 歷史與 PolyForm Noncommercial root license 持續保留。
 
+## Phase B4 結果
+
+Phase B4 完成 desktop identity independence：
+
+- canonical app identity：`mystocktracer` / `com.nanachi1212.mystocktracer`，後端執行檔改名為 `mystocktracer-backend`。
+- 使用者資料改用 canonical 目錄，並以 staging→verify→atomic rename 的 migration 承接既有 `easy-stock` / `desktop` 安裝；來源目錄永不刪除，任何驗證失敗都 fail-closed 並保留原資料（13 項 migration 測試涵蓋 symlink escape、SQLite 完整性、並行啟動與中斷重建）。
+- 品牌素材改為本 repository 產生的原創 `mystocktracer` icon／mark，舊 `easy-stock` 素材已移除，`unclear` provenance 項目歸零。
+
+統計（以 fork 起點比對，見 `scripts/provenance-audit.mjs`）：
+
+| 指標 | Phase B3 後 | Phase B4 後 |
+| --- | --- | --- |
+| tracked 檔案 | 278 | 295 |
+| inherited 檔案 | 128 | 97 |
+| confirmed-inherited | 66 | 23 |
+| likely-inherited | 62 | 74 |
+| original | 134 | 198 |
+| unclear | 16 | 0 |
+| inherited LOC | 19,153 | 3,310 |
+| original LOC | 35,174 | 41,245 |
+
+仍具 runtime 影響的 inherited 檔案為 60 個（54 likely／6 confirmed），集中在封裝腳本與測試骨架，不再有 A 股或上游產品語意。
+
 ## Current HEAD ready for relicensing
 
 **NO**
 
 原因：
 
-1. 目前仍有上表所列的 desktop shell 與共用 runtime inherited expression；Hermes 僅作為有獨立 MIT notice 的可替換第三方 adapter/runtime。
-2. 圖示／favicon provenance 仍為 `unclear`。
-3. 目前維護者沒有單方面重新授權上游著作權表達的權利；工程替換完成後仍需合法權利基礎與人工法律判斷。
+1. 仍有 97 個 inherited 檔案（約 3,310 LOC），其中 6 個為 confirmed-inherited；雖已無 A 股語意與上游品牌，但著作權表達仍源自上游。
+2. 目前維護者沒有單方面重新授權上游著作權表達的權利；工程替換完成後仍需合法權利基礎與人工法律判斷。
 
-推薦下一階段：**Phase B4 — Desktop Identity Independence**，並以可回復的使用者資料 migration 保護既有安裝。
+相較 Phase B3，`unclear` provenance 已歸零，inherited LOC 由 19,153 降至 3,310。
+
+推薦下一階段：**Phase B5 — Packaging & Test Scaffold Independence**，替換 `desktop/scripts/*` 與剩餘 confirmed-inherited 測試骨架，之後再進行人工法律判斷。

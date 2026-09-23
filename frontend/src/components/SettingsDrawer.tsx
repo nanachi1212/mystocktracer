@@ -39,8 +39,8 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 	}, [config, open]);
 
 	useEffect(() => {
-		if (!open || !window.aStock?.getRuntimeLogStatus) { setRuntimeLogStatus(null); return; }
-		void window.aStock.getRuntimeLogStatus().then(setRuntimeLogStatus).catch(() => setRuntimeLogStatus(null));
+		if (!open || !window.mystocktracer?.getRuntimeLogStatus) { setRuntimeLogStatus(null); return; }
+		void window.mystocktracer.getRuntimeLogStatus().then(setRuntimeLogStatus).catch(() => setRuntimeLogStatus(null));
 	}, [open]);
 
 	const saveProductSettings = async (event?: FormEvent) => {
@@ -55,9 +55,9 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 	};
 
 	const openRuntimeLogs = async () => {
-		if (!window.aStock?.openRuntimeLogs) return;
+		if (!window.mystocktracer?.openRuntimeLogs) return;
 		setOpeningRuntimeLogs(true);
-		try { await window.aStock.openRuntimeLogs(); } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : '開啟日誌目錄失敗'); } finally { setOpeningRuntimeLogs(false); }
+		try { await window.mystocktracer.openRuntimeLogs(); } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : '開啟日誌目錄失敗'); } finally { setOpeningRuntimeLogs(false); }
 	};
 
 	if (!open) return null;

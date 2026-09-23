@@ -93,7 +93,7 @@ jobs:
 
       - name: Build macOS release assets
         env:
-          A_STOCK_DESKTOP_ARCH: ${{ matrix.arch }}
+          MYSTOCKTRACER_DESKTOP_ARCH: ${{ matrix.arch }}
           ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
@@ -111,7 +111,7 @@ jobs:
       - name: Upload macOS release assets
         uses: actions/upload-artifact@v4
         with:
-          name: easy-stock-macos-${{ matrix.arch }}
+          name: mystocktracer-macos-${{ matrix.arch }}
           path: desktop/dist/release/*
           if-no-files-found: error
           compression-level: 0
@@ -147,7 +147,7 @@ jobs:
 
       - name: Build Windows release asset
         env:
-          A_STOCK_DESKTOP_ARCH: x64
+          MYSTOCKTRACER_DESKTOP_ARCH: x64
           ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
@@ -159,7 +159,7 @@ jobs:
       - name: Upload Windows release asset
         uses: actions/upload-artifact@v4
         with:
-          name: easy-stock-windows-x64
+          name: mystocktracer-windows-x64
           path: desktop/dist/release/*
           if-no-files-found: error
           compression-level: 0
@@ -178,7 +178,7 @@ jobs:
       - name: Download release assets
         uses: actions/download-artifact@v4
         with:
-          pattern: easy-stock-*
+          pattern: mystocktracer-*
           path: release-assets
           merge-multiple: true
 

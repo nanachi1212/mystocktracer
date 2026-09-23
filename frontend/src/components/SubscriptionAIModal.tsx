@@ -52,8 +52,8 @@ export function SubscriptionAIModal({ intelligence, onClose }: SubscriptionAIMod
 		const stockDisplayName = `${intelligence.identity.code} ${intelligence.identity.name}`;
 
 		try {
-			if (window.aStock?.openSubscriptionAI) {
-				await window.aStock.openSubscriptionAI(targetUrl);
+			if (window.mystocktracer?.openSubscriptionAI) {
+				await window.mystocktracer.openSubscriptionAI(targetUrl);
 			} else {
 				// 備用: 一般網頁環境安全 open
 				const win = window.open(targetUrl, '_blank', 'noopener,noreferrer');

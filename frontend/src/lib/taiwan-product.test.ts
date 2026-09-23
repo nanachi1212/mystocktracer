@@ -253,12 +253,12 @@ describe('Taiwan-first product shell', () => {
 	});
 
 	it('keeps visible desktop metadata free of A-share identity', () => {
-		const main = fs.readFileSync(path.join(root, 'desktop/main.cjs'), 'utf8');
+		const main = fs.readFileSync(path.join(root, 'desktop/app-lifecycle.cjs'), 'utf8');
 		const manifest = fs.readFileSync(path.join(root, 'desktop/package.json'), 'utf8');
-		const windows = fs.readFileSync(path.join(root, 'desktop/scripts/package-windows.mjs'), 'utf8');
+		const identity = fs.readFileSync(path.join(root, 'desktop/identity.cjs'), 'utf8');
 		expect(main.match(/title:\s*'([^']+)'/)?.[1]).not.toMatch(/A股|A-share/i);
 		expect(JSON.parse(manifest).description).not.toMatch(/A股|A-share/i);
-		expect(windows.match(/FileDescription:\s*'([^']+)'/)?.[1]).not.toMatch(/A股|A-share/i);
+		expect(identity).toContain("name: 'mystocktracer'");
 	});
 });
 
@@ -1490,5 +1490,40 @@ describe('M8F — buildTaiwanScreenerMatchReason / taiwanScreenerMatchReasonSuff
 		const applied = taiwanScreenerDefaultFilters();
 		expect(buildTaiwanScreenerMatchReason('canonical', applied, screenerSecurityFixture())).toBeNull();
 		expect(buildTaiwanScreenerMatchReason('trade_date', applied, screenerSecurityFixture())).toBeNull();
+	});
+});
+
+describe('brand asset references resolve to shipped files', () => {
+	// Phase B4 renamed the desktop/web brand marks. index.html was updated but ApplicationFrame was
+	// not, which silently 404s the logo at runtime because a missing <img> renders as alt text only.
+	// This walks every BASE_URL-relative asset reference in src and asserts the file exists.
+	it('every BASE_URL asset referenced from src exists in frontend/public', () => {
+		const publicRoot = path.join(root, 'frontend/public');
+		const sourceRoot = path.join(root, 'frontend/src');
+		const sources: string[] = [];
+		const walk = (directory: string) => {
+			for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+				const full = path.join(directory, entry.name);
+				if (entry.isDirectory()) walk(full);
+				else if (/\.(ts|tsx)$/.test(entry.name)) sources.push(full);
+			}
+		};
+		walk(sourceRoot);
+
+		const missing: string[] = [];
+		for (const file of sources) {
+			const content = fs.readFileSync(file, 'utf8');
+			for (const match of content.matchAll(/\$\{import\.meta\.env\.BASE_URL\}([A-Za-z0-9._\-/]+)/g)) {
+				if (!fs.existsSync(path.join(publicRoot, match[1]))) missing.push(`${path.relative(root, file)} -> ${match[1]}`);
+			}
+		}
+		expect(missing).toEqual([]);
+	});
+
+	it('index.html icons exist too', () => {
+		const html = fs.readFileSync(path.join(root, 'frontend/index.html'), 'utf8');
+		const hrefs = [...html.matchAll(/<link[^>]+href="\/([A-Za-z0-9._\-/]+)"/g)].map((match) => match[1]);
+		expect(hrefs.length).toBeGreaterThan(0);
+		for (const href of hrefs) expect(fs.existsSync(path.join(root, 'frontend/public', href))).toBe(true);
 	});
 });

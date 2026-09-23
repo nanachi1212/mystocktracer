@@ -1,8 +1,8 @@
 import path from 'node:path';
 
-const PACKAGE_RESOURCES_ENV = 'A_STOCK_PACKAGE_RESOURCES_DIR';
+const PACKAGE_RESOURCES_ENV = 'MYSTOCKTRACER_PACKAGE_RESOURCES_DIR';
 
-export function resolvePackageResourcesDir({ desktopRoot, repoRoot, override = process.env[PACKAGE_RESOURCES_ENV] } = {}) {
+export function resolvePackageResourcesDir({ desktopRoot, repoRoot, override = process.env[PACKAGE_RESOURCES_ENV] || process.env.A_STOCK_PACKAGE_RESOURCES_DIR } = {}) {
 	if (!desktopRoot || !repoRoot) throw new Error('desktopRoot and repoRoot are required');
 
 	const resolvedDesktopRoot = path.resolve(desktopRoot);

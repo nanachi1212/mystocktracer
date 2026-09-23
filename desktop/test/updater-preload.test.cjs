@@ -19,7 +19,7 @@ test('preload exposes updater IPC calls and removes status listeners cleanly', a
       listeners.delete(channel);
     },
   };
-  const contextBridge = { exposeInMainWorld: (_name, api) => { exposed = api; } };
+  const contextBridge = { exposeInMainWorld: (name, api) => { assert.equal(name, 'mystocktracer'); exposed = api; } };
   const source = fs.readFileSync(path.resolve(__dirname, '..', 'preload.cjs'), 'utf8');
   vm.runInNewContext(source, {
     require: (moduleName) => {

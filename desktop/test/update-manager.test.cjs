@@ -59,13 +59,13 @@ test('backup failure prevents quitAndInstall', async () => {
   await assert.rejects(() => manager.installUpdate(), /backup failed/);
   assert.equal(updater.installArgs, undefined);
   assert.equal(manager.getStatus().state, 'error');
-  assert.match(manager.getStatus().message, /\[本机路径\]/);
+  assert.match(manager.getStatus().message, /\[本機路徑\]/);
 });
 
 test('development updater is disabled', async () => {
   const manager = new UpdateManager({ enabled: false, currentVersion: '0.3.0' });
   assert.equal(manager.getStatus().state, 'disabled');
-  await assert.rejects(() => manager.checkForUpdates(), /不支持自动更新/);
+  await assert.rejects(() => manager.checkForUpdates(), /不支援自動更新/);
 });
 
 test('unsigned macOS updater stays manual and never invokes native download or install', async () => {
@@ -82,7 +82,7 @@ test('unsigned macOS updater stays manual and never invokes native download or i
   });
   assert.equal(manager.getStatus().installMode, 'manual');
   updater.emit('update-available', { version: '0.5.0' });
-  assert.equal(manager.getStatus().message, '发现新版本 v0.5.0，请前往发布页下载安装');
+  assert.equal(manager.getStatus().message, '請前往發布頁手動安裝新版');
   await assert.rejects(() => manager.downloadUpdate(), /Apple Developer ID/);
   assert.equal(downloaded, false);
   updater.emit('update-downloaded', { version: '0.5.0' });

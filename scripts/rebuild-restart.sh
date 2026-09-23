@@ -16,11 +16,11 @@ BACKEND_PID_FILE="${RUNTIME_DIR}/backend.pid"
 FRONTEND_PID_FILE="${RUNTIME_DIR}/frontend.pid"
 BACKEND_LOG="${RUNTIME_DIR}/backend.log"
 FRONTEND_LOG="${RUNTIME_DIR}/frontend.log"
-BACKEND_SESSION="easy-stock-backend"
+BACKEND_SESSION="mystocktracer-backend"
 FRONTEND_SESSION="mystocktracer-frontend"
 
 log() {
-  printf '[easy-stock] %s\n' "$*"
+  printf '[mystocktracer] %s\n' "$*"
 }
 
 require_cmd() {
@@ -138,7 +138,7 @@ stop_port "${FRONTEND_PORT}" "frontend"
 
 log "starting backend on ${BACKEND_ADDR}"
 start_detached "${BACKEND_SESSION}" \
-  "cd '${ROOT_DIR}' && echo \$\$ > '${BACKEND_PID_FILE}' && A_STOCK_ADDR='${BACKEND_ADDR}' A_STOCK_TOKEN='${TOKEN}' exec '${ROOT_DIR}/desktop/bin/easy-stock-backend' > '${BACKEND_LOG}' 2>&1"
+  "cd '${ROOT_DIR}' && echo \$\$ > '${BACKEND_PID_FILE}' && A_STOCK_ADDR='${BACKEND_ADDR}' A_STOCK_TOKEN='${TOKEN}' exec '${ROOT_DIR}/desktop/bin/mystocktracer-backend' > '${BACKEND_LOG}' 2>&1"
 
 wait_for_http "${BACKEND_URL}/api/health" "backend"
 

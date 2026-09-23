@@ -1,20 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
-
-contextBridge.exposeInMainWorld('aStock', {
-  getBackendConfig: () => ipcRenderer.invoke('backend-config'),
-	getRuntimeLogStatus: () => ipcRenderer.invoke('runtime-log-status'),
-	openRuntimeLogs: () => ipcRenderer.invoke('runtime-open-logs'),
-	logRuntimeEvent: (entry) => ipcRenderer.invoke('runtime-log', entry),
-  getUpdateStatus: () => ipcRenderer.invoke('app-update-status'),
-  checkForUpdates: () => ipcRenderer.invoke('app-update-check'),
-  downloadUpdate: () => ipcRenderer.invoke('app-update-download'),
-  installUpdate: () => ipcRenderer.invoke('app-update-install'),
-  openUpdateRelease: () => ipcRenderer.invoke('app-update-open-release'),
-  openUpdateBackups: () => ipcRenderer.invoke('app-update-open-backups'),
-  onUpdateStatus: (listener) => {
-    const handler = (_event, status) => listener(status);
-    ipcRenderer.on('app-update-status-changed', handler);
-    return () => ipcRenderer.removeListener('app-update-status-changed', handler);
-  },
-  openSubscriptionAI: (targetUrl) => ipcRenderer.invoke('open-subscription-ai', targetUrl),
-});
+// Every function closes over one fixed channel; no generic IPC escapes isolation.
+const operations = {
+  getBackendConfig: 'backend-config', getRuntimeLogStatus: 'runtime-log-status',
+  openRuntimeLogs: 'runtime-open-logs', logRuntimeEvent: 'runtime-log',
+  getUpdateStatus: 'app-update-status', checkForUpdates: 'app-update-check',
+  downloadUpdate: 'app-update-download', installUpdate: 'app-update-install',
+  openUpdateRelease: 'app-update-open-release', openUpdateBackups: 'app-update-open-backups',
+  openSubscriptionAI: 'open-subscription-ai',
+};
+const api = Object.fromEntries(Object.entries(operations).map(([name, channel]) => [name, (...args) => ipcRenderer.invoke(channel, ...args)]));
+api.onUpdateStatus = (receive) => {
+  if (typeof receive !== 'function') throw new TypeError('Status listener must be a function');
+  const notify = (_event, status) => receive(status);
+  ipcRenderer.on('app-update-status-changed', notify);
+  return () => ipcRenderer.removeListener('app-update-status-changed', notify);
+};
+contextBridge.exposeInMainWorld('mystocktracer', Object.freeze(api));
