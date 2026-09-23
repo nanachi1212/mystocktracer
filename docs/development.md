@@ -1,6 +1,6 @@
 # mystocktracer 開發與封裝維護
 
-本 repository 進行 OSS transition／maintenance。新的台股核心產品能力優先在 [TWstockfor_tick-stock-panel](https://github.com/nanachi1212/TWstockfor_tick-stock-panel) 實作；此處維護既有功能、資料相容性、測試與封裝。來源與尚未完成事項見 [OSS 稽核](oss-provenance-audit.md)。上游 easy-stock attribution、Git 歷史與目前 LICENSE 保留。
+本 repository 已完成 B6 技術來源獨立化，維護現行 MIT 程式碼。新的台股核心產品能力優先在 [TWstockfor_tick-stock-panel](https://github.com/nanachi1212/TWstockfor_tick-stock-panel) 實作；此處維護既有功能、資料相容性、測試與封裝。來源與授權決策見 [OSS 稽核](oss-provenance-audit.md)。上游 easy-stock attribution、Git 歷史與原授權依 [NOTICE](../NOTICE.md) 保留。
 
 ## 環境與安裝
 
@@ -93,4 +93,4 @@ macOS 使用 npm run package:mac；release:mac／release:windows 會產生 insta
 - 台股 market truth、PIT 與 canonical provider ownership 依 [ownership 文件](TAIWAN_DEVELOPMENT_OWNERSHIP.md)。
 - dependency 使用各自授權；Hermes 為第三方 runtime，並非 inherited easy-stock implementation。
 - GitHub PR Quality 執行 Go、frontend、desktop 與 tooling tests/build；GitHub Codex Review 處理實際阻擋 findings。
-- 本輪未變更 LICENSE；技術稽核不等於重新授權的法律權利。
+- 現行程式碼採 [MIT](../LICENSE)，歷史 upstream 與第三方內容維持原授權；此範圍來自維護者明確決策，技術稽核本身不授予重新授權權利。

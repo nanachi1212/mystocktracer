@@ -85,3 +85,41 @@ test('a stale artwork decision does not approve changed binary pixels', t => {
   f.write('brand.png', Buffer.from([137, 80, 78, 71, 0, 254]));
   assert.equal(inspect({ ...f, decisions }).files.find(file => file.path === 'brand.png').category, 'unclear');
 });
+
+test('archived upstream license retains provenance without hiding substantive code', t => {
+  const f = repository(t);
+  const archivedPath = 'LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt';
+  const license = fs.readFileSync(new URL('../' + archivedPath, import.meta.url));
+  f.write('LICENSE', license);
+  f.git('add', '.'); f.git('commit', '-qm', 'synthetic upstream license');
+  f.base = f.git('rev-parse', 'HEAD').trim();
+  f.write(archivedPath, license);
+  f.write('LICENSE', 'MIT License\nSynthetic current project notice\n');
+  f.write('NOTICE.md', 'Historical content retains its original license.\n');
+  f.write('LICENSES/copied.py', 'print("synthetic original")\n');
+  f.write('LICENSES/copied.txt', 'print("synthetic original")\n');
+  const result = inspect(f);
+  const archived = result.files.find(file => file.path === archivedPath);
+  assert.equal(archived.area, 'legal');
+  assert.equal(archived.category, 'confirmed-inherited');
+  assert.equal(archived.upstreamPath, 'LICENSE');
+  assert.equal(archived.blockingRelicensing, true);
+  assert.equal(archived.replacementRequired, false);
+  assert.equal(result.files.find(file => file.path === 'NOTICE.md').area, 'document');
+  assert.equal(result.files.find(file => file.path === 'LICENSES/copied.py').replacementRequired, true);
+  const disguised = result.files.find(file => file.path === 'LICENSES/copied.txt');
+  assert.equal(disguised.category, 'confirmed-inherited');
+  assert.equal(disguised.replacementRequired, true);
+  // Changing a legal path alone cannot attest to its replacement or rights.
+  assert.equal(result.files.find(file => file.path === 'LICENSE').category, 'likely-inherited');
+  f.write(archivedPath, 'print("synthetic original")\n');
+  const replaced = inspect(f).files.find(file => file.path === archivedPath);
+  assert.notEqual(replaced.area, 'legal');
+  assert.equal(replaced.category, 'confirmed-inherited');
+  assert.equal(replaced.replacementRequired, true);
+  f.write('NOTICE.md', 'print("synthetic original")\n');
+  const disguisedNotice = inspect(f).files.find(file => file.path === 'NOTICE.md');
+  assert.equal(disguisedNotice.area, 'document');
+  assert.equal(disguisedNotice.category, 'confirmed-inherited');
+  assert.equal(disguisedNotice.replacementRequired, true);
+});

@@ -14,10 +14,14 @@ export function desktopBuildConfig({ desktopRoot, resources, version, electronVe
   const stem = `mystocktracer-v${version}`;
   return {
     appId: identity.appId, productName: identity.name, executableName: identity.name, electronVersion,
-    copyright: 'Copyright © mystocktracer contributors; portions © jundizhou (easy-stock)',
+    copyright: 'Copyright © 2026 nanachi1212 and mystocktracer contributors',
     directories: { output: path.join(desktopRoot,'dist',`builder-${mode}`), buildResources: path.join(desktopRoot,'assets') },
     files: [...runtimeModules,'package.json','assets/mystocktracer.png','!dist{,/**/*}','!resources{,/**/*}','!scripts{,/**/*}','!test{,/**/*}'],
-    extraResources: [{ from: resources, to: 'resources' }, { from: path.join(desktopRoot,'state-copy.py'), to: 'state-copy.py' }],
+    extraResources: [
+      { from: resources, to: 'resources' },
+      { from: path.join(desktopRoot,'state-copy.py'), to: 'state-copy.py' },
+      ...['LICENSE','NOTICE.md','LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt'].map(name => ({ from: path.join(desktopRoot,'..',name), to: 'resources/'+name })),
+    ],
     asar: true, publish: [resolveUpdateFeed()],
     mac: { category:'public.app-category.finance', icon:path.join(desktopRoot,'assets/mystocktracer.icns'), artifactName:`${stem}-macos-${arch}.\${ext}`, hardenedRuntime:true, gatekeeperAssess:false, identity:signed ? undefined : '-', notarize },
     dmg: { artifactName:`${stem}-macos-${arch}.dmg` },

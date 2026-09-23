@@ -175,8 +175,8 @@
     },
     {
       "path": "desktop/scripts/verify-release-package.mjs",
-      "sha256": "30ccb64c3feb7d7b868ab1b614952cedbd970972c750edbe3a2c7396d48c4ada",
-      "evidence": "B4 replacement at a20c872c28d5648655536aa8624a716393967506; docs/desktop-runtime-contract.md and docs/desktop-identity-migration.md; actual package verifier, packaged migration/storage/stream smoke and GitHub PR 12 review."
+      "sha256": "792d0d317a35a1534b486ea368b833c42f748b205c86fc7782ee58f802235193",
+      "evidence": "B4 replacement at a20c872c28d5648655536aa8624a716393967506; docs/desktop-runtime-contract.md and docs/desktop-identity-migration.md; actual package verifier, packaged migration/storage/stream smoke and GitHub PR 12 review. MIT transition (2026-09-23): only current-license documentation, package license metadata or required packaged legal files changed from B6 f1dcacc; docs/oss-provenance-audit.md records maintainer scope. Prior substantive independence evidence remains applicable."
     },
     {
       "path": "desktop/scripts/verify-updater-artifacts.mjs",
@@ -210,8 +210,8 @@
     },
     {
       "path": "desktop/test/release-metadata.test.cjs",
-      "sha256": "7f500b8fd87e8bf7b2fc6f615d9854831aceb9e1cf289f9e5347b443577009f4",
-      "evidence": "B4 replacement at a20c872c28d5648655536aa8624a716393967506; docs/desktop-runtime-contract.md and docs/desktop-identity-migration.md; actual package verifier, packaged migration/storage/stream smoke and GitHub PR 12 review."
+      "sha256": "779b5ed58c8846e15118769426c6046635098178dbeb0972eb70eef219cc6cad",
+      "evidence": "B4 replacement at a20c872c28d5648655536aa8624a716393967506; docs/desktop-runtime-contract.md and docs/desktop-identity-migration.md; actual package verifier, packaged migration/storage/stream smoke and GitHub PR 12 review. MIT transition (2026-09-23): added Windows/macOS packaging assertions and synthetic missing-license rejection cases; existing tests retained. No upstream test expressions introduced; docs/oss-provenance-audit.md records the bounded licensing delta."
     },
     {
       "path": "desktop/test/runtime-logger.test.cjs",
@@ -245,8 +245,8 @@
     },
     {
       "path": "docs/development.md",
-      "sha256": "1f4a10804be58e99381e5cfb7318de4e671473b5e34315fa6f6201bc896d49a5",
-      "evidence": "B5 authored maintenance/test/package replacement; docs/oss-cleanup-contract.md maps retained behavior and added negative cases; full suites preserve migration, IPC, update, redaction and runtime scenarios."
+      "sha256": "b26cfbc49a3bd3f06bac975e4205a8fb87e64d48ec6fc696454335da5756d09a",
+      "evidence": "B5 authored maintenance/test/package replacement; docs/oss-cleanup-contract.md maps retained behavior and added negative cases; full suites preserve migration, IPC, update, redaction and runtime scenarios. MIT transition (2026-09-23): only current-license documentation, package license metadata or required packaged legal files changed from B6 f1dcacc; docs/oss-provenance-audit.md records maintainer scope. Prior substantive independence evidence remains applicable."
     },
     {
       "path": "frontend/public/mystocktracer-mark.png",
@@ -370,13 +370,13 @@
     },
     {
       "path": "desktop/package.json",
-      "sha256": "673103eb14da7b1d2a97f17caab799238e90058e113d982be1e7162756813ecb",
-      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+      "sha256": "1a3ebfdb421c4ae055745983ebc1ada69bc39c8d601ed2128eb45982e8ebfdf2",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates. MIT transition (2026-09-23): only current-license documentation, package license metadata or required packaged legal files changed from B6 f1dcacc; docs/oss-provenance-audit.md records maintainer scope. Prior substantive independence evidence remains applicable."
     },
     {
       "path": "frontend/package.json",
-      "sha256": "c8554fc9a141473ba284cfa78cf19c4d7279947efbbc0408e8204e5e6aa175ba",
-      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+      "sha256": "282678608758d9631a011df3f5f6d9a0a46c4071436aa889a672ccbf3dcbc8cb",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates. MIT transition (2026-09-23): only current-license documentation, package license metadata or required packaged legal files changed from B6 f1dcacc; docs/oss-provenance-audit.md records maintainer scope. Prior substantive independence evidence remains applicable."
     },
     {
       "path": "frontend/src/global.d.ts",
@@ -390,8 +390,8 @@
     },
     {
       "path": "package.json",
-      "sha256": "2cfeae3825f65d8c8527f70ea465c71fea5d2796d7f49937f2e7ad8bb95cf448",
-      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+      "sha256": "5669638f5a54c730c9b7bc70072d714232612f05b70e9f6baf9797b2229ac942",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates. MIT transition (2026-09-23): only current-license documentation, package license metadata or required packaged legal files changed from B6 f1dcacc; docs/oss-provenance-audit.md records maintainer scope. Prior substantive independence evidence remains applicable."
     },
     {
       "path": "backend/internal/httpapi/settings_handler.go",
@@ -525,13 +525,13 @@
     },
     {
       "path": "CONTRIBUTING.md",
-      "sha256": "1777abe3a379b6a1e9f1a266f3f0062073769412cc29f345d27176417dbdba2f",
-      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+      "sha256": "cbab541030978988b68e80f6d3276827539de4f8591fb53bb01fb525c5a8ee37",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained. MIT transition (2026-09-23): only current-license documentation, package license metadata or required packaged legal files changed from B6 f1dcacc; docs/oss-provenance-audit.md records maintainer scope. Prior substantive independence evidence remains applicable."
     },
     {
       "path": "README.md",
-      "sha256": "fb4c8d035dfaa92d71cea81f272aa0a8877803631947a6ff20fc52fe8fb87495",
-      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+      "sha256": "24447cf4af25b9ac7cc4f1e89041de4e4b33f72ed3f918f43eda18c98a50658c",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained. MIT transition (2026-09-23): only current-license documentation, package license metadata or required packaged legal files changed from B6 f1dcacc; docs/oss-provenance-audit.md records maintainer scope. Prior substantive independence evidence remains applicable."
     },
     {
       "path": "ROADMAP.md",
@@ -567,6 +567,11 @@
       "path": "docs/user-guide.md",
       "sha256": "3d91ce2867661cd767a22d2e35f9143c3f7e6fae9bbb45bc2392c7f50e4af638",
       "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "f27982ec9abbb60c96d9e31d2c248cdac0e72d62d338a6a73b3be9c9e5e042a9",
+      "evidence": "Maintainer-selected standard MIT License for current mystocktracer-owned content, effective from the MIT transition commit; not an authorship claim over the standard license text. Original easy-stock license and Required Notice preserved verbatim in LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt; historical material excluded by NOTICE.md; docs/oss-provenance-audit.md records the decision."
     }
   ]
 }

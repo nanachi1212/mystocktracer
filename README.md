@@ -31,8 +31,8 @@ npm.cmd run build:frontend
 
 ## 專案與授權狀態
 
-本 repository 正進行 OSS 來源獨立化與既有功能維護。`TWstockfor_tick-stock-panel` 是新的台股核心功能主產品；mystocktracer 保留並維護自身的研究工作流與桌面使用者資料。每個來源候選與技術 gate 的最新判定見 [OSS 來源稽核](docs/oss-provenance-audit.md)。
+本 repository 已完成 B6 技術來源獨立化，持續維護既有功能。`TWstockfor_tick-stock-panel` 是新的台股核心功能主產品；mystocktracer 保留並維護自身的研究工作流與桌面使用者資料。來源證據與授權決策見 [OSS 來源稽核](docs/oss-provenance-audit.md)。
 
-mystocktracer 由 [jundizhou/easy-stock](https://github.com/jundizhou/easy-stock) 衍生。原作者署名、Git 歷史與相關 attribution 均保留；目前 [LICENSE](LICENSE) 是 PolyForm Noncommercial License 1.0.0。本 repository 現階段是 source-available，並非 OSI 定義的開源授權。任何未來授權變更都需要維護者明確決定。
+mystocktracer 現行原創／重寫後程式碼採 [MIT License](LICENSE)。本 repository 由 [jundizhou/easy-stock](https://github.com/jundizhou/easy-stock) 衍生；原作者署名、Git 歷史與 13 份歷史 release notes 均保留，原 PolyForm Noncommercial 授權全文保存在 [LICENSES](LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt)。歷史 upstream 內容與第三方元件仍依各自原有授權及 attribution，MIT 不追溯重新授權這些內容。完整範圍見 [NOTICE](NOTICE.md) 與 [第三方通知](THIRD_PARTY_NOTICES.md)。
 
 如需回報問題，請使用 [Issue 模板](https://github.com/nanachi1212/mystocktracer/issues/new/choose)。安全問題請走 [私密回報管道](SECURITY.md)，勿公開憑證、本機資料或持倉內容。

@@ -21,4 +21,4 @@ TWstock 與交易所官方資料持有 canonical 台股事實；mystocktracer �
 
 不要複製授權不明或不相容的程式碼、文件與素材。若引用允許使用的外部來源，PR 必須標明 repository、commit、路徑、授權與保留的署名。使用 AI 工具協助時，提交者仍須審閱內容並對正確性負責。
 
-目前貢獻依本 repository 的 [PolyForm Noncommercial License 1.0.0](LICENSE) 發布；PR 不構成授權變更。
+提交現行 mystocktracer 原創貢獻，即同意以本 repository 的 [MIT License](LICENSE) 發布該貢獻。外部引用內容必須保留各自原有授權及署名；不得將 upstream 歷史內容視為已改採 MIT。授權範圍見 [NOTICE](NOTICE.md)；一般 PR 不構成歷史或第三方內容的重新授權。

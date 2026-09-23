@@ -25,6 +25,28 @@ test('Windows and macOS config own identity, retain B3 installer GUID and protec
     const {requiredLocalRuntimeModules}=await import('../scripts/verify-release-package.mjs');
     for(const name of requiredLocalRuntimeModules()) assert.ok(config.files.includes(name),name);
     assert.ok(config.extraResources.some((entry)=>entry.to==='state-copy.py'));
+    for(const name of ['LICENSE','NOTICE.md','LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt']) {
+      assert.ok(config.extraResources.some(entry=>entry.to==='resources/'+name && entry.from===path.join(desktop,'..',name)),name);
+    }
+  }
+});
+
+test('package verifier rejects missing current or historical license notices on both platforms',async t=>{
+  const {verifyReleasePackage}=await import('../scripts/verify-release-package.mjs');
+  for(const platform of ['windows','macos']) {
+    const root=fixture(t),windows=platform==='windows';
+    const resources=windows?'resources':'Contents/Resources',content=resources+'/resources/';
+    const legal=['LICENSE','NOTICE.md','LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt'];
+    const names=[windows?'mystocktracer.exe':'Contents/MacOS/mystocktracer',resources+'/state-copy.py',
+      ...['backend/'+(windows?'mystocktracer-backend.exe':'mystocktracer-backend'),'frontend/dist/index.html',
+        'hermes-runtime/runtime-manifest.json','hermes-runtime/LICENSE','THIRD_PARTY_NOTICES.md',
+        'hermes-runtime/'+(windows?'python/python.exe':'venv/bin/python'),...legal].map(name=>content+name)];
+    for(const name of names) {const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'synthetic fixture');}
+    for(const name of legal) {
+      const file=path.join(root,content,name);fs.unlinkSync(file);
+      assert.throws(()=>verifyReleasePackage(root,platform),error=>error.message==='Missing package member: '+path.relative(root,file));
+      fs.writeFileSync(file,'synthetic fixture');
+    }
   }
 });
 test('installed B3 updater launches renamed installer with update and force-run flags',()=>{

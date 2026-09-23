@@ -50,8 +50,12 @@ function renames(cwd, base, ref) {
   }
   return results;
 }
-function area(name) {
-  if (/^(LICENSE|THIRD_PARTY_NOTICES.md)$/.test(name)) return 'legal';
+function area(name, bytes) {
+  if (/^(LICENSE|THIRD_PARTY_NOTICES\.md)$/.test(name)) return 'legal';
+  // Only the preserved upstream license qualifies; renamed code or replacement
+  // content under LICENSES must still participate in technical blocker checks.
+  if (name === 'LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt'
+      && fingerprint(bytes) === 'c33d0f2551b1f6dd06d0643109c84ef8e8f4465dae0d3d2208d7ad60ff00963f') return 'legal';
   if (name.startsWith('.github/release-notes/')) return 'historical-document';
   if (/\.(png|svg|ico|icns|jpg|woff2?|ttf)$/.test(name)) return 'asset';
   if (/(?:^|\/)(?:test|testdata)\//.test(name) || /(?:\.test\.|_test\.go$)/.test(name)) return 'test';
@@ -94,7 +98,7 @@ export function inspect({ cwd = root, base = FORK, ref = 'WORKTREE', decisions =
   const reviewed = new Map(decisions.map(item => [item.path, item]));
   const files = [], references = [];
   for (const [name, bytes] of current) {
-    const kind = area(name), text = bytes.includes(0) ? '' : bytes.toString('utf8');
+    const kind = area(name, bytes), text = bytes.includes(0) ? '' : bytes.toString('utf8');
     const digest = fingerprint(bytes);
     const upstreamPath = original.has(name) ? name : hashes.get(digest) || moved.get(name) || overlap(name, bytes) || null;
     const decision = reviewed.get(name);

@@ -1,5 +1,12 @@
 # Third-party notices
 
+The current mystocktracer codebase uses the root [MIT License](LICENSE).
+Dependencies, bundled runtimes and external data retain their own licenses,
+copyright notices and terms; the project license does not relicense them.
+This file records selected bundled-component notices, not a complete dependency
+license inventory. Retain each component's accompanying LICENSE/NOTICE files.
+Historical easy-stock licensing and attribution are documented in [NOTICE.md](NOTICE.md).
+
 ## Hermes Agent
 
 mystocktracer can bundle the Hermes Agent Python runtime as an optional agent

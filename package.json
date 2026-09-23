@@ -1,6 +1,7 @@
 {
   "name": "mystocktracer",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev:backend": "node scripts/dev.mjs backend",
     "test:tooling": "node --test scripts/*.test.mjs",
