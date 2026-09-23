@@ -51,7 +51,7 @@ function renames(cwd, base, ref) {
   return results;
 }
 function area(name, bytes) {
-  if (/^(LICENSE|NOTICE\.md|THIRD_PARTY_NOTICES\.md)$/.test(name)) return 'legal';
+  if (/^(LICENSE|THIRD_PARTY_NOTICES\.md)$/.test(name)) return 'legal';
   // Only the preserved upstream license qualifies; renamed code or replacement
   // content under LICENSES must still participate in technical blocker checks.
   if (name === 'LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt'

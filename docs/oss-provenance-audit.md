@@ -30,7 +30,7 @@
 
 剩餘 14 項恰為移存的 `LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt` 與 `.github/release-notes` 的 13 份歷史文件（完整版本清單見 [NOTICE](../NOTICE.md)）。逐一比對 fork blob，CRLF 正規化 SHA 全數相符；本次未更動任何歷史 release note。原 PolyForm 文件的正規化 SHA-256 為 `c33d0f2551b1f6dd06d0643109c84ef8e8f4465dae0d3d2208d7ad60ff00963f`。
 
-runtime、test、config、一般 docs、packaging tool 的 inherited／unclear 替換阻擋項均為零。`blockingFiles=14` 仍是對「把全部 repository 內容一律改授權」的檢視項，並非本次限定範圍 MIT 決策的技術 blocker；它們沒有被重新標成 original 或改採 MIT。歷史授權只有在上述精確路徑與 SHA 相符時才列入 legal area；仍以相同 blob／來源規則判定 inherited，不豁免任意 LICENSES 文字檔或被替換的授權檔。
+runtime、test、config、一般 docs、packaging tool 的 inherited／unclear 替換阻擋項均為零。`blockingFiles=14` 仍是對「把全部 repository 內容一律改授權」的檢視項，並非本次限定範圍 MIT 決策的技術 blocker；它們沒有被重新標成 original 或改採 MIT。歷史授權只有在上述精確路徑與 SHA 相符時才列入 legal area；仍以相同 blob／來源規則判定 inherited，不豁免任意 LICENSES 文字檔或被替換的授權檔。新增 NOTICE 按一般文件檢查，不新增路徑豁免。
 
 ## 維護者授權決策
 
@@ -73,7 +73,7 @@ runtime、test、config、一般 docs、packaging tool 的 inherited／unclear �
 
 ## MIT 授權轉換驗證
 
-- `npm.cmd run test:tooling`：23 tests 通過；包含歷史授權移存後仍為 inherited、仍需保留原權利，以及實作不因放進 LICENSES 目錄（含 `.py`、`.txt` 與冒用已知授權檔名）而豁免的回歸案例。後兩個案例及精確路徑／SHA gate 回應本次 Codex GitHub Review 的 P2 finding。
+- `npm.cmd run test:tooling`：23 tests 通過；包含歷史授權移存後仍為 inherited、仍需保留原權利，以及實作不因放進 LICENSES 目錄（含 `.py`、`.txt` 與冒用已知授權檔名）或改名 `NOTICE.md` 而豁免的回歸案例。精確路徑／SHA gate 與取消 NOTICE 豁免回應本次 Codex GitHub Review 的兩項 P2 findings。
 - `npm.cmd --workspace desktop test`：70 tests 通過；含 Windows／macOS 缺少現行或歷史授權文件時拒絕成品的案例。
 - 比對 B6 HEAD 與 fork：原 PolyForm 及 13 份 release notes 文字不變；Hermes 通知／MIT 全文不變；package 與 lockfile 除自有 license metadata 外沒有變更。
 - 使用獨立 `desktop/dist/mit-license-resources` staging 完成 frontend／backend／Hermes preparation，以 `publish: never` 建立 `desktop/dist/mit-license-check/win-unpacked`；package verifier 通過。四份授權／通知檔與來源逐位元相符，`app.asar/package.json` 的 license 為 MIT。

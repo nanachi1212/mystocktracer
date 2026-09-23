@@ -105,7 +105,7 @@ test('archived upstream license retains provenance without hiding substantive co
   assert.equal(archived.upstreamPath, 'LICENSE');
   assert.equal(archived.blockingRelicensing, true);
   assert.equal(archived.replacementRequired, false);
-  assert.equal(result.files.find(file => file.path === 'NOTICE.md').area, 'legal');
+  assert.equal(result.files.find(file => file.path === 'NOTICE.md').area, 'document');
   assert.equal(result.files.find(file => file.path === 'LICENSES/copied.py').replacementRequired, true);
   const disguised = result.files.find(file => file.path === 'LICENSES/copied.txt');
   assert.equal(disguised.category, 'confirmed-inherited');
@@ -117,4 +117,9 @@ test('archived upstream license retains provenance without hiding substantive co
   assert.notEqual(replaced.area, 'legal');
   assert.equal(replaced.category, 'confirmed-inherited');
   assert.equal(replaced.replacementRequired, true);
+  f.write('NOTICE.md', 'print("synthetic original")\n');
+  const disguisedNotice = inspect(f).files.find(file => file.path === 'NOTICE.md');
+  assert.equal(disguisedNotice.area, 'document');
+  assert.equal(disguisedNotice.category, 'confirmed-inherited');
+  assert.equal(disguisedNotice.replacementRequired, true);
 });
