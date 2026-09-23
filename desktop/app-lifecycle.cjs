@@ -14,6 +14,7 @@ const { resolveUpdateFeed, releasePageURL } = require('./update-feed.cjs');
 const { createUpdateBackup, resolveBackupRoot } = require('./data-protection.cjs');
 const { validateSubscriptionAIURL } = require('./subscription-ai-url.cjs');
 const { externalWindowHandler } = require('./external-links.cjs');
+const { completeShutdown } = require('./shutdown.cjs');
 const { scheduleUpdateRestart, resumeUpdateAfterRestart, awaitNativeInstall } = require('./update-restart.cjs');
 
 const compat = (name) => process.env[`MYSTOCKTRACER_${name}`] || process.env[`A_STOCK_${name}`] || '';
@@ -28,14 +29,18 @@ async function startDesktop() {
   const copyHelper = app.isPackaged ? path.join(process.resourcesPath, 'state-copy.py') : path.join(__dirname, 'state-copy.py');
   const stop = () => stopped ||= (async () => {
     clearInterval(timer);
-    if (app.isReady() && window) await session.defaultSession.flushStorageData();
-    await stopBackend(child);
-    child = undefined;
+    try {
+      if (app.isReady() && window) await session.defaultSession.flushStorageData();
+    } finally {
+      await stopBackend(child);
+      child = undefined;
+    }
   })();
+  const finishQuit = () => completeShutdown({ stop, report: (error) => logger?.error(error), quit: () => { quitting = true; app.quit(); } });
   app.on('before-quit', (event) => {
     if (quitting) return;
     event.preventDefault();
-    void stop().then(() => { quitting = true; app.quit(); }).catch((error) => logger?.error(error));
+    void finishQuit().catch((error) => console.error(error));
   });
   app.on('window-all-closed', () => app.quit());
   try {
@@ -138,9 +143,8 @@ async function startDesktop() {
     }
   } catch (error) {
     logger?.error(error);
-    await stop();
     dialog.showErrorBox('mystocktracer 無法啟動', '資料未被刪除。請關閉舊版本、確認資料目錄與套件完整性後再試。');
-    quitting = true; app.quit();
+    await finishQuit();
   }
 }
 module.exports = { startDesktop };

@@ -15,6 +15,7 @@ function createUpdateBackup({ userDataPath, backupRoot, fromVersion, toVersion, 
   const root = resolveBackupRoot(source, backupRoot);
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   const stage = fs.mkdtempSync(path.join(root, '.partial-'));
+  try {
   const data = path.join(stage, 'data');
   fs.mkdirSync(data, { mode: 0o700 });
   const files = verifiedCopy({ source, staging: data, python, helper: helper || path.join(__dirname, 'state-copy.py') });
@@ -24,6 +25,11 @@ function createUpdateBackup({ userDataPath, backupRoot, fromVersion, toVersion, 
   const destination = path.join(root, name);
   fs.renameSync(stage, destination);
   return { path: destination, backupRoot: root, manifest };
+  } catch (error) {
+    // Only discard the unique staging directory owned by this attempt.
+    fs.rmSync(stage, { recursive: true, force: true });
+    throw error;
+  }
 }
 function listUpdateBackups(root) {
   if (!fs.existsSync(root)) return [];
