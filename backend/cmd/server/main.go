@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +19,9 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if os.Getenv("MYSTOCKTRACER_DESKTOP_CHILD") == "1" {
+		go func() { _, _ = io.Copy(io.Discard, os.Stdin); stop() }()
+	}
 	if err := run(ctx); err != nil {
 		log.Fatal(err)
 	}

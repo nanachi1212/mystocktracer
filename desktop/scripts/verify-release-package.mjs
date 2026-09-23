@@ -1,180 +1,74 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { runtimeModules } from './build-config.mjs';
 
-export function verifyReleasePackage(packageRoot, platform) {
-	if (!packageRoot || !['macos', 'windows'].includes(platform)) {
-		throw new Error('Usage: node verify-release-package.mjs <package-root> <macos|windows>');
-	}
-	if (!fs.existsSync(packageRoot)) throw new Error(`Release package not found: ${packageRoot}`);
-
-	const resourcesRoot = platform === 'macos'
-		? path.join(packageRoot, 'Contents', 'Resources', 'resources')
-		: path.join(packageRoot, 'resources', 'resources');
-	const executable = platform === 'macos'
-		? path.join(packageRoot, 'Contents', 'MacOS', 'easy-stock')
-		: path.join(packageRoot, 'easy-stock.exe');
-	const backend = path.join(resourcesRoot, 'backend', platform === 'windows' ? 'easy-stock-backend.exe' : 'easy-stock-backend');
-	const runtimePython = platform === 'windows'
-		? path.join(resourcesRoot, 'hermes-runtime', 'python', 'python.exe')
-		: path.join(resourcesRoot, 'hermes-runtime', 'venv', 'bin', 'python');
-	const requiredPaths = [
-		executable,
-		backend,
-		runtimePython,
-		path.join(resourcesRoot, 'frontend', 'dist', 'index.html'),
-		path.join(resourcesRoot, 'hermes-runtime', 'runtime-manifest.json'),
-		path.join(resourcesRoot, 'hermes-runtime', 'LICENSE'),
-		path.join(resourcesRoot, 'THIRD_PARTY_NOTICES.md'),
-		path.join(resourcesRoot, 'agent-browser'),
-	];
-	for (const requiredPath of requiredPaths) {
-		if (!fs.existsSync(requiredPath)) throw new Error(`Release package is incomplete: ${requiredPath}`);
-	}
-	if (platform === 'macos') verifyMacBundle(packageRoot);
-	if (platform === 'windows' && fs.existsSync(path.join(resourcesRoot, 'hermes-runtime', 'venv'))) {
-		throw new Error('Windows release still contains the build-only Hermes venv');
-	}
-
-	const forbiddenComponents = new Set([
-		'.runtime',
-		'hermes-home',
-		'browser-auth',
-		'Local Storage',
-		'Session Storage',
-		'Partitions',
-	]);
-	const forbiddenFiles = new Set([
-		'.credentials.json',
-		'Cookies',
-		'Cookies-journal',
-		'id_rsa',
-		'id_ed25519',
-	]);
-	const violations = [];
-	walk(packageRoot, (entryPath, entry) => {
-		const name = entry.name;
-		if (forbiddenComponents.has(name) || forbiddenFiles.has(name)) violations.push(path.relative(packageRoot, entryPath));
-		if (name === '.env' || (name.startsWith('.env.') && name !== '.env.example')) violations.push(path.relative(packageRoot, entryPath));
-		if (/\.(?:db|db-shm|db-wal|sqlite|sqlite3)$/i.test(name)) violations.push(path.relative(packageRoot, entryPath));
-	});
-	if (violations.length) {
-		throw new Error(`Release package contains local or sensitive runtime files:\n${violations.map((item) => `- ${item}`).join('\n')}`);
-	}
-	verifyAppAsar(packageRoot, platform);
-	verifyBundledPython(packageRoot, runtimePython, platform);
-	console.log(`Release package verified: ${packageRoot}`);
+export function requiredLocalRuntimeModules() { return [...runtimeModules]; }
+export function listAsarFiles(archive) {
+  const handle=fs.openSync(archive,'r');
+  try {
+    const lead=Buffer.alloc(16);
+    if(fs.readSync(handle,lead,0,16,0)!==16) throw new Error('Invalid ASAR header');
+    const bytes=lead.readUInt32LE(12);
+    if(bytes<2||bytes>16*1024*1024) throw new Error('Invalid ASAR header size');
+    const buffer=Buffer.alloc(bytes);
+    if(fs.readSync(handle,buffer,0,bytes,16)!==bytes) throw new Error('Truncated ASAR');
+    const result=new Set(), queue=[['',JSON.parse(buffer.toString('utf8'))]];
+    while(queue.length) {
+      const [prefix,node]=queue.shift();
+      for(const [name,item] of Object.entries(node.files||{})) {
+        const relative=prefix+name;result.add(relative);
+        if(item.files) queue.push([relative+'/',item]);
+      }
+    }
+    return result;
+  } finally {fs.closeSync(handle);}
 }
-
-const currentFilePath = fileURLToPath(import.meta.url);
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(currentFilePath)) {
-	const packageRoot = path.resolve(process.argv[2] || '');
-	const platform = process.argv[3];
-	verifyReleasePackage(packageRoot, platform);
+function resourceDirectory(root,platform) {return platform==='macos'?path.join(root,'Contents/Resources'):path.join(root,'resources');}
+export function forbiddenEntry(name) {
+  return ['.runtime','hermes-home','userData','browser-auth','Local Storage','Session Storage','Partitions','Cookies','Cookies-journal','credentials.json','secrets.json','.credentials.json','id_rsa','id_ed25519'].includes(name)
+    || name==='.env' || (name.startsWith('.env.')&&name!=='.env.example')
+    || /\.(?:db(?:-wal|-shm|-journal)?|sqlite3?|log|pfx|p12|key)$/i.test(name)
+    || /^(?:easy-stock(?:-backend)?(?:\.exe|\.app|\.ico|\.icns|\.png|\.svg)?|mystocktracer\.migration-.+|\.partial-.+)$/.test(name);
 }
-
-function verifyMacBundle(appPath) {
-	const invalidLinks = [];
-	walk(appPath, (entryPath, entry) => {
-		if (!entry.isSymbolicLink()) return;
-		const target = fs.readlinkSync(entryPath);
-		if (path.isAbsolute(target) || !fs.existsSync(entryPath)) {
-			invalidLinks.push(`${path.relative(appPath, entryPath)} -> ${target}`);
-		}
-	});
-	if (invalidLinks.length) {
-		throw new Error(`macOS release contains invalid framework symlinks:\n${invalidLinks.map((item) => `- ${item}`).join('\n')}`);
-	}
-	const result = spawnSync('codesign', ['--verify', '--deep', '--strict', appPath], { encoding: 'utf8' });
-	if (result.error) throw result.error;
-	if (result.status !== 0) {
-		throw new Error(`macOS release failed code-signature validation: ${(result.stderr || result.stdout || '').trim()}`);
-	}
+export function verifyAppAsar(root,platform) {
+  const archive=path.join(resourceDirectory(root,platform),'app.asar');
+  const files=listAsarFiles(archive);
+  const absent=runtimeModules.filter((name)=>!files.has(name));
+  if(absent.length) throw new Error('Packaged app.asar is missing required local runtime modules:\n'+absent.join('\n'));
+  for(const file of files) if(file.split('/').some(forbiddenEntry)||/^(?:test|scripts)\//.test(file)) throw new Error('Forbidden packaged application entry: '+file);
 }
-
-function verifyBundledPython(packageRoot, python, platform) {
-	const script = 'import hermes_cli, tui_gateway';
-	// Windows executes the copied base interpreter directly, so isolated mode
-	// proves it does not resolve packages from the build runner. The macOS
-	// launcher intentionally supplies its package-local PYTHONPATH.
-	const args = platform === 'windows' ? ['-I', '-c', script] : ['-c', script];
-	const result = spawnSync(python, args, {
-		cwd: packageRoot,
-		encoding: 'utf8',
-		env: {
-			...process.env,
-			PYTHONNOUSERSITE: '1',
-			PYTHONDONTWRITEBYTECODE: '1',
-			ENABLE_MCP: '0',
-			SKIP_BACKGROUND_TASKS: '1',
-		},
-	});
-	if (result.error) throw result.error;
-	if (result.status !== 0) {
-		throw new Error(`Bundled Python runtime failed its isolated import check: ${(result.stderr || '').trim() || `exit status ${result.status}`}`);
-	}
+export function verifyReleasePackage(root,platform) {
+  if(!['windows','macos'].includes(platform)) throw new Error('Specify windows or macos');
+  const resources=resourceDirectory(root,platform), content=path.join(resources,'resources');
+  const windows=platform==='windows';
+  const python=path.join(content,'hermes-runtime',...(windows?['python','python.exe']:['venv','bin','python']));
+  const required=[windows?'mystocktracer.exe':'Contents/MacOS/mystocktracer'].map((file)=>path.join(root,file)).concat([
+    path.join(content,'backend',windows?'mystocktracer-backend.exe':'mystocktracer-backend'),
+    path.join(content,'frontend/dist/index.html'),path.join(content,'hermes-runtime/runtime-manifest.json'),
+    path.join(content,'hermes-runtime/LICENSE'),path.join(content,'THIRD_PARTY_NOTICES.md'),path.join(resources,'state-copy.py'),python,
+  ]);
+  for(const file of required) if(!fs.statSync(file,{throwIfNoEntry:false})?.isFile()) throw new Error('Missing package member: '+path.relative(root,file));
+  const queue=[root];
+  while(queue.length) for(const entry of fs.readdirSync(queue.shift(),{withFileTypes:true})) {
+    const file=path.join(entry.parentPath,entry.name);
+    if(forbiddenEntry(entry.name)) throw new Error('Forbidden package entry: '+path.relative(root,file));
+    if(entry.isSymbolicLink()) {
+      const relative=path.relative(root,fs.realpathSync(file));
+      if(path.isAbsolute(fs.readlinkSync(file))||relative.startsWith('..')) throw new Error('Unsafe package symlink');
+    } else if(entry.isDirectory()) queue.push(file);
+  }
+  verifyAppAsar(root,platform);
+  if(windows&&fs.existsSync(path.join(content,'hermes-runtime/venv'))) throw new Error('Nonportable Windows venv in release');
+  const manifest=JSON.parse(fs.readFileSync(path.join(content,'hermes-runtime/runtime-manifest.json'),'utf8'));
+  if(manifest.version!=='0.18.2'||manifest.package!=='hermes-agent') throw new Error('Unreviewed Hermes runtime');
+  const result=spawnSync(python,[...(windows?['-I']:[]),'-c','import hermes_cli,tui_gateway,sqlite3'],{cwd:root,encoding:'utf8',windowsHide:true,env:{...process.env,PYTHONNOUSERSITE:'1',PYTHONDONTWRITEBYTECODE:'1',ENABLE_MCP:'0',SKIP_BACKGROUND_TASKS:'1'}});
+  if(result.error||result.status!==0) throw new Error('Bundled Python import check failed');
+  if(!windows) {
+    const signature=spawnSync('codesign',['--verify','--deep','--strict',root],{stdio:'inherit'});
+    if(signature.error||signature.status!==0) throw new Error('macOS signature verification failed');
+  }
+  console.log('Verified mystocktracer '+platform+' release package');
 }
-
-function walk(root, visit) {
-	for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-		const entryPath = path.join(root, entry.name);
-		visit(entryPath, entry);
-		if (entry.isDirectory()) walk(entryPath, visit);
-	}
-}
-
-export function listAsarFiles(archivePath) {
-	const fd = fs.openSync(archivePath, 'r');
-	try {
-		const sizeBuf = Buffer.alloc(16);
-		fs.readSync(fd, sizeBuf, 0, 16, 0);
-		const headerSize = sizeBuf.readUInt32LE(12);
-		const headerBuf = Buffer.alloc(headerSize);
-		fs.readSync(fd, headerBuf, 0, headerSize, 16);
-		const header = JSON.parse(headerBuf.toString('utf8'));
-		const files = new Set();
-		function traverse(node, prefix = '') {
-			if (!node.files) return;
-			for (const [name, entry] of Object.entries(node.files)) {
-				const full = prefix ? `${prefix}/${name}` : name;
-				files.add(full);
-				if (entry.files) traverse(entry, full);
-			}
-		}
-		traverse(header);
-		return files;
-	} finally {
-		fs.closeSync(fd);
-	}
-}
-
-export function requiredLocalRuntimeModules() {
-	return [
-		'main.cjs',
-		'preload.cjs',
-		'backend-process.cjs',
-		'data-protection.cjs',
-		'hermes-runtime-root.cjs',
-		'runtime-logger.cjs',
-		'subscription-ai-url.cjs',
-		'update-feed.cjs',
-		'update-manager.cjs',
-		'user-data.cjs',
-	];
-}
-
-export function verifyAppAsar(appRoot, targetPlatform) {
-	const asarPath = targetPlatform === 'macos'
-		? path.join(appRoot, 'Contents', 'Resources', 'app.asar')
-		: path.join(appRoot, 'resources', 'app.asar');
-	if (!fs.existsSync(asarPath)) {
-		throw new Error(`Packaged app.asar not found: ${asarPath}`);
-	}
-	const files = listAsarFiles(asarPath);
-	const missing = requiredLocalRuntimeModules().filter((mod) => !files.has(mod));
-	if (missing.length > 0) {
-		throw new Error(`Packaged app.asar is missing required local runtime modules:\n${missing.map((item) => `- ${item}`).join('\n')}`);
-	}
-}
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) verifyReleasePackage(path.resolve(process.argv[2]||''),process.argv[3]);

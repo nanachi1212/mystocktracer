@@ -1,179 +1,83 @@
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const test = require('node:test');
-const { execFileSync } = require('node:child_process');
-
-function sha512Base64(filePath) {
-  return execFileSync(process.execPath, ['-e', `const fs=require('fs'),crypto=require('crypto');process.stdout.write(crypto.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))`, filePath], { encoding: 'utf8' });
-}
-
-test('release metadata points to existing assets with matching sha512', () => {
-  const releaseRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-release-'));
-  const assets = ['easy-stock-v0.4.0-macos-arm64.zip', 'easy-stock-v0.4.0-windows-x64-setup.exe'];
-  for (const asset of assets) fs.writeFileSync(path.join(releaseRoot, asset), `fixture:${asset}`);
-  fs.writeFileSync(path.join(releaseRoot, 'latest-mac.yml'), `version: 0.4.0\nfiles:\n  - url: ${assets[0]}\n    sha512: ${sha512Base64(path.join(releaseRoot, assets[0]))}\n`);
-  fs.writeFileSync(path.join(releaseRoot, 'latest.yml'), `version: 0.4.0\nfiles:\n  - url: ${assets[1]}\n    sha512: ${sha512Base64(path.join(releaseRoot, assets[1]))}\n`);
-
-  for (const metadataName of ['latest-mac.yml', 'latest.yml']) {
-    const metadata = fs.readFileSync(path.join(releaseRoot, metadataName), 'utf8');
-    const url = metadata.match(/^\s*- url:\s*(.+)$/m)?.[1]?.trim();
-    const expectedHash = metadata.match(/^\s*sha512:\s*(.+)$/m)?.[1]?.trim();
-    assert.ok(url, `${metadataName} should contain an asset URL`);
-    const assetPath = path.join(releaseRoot, url);
-    assert.ok(fs.existsSync(assetPath), `${url} should exist`);
-    assert.equal(expectedHash, sha512Base64(assetPath));
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const os=require('node:os');
+const path=require('node:path');
+const {execFileSync}=require('node:child_process');
+const crypto=require('node:crypto');
+const desktop=path.resolve(__dirname,'..');
+const script=(name)=>path.join(desktop,'scripts',name);
+function fixture(t) {const dir=fs.mkdtempSync(path.join(os.tmpdir(),'mystocktracer-release-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return dir;}
+test('Windows and macOS config own identity, retain B3 installer GUID and protect userData',async()=>{
+  const {desktopBuildConfig,INSTALLER_GUID}=await import('../scripts/build-config.mjs');
+  const {UUID}=require('builder-util-runtime');
+  assert.equal(INSTALLER_GUID,UUID.v5('com.jundizhou.easystock',UUID.parse('50e065bc-3134-11e6-9bab-38c9862bdaf3')));
+  const schema=JSON.parse(fs.readFileSync(require.resolve('app-builder-lib/scheme.json'),'utf8'));
+  assert.ok(schema.definitions.NsisOptions.properties.guid);
+  for(const platform of ['windows','mac']) {
+    const config=desktopBuildConfig({desktopRoot:desktop,resources:path.join(desktop,'dist/test'),version:'0.9.2',electronVersion:'44.2.0',platform,arch:'x64',mode:'release'});
+    assert.equal(config.appId,'com.nanachi1212.mystocktracer');assert.equal(config.productName,'mystocktracer');
+    assert.equal(config.nsis.guid,INSTALLER_GUID);assert.equal(config.nsis.deleteAppDataOnUninstall,false);
+    assert.equal(config.win.signExecutable,false);assert.notEqual(config.win.signAndEditExecutable,false);
+    assert.match(config.nsis.artifactName,/^mystocktracer-/);assert.match(config.mac.icon,/mystocktracer\.icns$/);
+    assert.equal(config.mac.identity,'-');assert.equal(config.mac.notarize,false);
+    assert.deepEqual(config.publish,[{provider:'github',owner:'nanachi1212',repo:'mystocktracer'}]);
+    const {requiredLocalRuntimeModules}=await import('../scripts/verify-release-package.mjs');
+    for(const name of requiredLocalRuntimeModules()) assert.ok(config.files.includes(name),name);
+    assert.ok(config.extraResources.some((entry)=>entry.to==='state-copy.py'));
   }
 });
-
-test('DMG staging uses ditto so framework symlinks remain relative', () => {
-	const script = fs.readFileSync(path.resolve(__dirname, '..', 'scripts', 'create-dmg.mjs'), 'utf8');
-	assert.match(script, /run\('ditto', \[appPath, stagedAppPath\]\)/);
-	assert.match(script, /'Journaled HFS\+'/);
-	assert.match(script, /run\('hdiutil', \['convert', writableImagePath/);
-	assert.doesNotMatch(script, /['"]-srcfolder['"]/);
-	assert.doesNotMatch(script, /fs\.cpSync\(appPath/);
-	assert.match(script, /detach\(writableMountPath\)/);
-	assert.match(script, /\['detach', mountPath, '-force'\]/);
+test('installed B3 updater launches renamed installer with update and force-run flags',()=>{
+  const {NsisUpdater}=require('electron-updater/out/NsisUpdater');
+  const launched=[];
+  const receiver={installerPath:path.join(os.tmpdir(),'mystocktracer-v0.9.3-windows-x64-setup.exe'),spawnLog:(file,args)=>{launched.push({file,args});return Promise.resolve();},dispatchError:()=>assert.fail('unexpected updater error')};
+  assert.equal(NsisUpdater.prototype.doInstall.call(receiver,{isSilent:false,isForceRunAfter:true,isAdminRightsRequired:false}),true);
+  assert.deepEqual(launched,[{file:receiver.installerPath,args:['--updated','--force-run']}]);
 });
-
-test('macOS builds use a complete ad-hoc signature without release credentials', () => {
-	const script = fs.readFileSync(path.resolve(__dirname, '..', 'scripts', 'electron-builder.mjs'), 'utf8');
-	assert.match(script, /identity: signingCertificate \? undefined : '-'/);
-	assert.match(script, /path\.resolve\(desktopRoot, '\.\.', certificate\)/);
-	assert.match(script, /candidates\.some\(\(candidate\) => fs\.existsSync\(candidate\) && fs\.statSync\(candidate\)\.isDirectory\(\)\)/);
-	assert.match(script, /process\.env\.CSC_LINK !== undefined && !signingCertificate/);
-	assert.match(script, /delete process\.env\.CSC_LINK/);
+test('installed NSIS uses existing registration location and KEEP_APP_DATA during replacement',()=>{
+  const builder=path.dirname(require.resolve('app-builder-lib/package.json'));
+  const multi=fs.readFileSync(path.join(builder,'templates/nsis/multiUser.nsh'),'utf8');
+  const utility=fs.readFileSync(path.join(builder,'templates/nsis/include/installUtil.nsh'),'utf8');
+  assert.match(multi,/ReadRegStr \$perUserInstallationFolder HKCU "\$\{INSTALL_REGISTRY_KEY\}" InstallLocation/);
+  assert.match(utility,/\/S \/KEEP_APP_DATA/);
+  const uninstaller=fs.readFileSync(path.join(builder,'templates/nsis/uninstaller.nsh'),'utf8');
+  assert.match(uninstaller,/DELETE_APP_DATA_ON_UNINSTALL/);
 });
-
-test('merges macOS updater metadata without installed npm dependencies', () => {
-  const releaseRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-mac-metadata-'));
-  const scriptPath = path.resolve(__dirname, '..', 'scripts', 'merge-mac-updater-metadata.mjs');
-  const fixtures = [
-    ['arm64', 'easy-stock-v0.4.0-macos-arm64.zip', 'arm-hash', 101],
-    ['x64', 'easy-stock-v0.4.0-macos-x64.zip', 'x64-hash', 202],
-  ];
-  for (const [arch, url, hash, size] of fixtures) {
-    fs.writeFileSync(path.join(releaseRoot, `latest-mac-${arch}.yml`), [
-      'version: 0.4.0',
-      'files:',
-      `  - url: ${url}`,
-      `    sha512: ${hash}`,
-      `    size: ${size}`,
-      `path: ${url}`,
-      `sha512: ${hash}`,
-      'releaseDate: 2026-08-12T00:00:00.000Z',
-      '',
-    ].join('\n'));
+test('macOS DMG staging retains framework symlinks using ditto and verifies mounted bundle',()=>{
+  const source=fs.readFileSync(script('create-dmg.mjs'),'utf8');
+  assert.match(source,/run\('ditto',\[bundle,target\]\)/);
+  assert.match(source,/Journaled HFS\+/);
+  assert.match(source,/verifyReleasePackage\(path.join\(mount,'mystocktracer.app'\),'macos'\)/);
+  assert.match(source,/\['detach',mount,'-force'\]/);
+  assert.doesNotMatch(source,/-srcfolder/);
+});
+test('SHA-512 verifier accepts canonical assets and rejects tampering',t=>{
+  const root=fixture(t),name='mystocktracer-v0.9.3-windows-x64-setup.exe',bytes=Buffer.from('test installer');
+  fs.writeFileSync(path.join(root,name),bytes);fs.writeFileSync(path.join(root,name+'.blockmap'),'block');
+  fs.writeFileSync(path.join(root,'latest.yml'),'version: 0.9.3\nfiles:\n  - url: '+name+'\n    sha512: '+crypto.createHash('sha512').update(bytes).digest('base64')+'\n    size: '+bytes.length+'\n');
+  execFileSync(process.execPath,[script('verify-updater-artifacts.mjs'),root,'latest.yml']);
+  fs.appendFileSync(path.join(root,name),'tampered');
+  assert.throws(()=>execFileSync(process.execPath,[script('verify-updater-artifacts.mjs'),root,'latest.yml'],{stdio:'pipe'}));
+});
+test('merge architecture metadata without npm and stage a complete product release',t=>{
+  const root=fixture(t),output=path.join(root,'staged'),version='0.9.3',names=['latest.yml'];
+  for(const arch of ['arm64','x64']) {
+    const name='mystocktracer-v'+version+'-macos-'+arch+'.zip';
+    fs.writeFileSync(path.join(root,'latest-mac-'+arch+'.yml'),'version: '+version+'\nfiles:\n  - url: '+name+'\n    sha512: fixture-hash\n    size: 10\n');
+    for(const ext of ['zip','zip.blockmap','dmg']) names.push('mystocktracer-v'+version+'-macos-'+arch+'.'+ext);
   }
-
-  execFileSync(process.execPath, [scriptPath, releaseRoot], {
-    cwd: os.tmpdir(),
-    env: { PATH: process.env.PATH },
-  });
-
-  const merged = fs.readFileSync(path.join(releaseRoot, 'latest-mac.yml'), 'utf8');
-  assert.match(merged, /version: 0\.4\.0/);
-  assert.match(merged, /easy-stock-v0\.4\.0-macos-arm64\.zip/);
-  assert.match(merged, /easy-stock-v0\.4\.0-macos-x64\.zip/);
-  assert.equal((merged.match(/^\s*- url:/gm) || []).length, 2);
-  assert.match(merged, /path: easy-stock-v0\.4\.0-macos-arm64\.zip/);
+  for(const ext of ['exe','exe.blockmap']) names.push('mystocktracer-v'+version+'-windows-x64-setup.'+ext);
+  for(const name of names) fs.writeFileSync(path.join(root,name),'fixture');
+  execFileSync(process.execPath,[script('merge-mac-updater-metadata.mjs'),root],{cwd:os.tmpdir(),env:{PATH:process.env.PATH}});
+  names.push('latest-mac.yml');
+  execFileSync(process.execPath,[script('prepare-publish-assets.mjs'),root,output,'v'+version]);
+  assert.deepEqual(fs.readdirSync(path.join(output,'github')).sort(),names.sort());
 });
-
-test('publishes user downloads and updater metadata in one GitHub release asset set', () => {
-  const sourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-release-assets-'));
-  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-publish-assets-'));
-  const version = '0.4.0';
-  const names = [
-    `easy-stock-v${version}-macos-arm64.dmg`,
-    `easy-stock-v${version}-macos-x64.dmg`,
-    `easy-stock-v${version}-macos-arm64.zip`,
-    `easy-stock-v${version}-macos-arm64.zip.blockmap`,
-    `easy-stock-v${version}-macos-x64.zip`,
-    `easy-stock-v${version}-macos-x64.zip.blockmap`,
-    `easy-stock-v${version}-windows-x64-setup.exe`,
-    `easy-stock-v${version}-windows-x64-setup.exe.blockmap`,
-    'latest-mac.yml',
-    'latest.yml',
-  ];
-  for (const name of names) fs.writeFileSync(path.join(sourceRoot, name), name);
-
-  const scriptPath = path.resolve(__dirname, '..', 'scripts', 'prepare-publish-assets.mjs');
-  execFileSync(process.execPath, [scriptPath, sourceRoot, outputRoot, `v${version}`]);
-
-  assert.deepEqual(fs.readdirSync(path.join(outputRoot, 'github')).sort(), [...names].sort());
-  // The updater reads latest.yml straight from the release, so there is no second asset directory.
-  assert.equal(fs.existsSync(path.join(outputRoot, 'updater')), false);
-});
-
-test('desktop package includes current runtime modules and excludes removed browser-login bridges', async () => {
-  const electronBuilderScript = fs.readFileSync(path.resolve(__dirname, '..', 'scripts', 'electron-builder.mjs'), 'utf8');
-  assert.match(electronBuilderScript, /'subscription-ai-url\.cjs'/);
-
-  const mainScript = fs.readFileSync(path.resolve(__dirname, '..', 'main.cjs'), 'utf8');
-  const directRequires = [...mainScript.matchAll(/require\(['"]\.\/([^'"]+\.cjs)['"]\)/g)].map((m) => m[1]);
-
-  for (const moduleName of directRequires) {
-    assert.match(
-      electronBuilderScript,
-      new RegExp(`'${moduleName.replace('.', '\\.')}'`),
-      `electron-builder.mjs should include direct runtime dependency: ${moduleName}`,
-    );
-  }
-
-  const { requiredLocalRuntimeModules } = await import('../scripts/verify-release-package.mjs');
-  const requiredModules = requiredLocalRuntimeModules();
-  for (const removedModule of [
-    'review-login-preload.cjs',
-    'xueqiu-login-preload.cjs',
-    'browser-auth.cjs',
-    'taoguba-browser-bridge.cjs',
-    'xueqiu-browser-bridge.cjs',
-  ]) {
-    assert.equal(requiredModules.includes(removedModule), false, `${removedModule} must stay removed from package requirements`);
-  }
-});
-
-test('desktop startup no longer boots removed browser-login bridges', () => {
-  const mainScript = fs.readFileSync(path.resolve(__dirname, '..', 'main.cjs'), 'utf8');
-  assert.doesNotMatch(mainScript, /boot(?:Xueqiu|Taoguba)BrowserBridge/);
-  assert.doesNotMatch(mainScript, /openReviewSourceLogin|openXueqiuLogin|getBrowserAuthStatus/);
-});
-
-test('release package verifier detects missing runtime modules in app.asar', async () => {
-  const { verifyAppAsar } = await import('../scripts/verify-release-package.mjs');
-
-  const dummyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-asar-test-'));
-  const resourcesDir = path.join(dummyDir, 'resources');
-  fs.mkdirSync(resourcesDir, { recursive: true });
-
-  const asarPath = path.join(resourcesDir, 'app.asar');
-
-  // Build a dummy asar with subscription-ai-url.cjs missing
-  const headerObj = {
-    files: {
-      'main.cjs': { size: 10, offset: '0' },
-      'preload.cjs': { size: 10, offset: '10' },
-    },
-  };
-  const headerJson = JSON.stringify(headerObj);
-  const headerBuf = Buffer.from(headerJson, 'utf8');
-
-  const sizeBuf = Buffer.alloc(16);
-  sizeBuf.writeUInt32LE(4, 0);
-  sizeBuf.writeUInt32LE(headerBuf.length + 8, 4);
-  sizeBuf.writeUInt32LE(headerBuf.length + 4, 8);
-  sizeBuf.writeUInt32LE(headerBuf.length, 12);
-
-  fs.writeFileSync(asarPath, Buffer.concat([sizeBuf, headerBuf]));
-
-  assert.throws(
-    () => verifyAppAsar(dummyDir, 'windows'),
-    (err) => {
-      assert.match(err.message, /Packaged app\.asar is missing required local runtime modules/);
-      assert.match(err.message, /subscription-ai-url\.cjs/);
-      return true;
-    },
-  );
+test('ASAR verifier rejects absent modules and forbidden local state names',async(t)=>{
+  const {verifyAppAsar,forbiddenEntry}=await import('../scripts/verify-release-package.mjs');
+  const root=fixture(t);fs.mkdirSync(path.join(root,'resources'));
+  const header=Buffer.from(JSON.stringify({files:{'main.cjs':{size:0,offset:'0'}}})),lead=Buffer.alloc(16);
+  lead.writeUInt32LE(header.length,12);fs.writeFileSync(path.join(root,'resources/app.asar'),Buffer.concat([lead,header]));
+  assert.throws(()=>verifyAppAsar(root,'windows'),/missing required local runtime modules/);
+  for(const name of ['easy-stock.exe','easy-stock-backend.exe','easy-stock.ico','.env','secrets.json','test.db','runtime.log','mystocktracer.migration-123']) assert.equal(forbiddenEntry(name),true,name);
 });

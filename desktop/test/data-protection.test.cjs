@@ -43,27 +43,27 @@ test('update backup preserves models, articles, memories and login state byte-fo
     assert.deepEqual(fs.readFileSync(path.join(backup.path, 'data', relativePath)), Buffer.from(content));
   }
   assert.equal(fs.existsSync(path.join(backup.path, 'data', 'Cache')), false);
-  assert.equal(fs.existsSync(path.join(backup.path, 'data', 'Partitions')), false);
-  assert.equal(backup.manifest.files.length, Object.keys(fixtures).length);
+  assert.equal(fs.existsSync(path.join(backup.path, 'data', 'Partitions')), true);
+  assert.equal(backup.manifest.files.filter((file) => file.type === 'file').length, Object.keys(fixtures).length + 3);
   assert.equal(listUpdateBackups(backup.backupRoot).length, 1);
 });
 
-test('backup directory is outside user data and only the latest three backups remain', () => {
+test('backup directory is outside user data and all existing backups remain', () => {
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-backup-'));
   const userData = path.join(appData, 'easy-stock');
   fs.mkdirSync(userData);
   write(userData, 'settings.json', '{}');
   const backupRoot = resolveBackupRoot(userData);
-  assert.equal(backupRoot, path.join(appData, 'easy-stock-update-backups'));
+  assert.equal(backupRoot, path.join(appData, 'mystocktracer-update-backups'));
   for (let day = 1; day <= 4; day += 1) {
     createUpdateBackup({ userDataPath: userData, backupRoot, fromVersion: '0.3.0', toVersion: `0.3.${day}`, now: new Date(`2026-08-0${day}T00:00:00.000Z`) });
   }
   const backups = listUpdateBackups(backupRoot);
-  assert.equal(backups.length, 3);
-  assert.deepEqual(backups.map((item) => item.manifest.toVersion), ['0.3.4', '0.3.3', '0.3.2']);
+  assert.equal(backups.length, 4);
+  assert.deepEqual(backups.map((item) => item.manifest.toVersion), ['0.3.4', '0.3.3', '0.3.2', '0.3.1']);
 });
 
 test('rejects a backup root nested inside user data', () => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-backup-'));
-  assert.throws(() => resolveBackupRoot(userData, path.join(userData, 'backups')), /不能位于应用数据目录内/);
+  assert.throws(() => resolveBackupRoot(userData, path.join(userData, 'backups')), /不能位於應用資料目錄內/);
 });

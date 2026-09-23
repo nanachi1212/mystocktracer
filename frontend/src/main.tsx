@@ -1,13 +1,10 @@
-import React from 'react';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { installRuntimeLogging } from './lib/runtime-log';
 import './styles.css';
 
+const container = document.getElementById('root');
+if (!container) throw new Error('mystocktracer root element is missing');
 installRuntimeLogging();
-
-createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+createRoot(container).render(<StrictMode><App /></StrictMode>);

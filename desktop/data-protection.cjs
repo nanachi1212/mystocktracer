@@ -1,159 +1,47 @@
-const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-
-const CACHE_DIRECTORY_NAMES = new Set([
-  'Cache',
-  'Code Cache',
-  'GPUCache',
-  'Crashpad',
-  'DawnCache',
-  'GrShaderCache',
-  'ShaderCache',
-  'easy-stock-updater',
-  'Partitions',
-  'cashflow-cache',
-]);
-
-function resolveBackupRoot(userDataPath, configuredPath = process.env.A_STOCK_UPDATE_BACKUP_DIR) {
-  const userData = path.resolve(userDataPath);
-  const backupRoot = path.resolve(configuredPath || path.join(path.dirname(userData), `${path.basename(userData)}-update-backups`));
-  if (backupRoot === userData || backupRoot.startsWith(`${userData}${path.sep}`)) {
-    throw new Error('更新备份目录不能位于应用数据目录内');
-  }
-  return backupRoot;
+const { TRANSIENT, plainPath, verifiedCopy } = require('./user-data-migration.cjs');
+const CACHE_DIRECTORY_NAMES = TRANSIENT;
+const shouldExclude = (relative) => TRANSIENT.has(relative.split(/[\\/]/)[0]);
+function resolveBackupRoot(userDataPath, configuredPath = process.env.MYSTOCKTRACER_UPDATE_BACKUP_DIR || process.env.A_STOCK_UPDATE_BACKUP_DIR) {
+  const source = plainPath(userDataPath);
+  const target = plainPath(configuredPath || path.join(path.dirname(source), 'mystocktracer-update-backups'));
+  const relative = path.relative(source, target);
+  if (!relative || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative))) throw new Error('更新備份目錄不能位於應用資料目錄內');
+  return target;
 }
-
-function shouldExclude(relativePath) {
-  return relativePath.split(path.sep).some((part) => CACHE_DIRECTORY_NAMES.has(part));
-}
-
-function safeVersion(value) {
-  return String(value || 'unknown').replace(/[^0-9A-Za-z._-]+/g, '-');
-}
-
-function timestamp(value = new Date()) {
-  return value.toISOString().replace(/[:.]/g, '-');
-}
-
-function sha256(filePath) {
-  const hash = crypto.createHash('sha256');
-  const file = fs.openSync(filePath, 'r');
-  const buffer = Buffer.allocUnsafe(1024 * 1024);
+function createUpdateBackup({ userDataPath, backupRoot, fromVersion, toVersion, now = new Date(), python = 'python', helper }) {
+  const source = plainPath(userDataPath);
+  const root = resolveBackupRoot(source, backupRoot);
+  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+  const stage = fs.mkdtempSync(path.join(root, '.partial-'));
   try {
-    let bytesRead;
-    do {
-      bytesRead = fs.readSync(file, buffer, 0, buffer.length, null);
-      if (bytesRead) hash.update(buffer.subarray(0, bytesRead));
-    } while (bytesRead);
-  } finally {
-    fs.closeSync(file);
-  }
-  return hash.digest('hex');
-}
-
-function copyUserData(userDataPath, destinationPath) {
-  const files = [];
-  if (!fs.existsSync(userDataPath)) return files;
-
-  const copyDirectory = (sourceDirectory, targetDirectory, relativeDirectory = '') => {
-    fs.mkdirSync(targetDirectory, { recursive: true, mode: 0o700 });
-    for (const entry of fs.readdirSync(sourceDirectory, { withFileTypes: true })) {
-      const relativePath = relativeDirectory ? path.join(relativeDirectory, entry.name) : entry.name;
-      if (shouldExclude(relativePath)) continue;
-      const sourcePath = path.join(sourceDirectory, entry.name);
-      const targetPath = path.join(targetDirectory, entry.name);
-      if (entry.isDirectory()) {
-        copyDirectory(sourcePath, targetPath, relativePath);
-        continue;
-      }
-      if (entry.isSymbolicLink()) {
-        fs.symlinkSync(fs.readlinkSync(sourcePath), targetPath);
-        files.push({ path: relativePath, type: 'symlink' });
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      fs.copyFileSync(sourcePath, targetPath);
-      const sourceStat = fs.statSync(sourcePath);
-      fs.chmodSync(targetPath, sourceStat.mode & 0o777);
-      files.push({ path: relativePath, type: 'file', size: sourceStat.size, sha256: sha256(targetPath) });
-    }
-  };
-
-  copyDirectory(userDataPath, destinationPath);
-  return files.sort((left, right) => left.path.localeCompare(right.path));
-}
-
-function pruneBackups(backupRoot, keep = 3) {
-  const backups = fs.readdirSync(backupRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.includes('.partial-'))
-    .map((entry) => {
-      const backupPath = path.join(backupRoot, entry.name);
-      return { path: backupPath, modifiedAt: fs.statSync(backupPath).mtimeMs };
-    })
-    .sort((left, right) => right.modifiedAt - left.modifiedAt);
-  for (const backup of backups.slice(Math.max(1, keep))) {
-    fs.rmSync(backup.path, { recursive: true, force: true });
-  }
-}
-
-function createUpdateBackup({ userDataPath, backupRoot, fromVersion, toVersion, now = new Date(), keep = 3 }) {
-  const userData = path.resolve(userDataPath);
-  const resolvedBackupRoot = resolveBackupRoot(userData, backupRoot);
-  fs.mkdirSync(resolvedBackupRoot, { recursive: true, mode: 0o700 });
-  const backupName = `${timestamp(now)}-v${safeVersion(fromVersion)}-to-v${safeVersion(toVersion)}`;
-  const finalPath = path.join(resolvedBackupRoot, backupName);
-  const stagingPath = `${finalPath}.partial-${process.pid}`;
-  if (fs.existsSync(finalPath) || fs.existsSync(stagingPath)) {
-    throw new Error('同名更新备份已存在，请稍后重试');
-  }
-
-  try {
-    fs.mkdirSync(stagingPath, { recursive: true, mode: 0o700 });
-    const dataPath = path.join(stagingPath, 'data');
-    const files = copyUserData(userData, dataPath);
-    const manifest = {
-      schemaVersion: 1,
-      createdAt: now.toISOString(),
-      fromVersion: String(fromVersion || ''),
-      toVersion: String(toVersion || ''),
-      userDataDirectoryName: path.basename(userData),
-      files,
-    };
-    const manifestTemporaryPath = path.join(stagingPath, 'manifest.json.tmp');
-    fs.writeFileSync(manifestTemporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-    fs.renameSync(manifestTemporaryPath, path.join(stagingPath, 'manifest.json'));
-    fs.renameSync(stagingPath, finalPath);
-    pruneBackups(resolvedBackupRoot, keep);
-    return { path: finalPath, backupRoot: resolvedBackupRoot, manifest };
+  const data = path.join(stage, 'data');
+  fs.mkdirSync(data, { mode: 0o700 });
+  const files = verifiedCopy({ source, staging: data, python, helper: helper || path.join(__dirname, 'state-copy.py') });
+  const manifest = { schemaVersion: 2, createdAt: now.toISOString(), fromVersion: String(fromVersion || ''), toVersion: String(toVersion || ''), userDataDirectoryName: path.basename(source), files };
+  fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  const name = now.toISOString().replace(/[:.]/g, '-') + '-' + path.basename(stage).slice(9);
+  const destination = path.join(root, name);
+  fs.renameSync(stage, destination);
+  return { path: destination, backupRoot: root, manifest };
   } catch (error) {
-    fs.rmSync(stagingPath, { recursive: true, force: true });
+    // Only discard the unique staging directory owned by this attempt.
+    fs.rmSync(stage, { recursive: true, force: true });
     throw error;
   }
 }
-
-function listUpdateBackups(backupRoot) {
-  if (!fs.existsSync(backupRoot)) return [];
-  return fs.readdirSync(backupRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.includes('.partial-'))
-    .map((entry) => {
-      const backupPath = path.join(backupRoot, entry.name);
-      const manifestPath = path.join(backupPath, 'manifest.json');
-      if (!fs.existsSync(manifestPath)) return null;
-      try {
-        return { path: backupPath, manifest: JSON.parse(fs.readFileSync(manifestPath, 'utf8')) };
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean)
-    .sort((left, right) => String(right.manifest.createdAt).localeCompare(String(left.manifest.createdAt)));
+function listUpdateBackups(root) {
+  if (!fs.existsSync(root)) return [];
+  const results = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith('.partial-')) continue;
+    const directory = path.join(root, entry.name);
+    const manifest = path.join(directory, 'manifest.json');
+    if (!fs.existsSync(manifest)) continue;
+    try { results.push({ path: directory, manifest: JSON.parse(fs.readFileSync(manifest, 'utf8')) }); }
+    catch (error) { if (!(error instanceof SyntaxError)) throw error; }
+  }
+  return results.sort((a, b) => String(b.manifest.createdAt).localeCompare(String(a.manifest.createdAt)));
 }
-
-module.exports = {
-  CACHE_DIRECTORY_NAMES,
-  createUpdateBackup,
-  listUpdateBackups,
-  resolveBackupRoot,
-  shouldExclude,
-};
+module.exports = { CACHE_DIRECTORY_NAMES, shouldExclude, resolveBackupRoot, createUpdateBackup, listUpdateBackups };

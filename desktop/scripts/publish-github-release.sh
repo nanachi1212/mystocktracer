@@ -1,29 +1,16 @@
 #!/usr/bin/env bash
+# Publishing is invoked by the authorized release workflow, never by packaging.
 set -euo pipefail
-
-release_tag=${1:-}
-asset_dir=${2:-}
-notes_file=${3:-}
-if [[ -z "$release_tag" || ! -d "$asset_dir" || ! -f "$notes_file" ]]; then
-  echo "Usage: publish-github-release.sh <release-tag> <asset-dir> <notes-file>" >&2
-  exit 2
-fi
-
-if gh release view "$release_tag" >/dev/null 2>&1; then
-  gh release upload "$release_tag" "$asset_dir"/* --clobber
-  desired_assets=$(mktemp)
-  find "$asset_dir" -maxdepth 1 -type f -exec basename {} \; | sort > "$desired_assets"
-  while IFS= read -r asset; do
-    if [[ -n "$asset" ]] && ! grep -Fqx "$asset" "$desired_assets"; then
-      gh release delete-asset "$release_tag" "$asset" --yes
-    fi
-  done < <(gh release view "$release_tag" --json assets --jq '.assets[].name')
-  gh release edit "$release_tag" --title "easy-stock $release_tag" --notes-file "$notes_file"
+tag="${1:-}"
+assets="${2:-}"
+notes="${3:-}"
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ && -d "$assets" && -f "$notes" ]] || exit 2
+repository="nanachi1212/mystocktracer"
+if gh release view "$tag" --repo "$repository" >/dev/null 2>&1; then
+  gh release upload "$tag" "$assets"/* --repo "$repository" --clobber
+  gh release edit "$tag" --repo "$repository" --title "mystocktracer $tag" --notes-file "$notes"
 else
-  gh release create "$release_tag" "$asset_dir"/* --verify-tag --title "easy-stock $release_tag" --notes-file "$notes_file"
+  gh release create "$tag" "$assets"/* --repo "$repository" --verify-tag --title "mystocktracer $tag" --notes-file "$notes"
 fi
-
-expected=$(find "$asset_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')
-actual=$(gh release view "$release_tag" --json assets --jq '.assets | length')
-[[ "$actual" == "$expected" ]] || { echo "GitHub Release contains $actual assets; expected $expected" >&2; exit 1; }
-echo "Published GitHub Release $release_tag with $actual user-facing assets"
+# Existing unrelated release assets are deliberately retained.
+gh release view "$tag" --repo "$repository" --json url

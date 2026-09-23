@@ -1,57 +1,36 @@
 const fs = require('node:fs');
 const path = require('node:path');
-
-function runtimePython(runtimeRoot, platform = process.platform) {
-  return platform === 'win32'
-    ? path.join(runtimeRoot, 'python', 'python.exe')
-    : path.join(runtimeRoot, 'venv', 'bin', 'python');
+const { execFileSync } = require('node:child_process');
+function runtimePython(root, platform = process.platform) {
+  return path.join(root, ...(platform === 'win32' ? ['python','python.exe'] : ['venv','bin','python']));
 }
-
-function validRuntimeRoot(runtimeRoot, platform = process.platform) {
-  if (!runtimeRoot) return false;
-  try {
-    return fs.statSync(runtimePython(runtimeRoot, platform)).isFile();
-  } catch {
-    return false;
+function validRuntimeRoot(root, platform) {
+  if (!root) return false;
+  try { return fs.statSync(runtimePython(root,platform)).isFile(); }
+  catch (error) { if (['ENOENT','ENOTDIR'].includes(error.code)) return false; throw error; }
+}
+function commonGitDir(root) {
+  // git resolves worktree indirection rather than duplicating its file parser.
+  try { return execFileSync('git',['-C',root,'rev-parse','--path-format=absolute','--git-common-dir'],{encoding:'utf8',stdio:['ignore','pipe','ignore'],windowsHide:true}).trim(); }
+  catch { // Tests and incomplete worktrees can have the documented gitdir/commondir layout.
+    const dot=path.join(root,'.git');
+    if(!fs.existsSync(dot)) return '';
+    if(fs.statSync(dot).isDirectory()) return dot;
+    const match=fs.readFileSync(dot,'utf8').match(/^gitdir:\s*(.+)/);
+    if(!match) return '';
+    const gitdir=path.resolve(root,match[1].trim()), common=path.join(gitdir,'commondir');
+    return fs.existsSync(common)?path.resolve(gitdir,fs.readFileSync(common,'utf8').trim()):gitdir;
   }
 }
-
-function readGitDir(projectRoot) {
-  const dotGit = path.join(projectRoot, '.git');
-  try {
-    const stat = fs.statSync(dotGit);
-    if (stat.isDirectory()) return dotGit;
-    const value = fs.readFileSync(dotGit, 'utf8').trim();
-    const match = /^gitdir:\s*(.+)$/i.exec(value);
-    if (!match) return '';
-    return path.resolve(projectRoot, match[1].trim());
-  } catch {
-    return '';
+function resolveHermesRuntimeRoot({configuredRoot='',bundledRoot='',projectRoot='',platform=process.platform}={}) {
+  const roots=[];
+  if(configuredRoot) roots.push(path.resolve(configuredRoot));
+  if(bundledRoot) roots.push(path.join(bundledRoot,'hermes-runtime'));
+  if(projectRoot) {
+    roots.push(path.join(projectRoot,'desktop','resources','hermes-runtime'));
+    const git=commonGitDir(projectRoot);
+    if(git) roots.push(path.join(path.dirname(git),'desktop','resources','hermes-runtime'));
   }
+  return roots.find((root)=>validRuntimeRoot(root,platform)) || '';
 }
-
-function commonGitDir(projectRoot) {
-  const gitDir = readGitDir(projectRoot);
-  if (!gitDir) return '';
-  const commonDirFile = path.join(gitDir, 'commondir');
-  try {
-    const commonDir = fs.readFileSync(commonDirFile, 'utf8').trim();
-    return path.resolve(gitDir, commonDir);
-  } catch {
-    return gitDir;
-  }
-}
-
-function resolveHermesRuntimeRoot({ configuredRoot = '', bundledRoot = '', projectRoot = '', platform = process.platform } = {}) {
-  const candidates = [];
-  if (configuredRoot) candidates.push(path.resolve(configuredRoot));
-  if (bundledRoot) candidates.push(path.join(bundledRoot, 'hermes-runtime'));
-  if (projectRoot) {
-    candidates.push(path.join(projectRoot, 'desktop', 'resources', 'hermes-runtime'));
-    const commonDir = commonGitDir(projectRoot);
-    if (commonDir) candidates.push(path.join(path.dirname(commonDir), 'desktop', 'resources', 'hermes-runtime'));
-  }
-  return candidates.find((candidate) => validRuntimeRoot(candidate, platform)) || '';
-}
-
-module.exports = { commonGitDir, resolveHermesRuntimeRoot, runtimePython, validRuntimeRoot };
+module.exports={runtimePython,validRuntimeRoot,commonGitDir,resolveHermesRuntimeRoot};

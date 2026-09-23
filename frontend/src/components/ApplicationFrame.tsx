@@ -28,7 +28,7 @@ export function ApplicationFrame(props: ApplicationFrameProps) {
 		<main className={`workspace-frame ${props.sidebarExpanded ? 'sidebar-expanded' : 'sidebar-collapsed'}`}>
 			<aside className="app-sidebar" aria-label="功能導航">
 				<div className="sidebar-brand">
-					<div className="sidebar-logo"><img src={`${import.meta.env.BASE_URL}easy-stock-mark.svg`} alt="mystocktracer" /></div>
+					<div className="sidebar-logo"><img src={`${import.meta.env.BASE_URL}mystocktracer-mark.svg`} alt="mystocktracer" /></div>
 					{props.sidebarExpanded && <div><strong>mystocktracer</strong><span>台股分析工作台</span></div>}
 				</div>
 				<nav>
@@ -50,7 +50,7 @@ export function ApplicationFrame(props: ApplicationFrameProps) {
 			<div className="app-shell">
 				<header className="topbar">
 					<div className="brand-block">
-						<div className="brand-mark"><img src={`${import.meta.env.BASE_URL}easy-stock-mark.svg`} alt="mystocktracer" /></div>
+						<div className="brand-mark"><img src={`${import.meta.env.BASE_URL}mystocktracer-mark.svg`} alt="mystocktracer" /></div>
 						<div><h1>{heading.title}</h1><p>{heading.description}</p></div>
 					</div>
 					<nav className="mode-nav" aria-label="工作台模式">

@@ -1,95 +1,45 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const util = require('node:util');
-
+const { inspect } = require('node:util');
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const DEFAULT_BACKUPS = 5;
-const MAX_MESSAGE_LENGTH = 16 * 1024;
 
 function redactRuntimeLog(value) {
-  return String(value || '')
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer <redacted>')
-    .replace(/([?&](?:token|api[_-]?key|key|cookie|credential|authorization)=)[^&\s]+/gi, '$1<redacted>')
-    .replace(/\b(token|api[_-]?key|cookie|credential|authorization)\b["']?\s*[:=]\s*["']?([^"'\s,;&}]+)/gi, '$1=<redacted>')
-    .slice(0, MAX_MESSAGE_LENGTH);
+  let text = String(value ?? '');
+  text = text.replace(/\bBearer\s+[^\s"',;}]+/gi, 'Bearer <redacted>');
+  text = text.replace(/([?&](?:key|token|api[_-]?key|authorization|cookie|credential|password|secret)=)[^&\s"']*/gi, '$1<redacted>');
+  text = text.replace(/(["']?\b(?:[\w-]*[_-])?(?:api[_-]?key|token|authorization|cookie|credential|password|secret)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}]+)/gi, '$1<redacted>');
+  return text.slice(0, 16384);
 }
-
-function formatRuntimeValue(value) {
-  if (value instanceof Error) return value.stack || value.message || String(value);
-  if (typeof value === 'string') return value;
-  return util.inspect(value, { depth: 4, breakLength: 160, maxArrayLength: 40 });
-}
-
-function createRotatingLogger({
-  directory,
-  fileName,
-  component,
-  maxBytes = DEFAULT_MAX_BYTES,
-  backups = DEFAULT_BACKUPS,
-  mirror,
-  now = () => new Date(),
-}) {
-  if (!directory) throw new Error('runtime log directory is required');
-  if (!fileName || path.basename(fileName) !== fileName) throw new Error('runtime log file name must be a base name');
-  const logDirectory = path.resolve(directory);
-  const logPath = path.join(logDirectory, fileName);
-  fs.mkdirSync(logDirectory, { recursive: true, mode: 0o700 });
-
-  const rotateIfNeeded = (incomingBytes) => {
-    let currentSize = 0;
+function createRotatingLogger({ directory, fileName, component = 'runtime', maxBytes = DEFAULT_MAX_BYTES, backups = DEFAULT_BACKUPS, mirror, now = () => new Date() }) {
+  if (!directory || !fileName || path.basename(fileName) !== fileName) throw new Error('Invalid log destination');
+  const target = path.join(path.resolve(directory), fileName);
+  const limit = Math.max(64, Number(maxBytes) || DEFAULT_MAX_BYTES);
+  const retained = Math.max(0, Math.min(20, Math.floor(backups)));
+  const exists = (name) => { try { return fs.statSync(name).size; } catch (error) { if (error.code === 'ENOENT') return 0; throw error; } };
+  const write = (level, feature, values) => {
+    const message = redactRuntimeLog(values.map((value) => typeof value === 'string' ? value : inspect(value, { depth: 4, maxArrayLength: 40, getters: false })).join(' '));
+    const prefix = now().toISOString() + ' ' + String(level).replace(/[^a-z]/g, '') + ' ' + String(component).slice(0, 40) + ' ' + String(feature).replace(/[^\w.-]/g, '').slice(0, 80) + ' ';
+    let record = Buffer.from(prefix + message + '\n');
+    if (record.length > limit) record = Buffer.concat([record.subarray(0, limit - 1), Buffer.from('\n')]);
     try {
-      currentSize = fs.statSync(logPath).size;
-    } catch {}
-    if (currentSize === 0 || currentSize + incomingBytes <= maxBytes) return;
-    if (backups === 0) {
-      try { fs.rmSync(logPath, { force: true }); } catch {}
-      return;
-    }
-    for (let index = backups; index >= 1; index -= 1) {
-      const source = index === 1 ? logPath : `${logPath}.${index - 1}`;
-      const target = `${logPath}.${index}`;
-      try { fs.rmSync(target, { force: true }); } catch {}
-      try { fs.renameSync(source, target); } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
+      fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+      if (exists(target) + record.length > limit) {
+        if (retained === 0) fs.writeFileSync(target, '', { mode: 0o600 });
+        else {
+          for (let index = retained; index > 0; index--) {
+            const previous = index === 1 ? target : target + '.' + (index - 1);
+            const next = target + '.' + index;
+            if (exists(previous)) { fs.rmSync(next, { force: true }); fs.renameSync(previous, next); }
+          }
+        }
       }
-    }
+      fs.appendFileSync(target, record, { mode: 0o600 });
+    } catch { mirror?.error?.('Runtime log unavailable'); }
+    mirror?.[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log']?.(message);
   };
-
-  const write = (level, feature, ...values) => {
-    const message = redactRuntimeLog(values.map(formatRuntimeValue).join(' '));
-    const entry = `${JSON.stringify({
-      time: now().toISOString(),
-      level,
-      component,
-      feature: String(feature || component || 'runtime').slice(0, 80),
-      message,
-    })}\n`;
-    const bytes = Buffer.byteLength(entry);
-    try {
-      rotateIfNeeded(bytes);
-      fs.appendFileSync(logPath, entry, { encoding: 'utf8', mode: 0o600 });
-    } catch (error) {
-      mirror?.error?.('[runtime-logger]', error);
-    }
-    const mirrorMethod = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
-    mirror?.[mirrorMethod]?.(...values);
-  };
-
-  return {
-    directory: logDirectory,
-    path: logPath,
-    event: (level, feature, ...values) => write(level, feature, ...values),
-    debug: (...values) => write('debug', component, ...values),
-    info: (...values) => write('info', component, ...values),
-    log: (...values) => write('info', component, ...values),
-    warn: (...values) => write('warn', component, ...values),
-    error: (...values) => write('error', component, ...values),
-  };
+  const logger = { path: target, directory: path.dirname(target), event: (level, feature, ...values) => write(level, feature, values) };
+  for (const level of ['debug', 'info', 'log', 'warn', 'error']) logger[level] = (...values) => write(level === 'log' ? 'info' : level, component, values);
+  return logger;
 }
-
-module.exports = {
-  DEFAULT_BACKUPS,
-  DEFAULT_MAX_BYTES,
-  createRotatingLogger,
-  redactRuntimeLog,
-};
+module.exports = { DEFAULT_MAX_BYTES, DEFAULT_BACKUPS, createRotatingLogger, redactRuntimeLog };

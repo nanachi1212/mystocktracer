@@ -260,7 +260,7 @@ export type MarketIndexSeries = {
 };
 
 export async function resolveBackendConfig(input: ResolveInput = {}): Promise<BackendConfig> {
-  const bridge = input.bridge ?? globalThis.window?.aStock;
+  const bridge = input.bridge ?? globalThis.window?.mystocktracer;
   const bridged = await bridge?.getBackendConfig().catch(() => undefined);
   if (bridged?.backendUrl) {
     return normalizeConfig(bridged);

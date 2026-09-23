@@ -13,7 +13,7 @@ const backendBinary = path.join(
   rootDir,
   "desktop",
   "bin",
-  process.platform === "win32" ? "easy-stock-backend.exe" : "easy-stock-backend",
+  process.platform === "win32" ? "mystocktracer-backend.exe" : "mystocktracer-backend",
 );
 const viteEntry = path.join(rootDir, "node_modules", "vite", "bin", "vite.js");
 
@@ -145,7 +145,7 @@ export function launchBrowser({
 }
 
 function log(message) {
-  console.log(`[easy-stock] ${message}`);
+  console.log(`[mystocktracer] ${message}`);
 }
 
 function parsePort(value, name) {
@@ -376,7 +376,7 @@ function startDetached({ role, command, args, cwd, env, logFile, pidFile }) {
   } finally {
     closeSync(output);
   }
-  child.once("error", (error) => console.error(`[easy-stock] ${role} launch error: ${error.message}`));
+  child.once("error", (error) => console.error(`[mystocktracer] ${role} launch error: ${error.message}`));
   child.unref();
   writePidMetadata(pidFile, role, child, command);
   return child.pid;
@@ -470,7 +470,7 @@ if (isDirectExecution) {
       await restart();
     }
   } catch (error) {
-    console.error(`[easy-stock] ${error.message}`);
+    console.error(`[mystocktracer] ${error.message}`);
     process.exitCode = 1;
   }
 }

@@ -1,104 +1,43 @@
 export type ChatRole = 'user' | 'assistant';
-
-export type ChatMessage = {
-	id: string;
-	role: ChatRole;
-	content: string;
-	created_at: string;
-	error?: boolean;
-};
-
-export type ChatConversation = {
-	id: string;
-	title: string;
-	session_id?: string;
-	messages: ChatMessage[];
-	created_at: string;
-	updated_at: string;
-};
-
-const MAX_STORED_CONVERSATIONS = 30;
-const MAX_STORED_MESSAGES = 100;
+export type ChatMessage = { id: string; role: ChatRole; content: string; created_at: string; error?: boolean };
+export type ChatConversation = { id: string; title: string; session_id?: string; messages: ChatMessage[]; created_at: string; updated_at: string };
 
 export function createChatID(prefix = 'chat') {
-	const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-	return `${prefix}-${random}`;
+  return [prefix, globalThis.crypto?.randomUUID?.() ?? (Date.now().toString(36) + Math.random().toString(36).slice(2))].join('-');
 }
-
 export function createChatConversation(now = new Date().toISOString()): ChatConversation {
-	return {
-		id: createChatID('conversation'),
-		title: '新对话',
-		messages: [],
-		created_at: now,
-		updated_at: now,
-	};
+  return { id: createChatID('conversation'), title: '新對話', created_at: now, updated_at: now, messages: [] };
 }
-
-export function deriveChatTitle(content: string) {
-	const normalized = content.replace(/\s+/g, ' ').trim();
-	if (!normalized) return '新对话';
-	const runes = Array.from(normalized);
-	return runes.length > 24 ? `${runes.slice(0, 24).join('')}…` : normalized;
+export function deriveChatTitle(value: string) {
+  const text = value.trim().replace(/\s+/g, ' ');
+  if (!text) return '新對話';
+  const characters = [...text];
+  return characters.slice(0, 24).join('') + (characters.length > 24 ? '…' : '');
 }
-
+export function storeableConversations(values: ChatConversation[]) {
+  return [...values].sort((left, right) => right.updated_at.localeCompare(left.updated_at)).slice(0, 30)
+    .map((item) => ({ ...item, messages: item.messages.slice(-100) }));
+}
+export function clearAgentSessionIDs(values: ChatConversation[]): ChatConversation[] {
+  return values.map((item) => { const copy = { ...item }; delete copy.session_id; return copy; });
+}
+function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+function message(value: unknown): value is ChatMessage {
+  return record(value) && ['id', 'content', 'created_at'].every((key) => typeof value[key] === 'string')
+    && (value.role === 'user' || value.role === 'assistant') && (value.error === undefined || typeof value.error === 'boolean');
+}
 export function parseStoredConversations(raw: string | null): ChatConversation[] {
-	if (!raw) return [];
-	try {
-		const parsed: unknown = JSON.parse(raw);
-		if (!Array.isArray(parsed)) return [];
-		return parsed
-			.map(normalizeConversation)
-			.filter(isConversation)
-			.map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-MAX_STORED_MESSAGES) }))
-			.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-			.slice(0, MAX_STORED_CONVERSATIONS);
-	} catch {
-		return [];
-	}
-}
-
-export function storeableConversations(conversations: ChatConversation[]) {
-	return conversations
-		.map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-MAX_STORED_MESSAGES) }))
-		.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-		.slice(0, MAX_STORED_CONVERSATIONS);
-}
-
-export function clearAgentSessionIDs(conversations: ChatConversation[]): ChatConversation[] {
-	return conversations.map((conversation) => {
-		if (!conversation.session_id) return conversation;
-		const { session_id: _sessionID, ...next } = conversation;
-		return next;
-	});
-}
-
-function normalizeConversation(value: unknown): unknown {
-	if (!value || typeof value !== 'object') return value;
-	const legacy = value as Record<string, unknown>;
-	if (typeof legacy.hermes_session_id !== 'string' || typeof legacy.session_id === 'string') return legacy;
-	const { hermes_session_id: legacySessionID, ...conversation } = legacy;
-	return { ...conversation, session_id: legacySessionID };
-}
-
-function isConversation(value: unknown): value is ChatConversation {
-	if (!value || typeof value !== 'object') return false;
-	const item = value as Partial<ChatConversation>;
-	return typeof item.id === 'string'
-		&& typeof item.title === 'string'
-		&& typeof item.created_at === 'string'
-		&& typeof item.updated_at === 'string'
-		&& (item.session_id === undefined || typeof item.session_id === 'string')
-		&& Array.isArray(item.messages)
-		&& item.messages.every(isMessage);
-}
-
-function isMessage(value: unknown): value is ChatMessage {
-	if (!value || typeof value !== 'object') return false;
-	const item = value as Partial<ChatMessage>;
-	return typeof item.id === 'string'
-		&& (item.role === 'user' || item.role === 'assistant')
-		&& typeof item.content === 'string'
-		&& typeof item.created_at === 'string'
-		&& (item.error === undefined || typeof item.error === 'boolean');
+  let decoded: unknown;
+  try { decoded = JSON.parse(raw || 'null'); } catch { return []; }
+  if (!Array.isArray(decoded)) return [];
+  const valid: ChatConversation[] = [];
+  for (const value of decoded) {
+    if (!record(value) || !['id', 'title', 'created_at', 'updated_at'].every((key) => typeof value[key] === 'string')
+      || !Array.isArray(value.messages) || !value.messages.every(message)) continue;
+    const session = value.session_id ?? value.hermes_session_id; // Read-only stored-history compatibility.
+    if (session !== undefined && typeof session !== 'string') continue;
+    valid.push({ id: value.id as string, title: value.title as string, created_at: value.created_at as string, updated_at: value.updated_at as string,
+      messages: value.messages, ...(session ? { session_id: session as string } : {}) });
+  }
+  return storeableConversations(valid);
 }

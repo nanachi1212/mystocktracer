@@ -1,6 +1,7 @@
 package runtimelog
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,33 +12,42 @@ import (
 	"sync"
 )
 
-const (
-	DefaultMaxBytes = int64(5 * 1024 * 1024)
-	DefaultBackups  = 5
-	maxMessageRunes = 16 * 1024
-)
+const DefaultMaxBytes int64 = 5 * 1024 * 1024
+const DefaultBackups = 5
 
-var (
-	bearerPattern = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
-	queryPattern  = regexp.MustCompile(`(?i)([?&](?:token|api[_-]?key|key|cookie|credential|authorization)=)[^&\s]+`)
-	secretPattern = regexp.MustCompile(`(?i)\b(token|api[_-]?key|cookie|credential|authorization)\b["']?\s*[:=]\s*["']?([^"'\s,;&}]+)`)
-)
-
-type Writer struct {
-	mu       sync.Mutex
-	path     string
-	maxBytes int64
-	backups  int
-	file     *os.File
-	size     int64
+var masks = []struct {
+	pattern     *regexp.Regexp
+	replacement string
+}{
+	{regexp.MustCompile("(?i)\\bBearer\\s+[^\\s\"',;}]+"), "Bearer <redacted>"},
+	{regexp.MustCompile("(?i)([?&](?:key|token|api[_-]?key|authorization|cookie|credential|password|secret)=)[^&\\s\"']*"), "${1}<redacted>"},
+	{regexp.MustCompile("(?i)([\"']?\\b(?:[\\w-]*[_-])?(?:api[_-]?key|token|authorization|cookie|credential|password|secret)[\"']?\\s*[:=]\\s*)(?:\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s,;&}]+)"), "${1}<redacted>"},
 }
 
-func NewWriter(directory string, fileName string, maxBytes int64, backups int) (*Writer, error) {
-	if strings.TrimSpace(directory) == "" {
-		return nil, fmt.Errorf("runtime log directory is required")
+func Redact(message string) string {
+	for _, mask := range masks {
+		message = mask.pattern.ReplaceAllString(message, mask.replacement)
 	}
-	if filepath.Base(fileName) != fileName || strings.TrimSpace(fileName) == "" {
-		return nil, fmt.Errorf("runtime log file name must be a base name")
+	characters := []rune(message)
+	if len(characters) > 16384 {
+		return string(characters[:16384])
+	}
+	return message
+}
+
+// Each Write is one independently persisted, redacted record. Opening within the
+// mutex avoids retaining a stale file descriptor across rotation or backup.
+type Writer struct {
+	mu       sync.Mutex
+	filename string
+	limit    int64
+	retain   int
+	closed   bool
+}
+
+func NewWriter(directory, fileName string, maxBytes int64, backups int) (*Writer, error) {
+	if strings.TrimSpace(directory) == "" || fileName == "" || fileName == "." || filepath.Base(fileName) != fileName {
+		return nil, errors.New("invalid runtime log path")
 	}
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxBytes
@@ -45,122 +55,106 @@ func NewWriter(directory string, fileName string, maxBytes int64, backups int) (
 	if backups < 0 {
 		backups = DefaultBackups
 	}
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return nil, fmt.Errorf("create runtime log directory: %w", err)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return nil, err
 	}
-	w := &Writer{path: filepath.Join(directory, fileName), maxBytes: maxBytes, backups: backups}
-	if err := w.open(); err != nil {
+	w := &Writer{filename: filepath.Join(directory, fileName), limit: maxBytes, retain: backups}
+	f, err := os.OpenFile(w.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err = f.Close(); err != nil {
 		return nil, err
 	}
 	return w, nil
 }
-
 func (w *Writer) Path() string {
 	if w == nil {
 		return ""
 	}
-	return w.path
+	return w.filename
 }
-
-func (w *Writer) Write(p []byte) (int, error) {
-	if w == nil {
-		return 0, io.ErrClosedPipe
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.file == nil {
-		return 0, io.ErrClosedPipe
-	}
-	redacted := []byte(Redact(string(p)))
-	if w.size > 0 && w.size+int64(len(redacted)) > w.maxBytes {
-		if err := w.rotate(); err != nil {
-			return 0, err
-		}
-	}
-	n, err := w.file.Write(redacted)
-	w.size += int64(n)
-	if err != nil {
-		return n, err
-	}
-	// Writers must report the input length when the complete input was accepted,
-	// even when redaction changed the number of bytes written to disk.
-	return len(p), nil
-}
-
 func (w *Writer) Close() error {
-	if w == nil {
-		return nil
+	if w != nil {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.closed = true
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.file == nil {
-		return nil
-	}
-	err := w.file.Close()
-	w.file = nil
-	return err
-}
-
-func (w *Writer) open() error {
-	file, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open runtime log: %w", err)
-	}
-	info, err := file.Stat()
-	if err != nil {
-		_ = file.Close()
-		return fmt.Errorf("stat runtime log: %w", err)
-	}
-	w.file = file
-	w.size = info.Size()
 	return nil
 }
-
-func (w *Writer) rotate() error {
-	if err := w.file.Close(); err != nil {
-		return fmt.Errorf("close runtime log for rotation: %w", err)
+func (w *Writer) Write(input []byte) (int, error) {
+	if w == nil {
+		return 0, io.ErrClosedPipe
 	}
-	w.file = nil
-	if w.backups == 0 {
-		if err := os.Remove(w.path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove runtime log for rotation: %w", err)
-		}
-		return w.open()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return 0, io.ErrClosedPipe
 	}
-	for index := w.backups; index >= 1; index-- {
-		source := w.path
-		if index > 1 {
-			source = fmt.Sprintf("%s.%d", w.path, index-1)
-		}
-		target := fmt.Sprintf("%s.%d", w.path, index)
-		_ = os.Remove(target)
-		if err := os.Rename(source, target); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("rotate runtime log: %w", err)
+	record := []byte(Redact(string(input)))
+	if int64(len(record)) > w.limit {
+		record = record[:w.limit]
+	}
+	stat, err := os.Stat(w.filename)
+	if err != nil && !os.IsNotExist(err) {
+		return 0, err
+	}
+	if stat != nil && stat.Size()+int64(len(record)) > w.limit {
+		for index := w.retain; index >= 0; index-- {
+			current := w.filename
+			if index > 0 {
+				current = fmt.Sprintf("%s.%d", w.filename, index)
+			}
+			if index == w.retain {
+				if err := os.Remove(current); err != nil && !os.IsNotExist(err) {
+					return 0, err
+				}
+			} else if err := os.Rename(current, fmt.Sprintf("%s.%d", w.filename, index+1)); err != nil && !os.IsNotExist(err) {
+				return 0, err
+			}
 		}
 	}
-	return w.open()
+	file, err := os.OpenFile(w.filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return 0, err
+	}
+	_, writeErr := file.Write(record)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return 0, writeErr
+	}
+	if closeErr != nil {
+		return 0, closeErr
+	}
+	return len(input), nil
 }
 
-func ConfigureStandard(directory string, component string) (*log.Logger, io.Closer, error) {
+type sanitizedMirror struct {
+	file    *Writer
+	console io.Writer
+}
+
+func (m sanitizedMirror) Write(input []byte) (int, error) {
+	clean := []byte(Redact(string(input)))
+	// Neither stderr nor the file receives the unredacted caller buffer.
+	_, consoleErr := m.console.Write(clean)
+	_, fileErr := m.file.Write(clean)
+	if fileErr != nil {
+		return 0, fileErr
+	}
+	if consoleErr != nil {
+		return 0, consoleErr
+	}
+	return len(input), nil
+}
+func ConfigureStandard(directory, component string) (*log.Logger, io.Closer, error) {
 	writer, err := NewWriter(directory, component+".log", DefaultMaxBytes, DefaultBackups)
 	if err != nil {
 		return nil, nil, err
 	}
-	output := io.MultiWriter(os.Stderr, writer)
+	output := sanitizedMirror{writer, os.Stderr}
 	flags := log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC
-	logger := log.New(output, "", flags)
 	log.SetOutput(output)
 	log.SetFlags(flags)
-	return logger, writer, nil
-}
-
-func Redact(value string) string {
-	value = bearerPattern.ReplaceAllString(value, "Bearer <redacted>")
-	value = queryPattern.ReplaceAllString(value, "${1}<redacted>")
-	value = secretPattern.ReplaceAllString(value, "${1}=<redacted>")
-	runes := []rune(value)
-	if len(runes) > maxMessageRunes {
-		return string(runes[:maxMessageRunes])
-	}
-	return value
+	return log.New(output, "", flags), writer, nil
 }

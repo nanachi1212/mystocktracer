@@ -1,42 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-
-const sourceRoot = path.resolve(process.argv[2] || '');
-const outputRoot = path.resolve(process.argv[3] || '');
-const releaseTag = process.argv[4] || '';
-if (!sourceRoot || !outputRoot || !/^v\d+\.\d+\.\d+(?:[-+].+)?$/.test(releaseTag)) {
-  throw new Error('Usage: node prepare-publish-assets.mjs <source-root> <output-root> <release-tag>');
-}
-
-const version = releaseTag.slice(1);
-// Phase B1: user downloads and updater metadata now ship in the same GitHub Release. electron-updater
-// reads latest.yml / latest-mac.yml straight from the release assets, so there is no separate
-// object-storage feed to keep in sync (and no upstream-controlled host in the update path).
-const downloadNames = [
-  `easy-stock-v${version}-macos-arm64.dmg`,
-  `easy-stock-v${version}-macos-x64.dmg`,
-  `easy-stock-v${version}-windows-x64-setup.exe`,
-];
-const updaterNames = [
-  `easy-stock-v${version}-macos-arm64.zip`,
-  `easy-stock-v${version}-macos-arm64.zip.blockmap`,
-  `easy-stock-v${version}-macos-x64.zip`,
-  `easy-stock-v${version}-macos-x64.zip.blockmap`,
-  `easy-stock-v${version}-windows-x64-setup.exe`,
-  `easy-stock-v${version}-windows-x64-setup.exe.blockmap`,
-  'latest-mac.yml',
-  'latest.yml',
-];
-const releaseNames = [...new Set([...downloadNames, ...updaterNames])];
-
-for (const name of releaseNames) {
-  const source = path.join(sourceRoot, name);
-  if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) throw new Error(`Required release asset is missing: ${name}`);
-}
-
-const targetRoot = path.join(outputRoot, 'github');
-fs.rmSync(targetRoot, { recursive: true, force: true });
-fs.mkdirSync(targetRoot, { recursive: true });
-for (const name of releaseNames) fs.copyFileSync(path.join(sourceRoot, name), path.join(targetRoot, name));
-
-console.log(`Prepared ${releaseNames.length} GitHub release assets (downloads + updater metadata) for ${releaseTag}`);
+const [source,output,tag]=process.argv.slice(2);
+if(!source||!output||!/^v\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(tag||'')) throw new Error('Supply source, output and release tag');
+const required=['latest.yml','latest-mac.yml'];
+for(const arch of ['arm64','x64']) for(const ext of ['dmg','zip','zip.blockmap']) required.push('mystocktracer-'+tag+'-macos-'+arch+'.'+ext);
+for(const ext of ['exe','exe.blockmap']) required.push('mystocktracer-'+tag+'-windows-x64-setup.'+ext);
+for(const name of required) if(!fs.statSync(path.join(source,name),{throwIfNoEntry:false})?.isFile()) throw new Error('Missing asset: '+name);
+const target=path.join(path.resolve(output),'github');
+fs.mkdirSync(target,{recursive:true});
+for(const name of required) fs.copyFileSync(path.join(source,name),path.join(target,name));
+console.log('Prepared '+required.length+' mystocktracer release assets');

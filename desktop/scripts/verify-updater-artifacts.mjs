@@ -1,48 +1,18 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-
-const releaseRoot = path.resolve(process.argv[2] || '');
-const metadataNames = process.argv.slice(3);
-if (!releaseRoot || !metadataNames.length) {
-  throw new Error('Usage: node verify-updater-artifacts.mjs <release-root> <latest.yml> [latest-mac.yml]');
-}
-
-for (const metadataName of metadataNames) {
-  const metadataPath = path.join(releaseRoot, metadataName);
-  if (!fs.existsSync(metadataPath)) throw new Error(`Updater metadata not found: ${metadataName}`);
-  const metadata = fs.readFileSync(metadataPath, 'utf8');
-  const entries = parseFiles(metadata);
-  if (!entries.length) throw new Error(`Updater metadata contains no files: ${metadataName}`);
-  for (const entry of entries) {
-    const assetPath = path.join(releaseRoot, entry.url);
-    if (!fs.existsSync(assetPath)) throw new Error(`${metadataName} references missing asset: ${entry.url}`);
-    const digest = crypto.createHash('sha512').update(fs.readFileSync(assetPath)).digest('base64');
-    if (digest !== entry.sha512) throw new Error(`${metadataName} SHA-512 mismatch: ${entry.url}`);
-    if (entry.url.endsWith('.exe') && !fs.existsSync(`${assetPath}.blockmap`)) {
-      throw new Error(`Windows differential update blockmap is missing: ${entry.url}.blockmap`);
-    }
+import { createHash } from 'node:crypto';
+import { parseMetadata } from './release-tools.mjs';
+if(process.argv.length<4) throw new Error('Supply a release directory and metadata names');
+const directory=path.resolve(process.argv[2]);
+for(const name of process.argv.slice(3)) {
+  if(path.basename(name)!==name || !/^latest(?:-mac)?\.yml$/.test(name)) throw new Error('Invalid metadata filename');
+  const metadata=parseMetadata(fs.readFileSync(path.join(directory,name),'utf8'));
+  for(const file of metadata.files) {
+    if(path.basename(file.url)!==file.url || !file.url.startsWith('mystocktracer-v'+metadata.version+'-') || /[\\/:]/.test(file.url)) throw new Error('Invalid release asset identity');
+    const content=fs.readFileSync(path.join(directory,file.url));
+    if(createHash('sha512').update(content).digest('base64')!==file.sha512) throw new Error('SHA-512 mismatch: '+file.url);
+    if(file.size && Number(file.size)!==content.length) throw new Error('Asset size mismatch');
+    if(file.url.endsWith('.exe')&&!fs.existsSync(path.join(directory,file.url+'.blockmap'))) throw new Error('Missing Windows blockmap');
   }
-  console.log(`Updater metadata verified: ${metadataName}`);
-}
-
-function parseFiles(metadata) {
-  const lines = metadata.split(/\r?\n/);
-  const entries = [];
-  let current;
-  for (const line of lines) {
-    const url = line.match(/^\s*- url:\s*(.+?)\s*$/)?.[1];
-    if (url) {
-      current = { url: unquote(url), sha512: '' };
-      entries.push(current);
-      continue;
-    }
-    const sha512 = line.match(/^\s+sha512:\s*(.+?)\s*$/)?.[1];
-    if (sha512 && current) current.sha512 = unquote(sha512);
-  }
-  return entries.filter((entry) => entry.url && entry.sha512);
-}
-
-function unquote(value) {
-  return value.replace(/^(?:"(.*)"|'(.*)')$/, '$1$2');
+  console.log('Verified '+name+' and '+metadata.files.length+' SHA-512 assets');
 }

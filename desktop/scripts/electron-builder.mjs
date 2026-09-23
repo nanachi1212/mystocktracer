@@ -1,131 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
+import { build, Platform, Arch } from 'electron-builder';
+import { desktopBuildConfig } from './build-config.mjs';
 import { resolvePackageResourcesDir } from './package-resources.mjs';
-import { createRequire } from 'node:module';
-
-const { UPDATE_REPOSITORY_OWNER, UPDATE_REPOSITORY_NAME } = createRequire(import.meta.url)('../update-feed.cjs');
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const repoRoot = path.resolve(desktopRoot, '..');
-const packageManifest = JSON.parse(fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8'));
-const packageResourcesDir = resolvePackageResourcesDir({ desktopRoot, repoRoot });
-// Update metadata (latest.yml / latest-mac.yml) must name this repository's GitHub Releases, so a
-// packaged build never resolves updates from the upstream easy-stock distribution channel.
-const updatePublishTarget = { provider: 'github', owner: UPDATE_REPOSITORY_OWNER, repo: UPDATE_REPOSITORY_NAME };
-const platform = process.argv[2];
-const mode = process.argv[3] || 'release';
-const arch = process.env.A_STOCK_DESKTOP_ARCH || process.arch;
-if (!['mac', 'windows'].includes(platform) || !['release', 'dir'].includes(mode)) throw new Error('Usage: node electron-builder.mjs <mac|windows> <release|dir>');
-if (!['arm64', 'x64'].includes(arch)) throw new Error(`Unsupported desktop architecture: ${arch}`);
-
-const signingCertificate = resolveSigningCertificate(process.env.CSC_LINK);
-if (process.env.CSC_LINK !== undefined && !signingCertificate) {
-  // GitHub Actions exposes an empty/misconfigured certificate secret as a
-  // relative workspace path in some environments. electron-builder then
-  // attempts to import the project directory as a certificate. Remove only
-  // invalid directory values so unsigned releases safely use ad-hoc signing.
-  delete process.env.CSC_LINK;
-  delete process.env.CSC_KEY_PASSWORD;
-  console.warn('Ignoring empty or directory-valued CSC_LINK; using platform fallback signing.');
-}
-
-const outputDirectory = path.join(desktopRoot, 'dist', mode === 'dir' ? 'builder-dir' : 'builder-release');
-const hasMacNotarizationCredentials = Boolean(
-  signingCertificate && (
-    (process.env.APPLE_ID && process.env.APPLE_APP_SPECIFIC_PASSWORD && process.env.APPLE_TEAM_ID)
-    || process.env.APPLE_API_KEY
-    || process.env.APPLE_KEYCHAIN
-  ),
-);
-fs.mkdirSync(outputDirectory, { recursive: true });
-if (mode === 'release') {
-  for (const entry of fs.readdirSync(outputDirectory)) {
-    if (entry === 'builder-debug.yml') continue;
-    fs.rmSync(path.join(outputDirectory, entry), { recursive: true, force: true });
-  }
-}
-const config = {
-  appId: 'com.jundizhou.easystock',
-  productName: 'easy-stock',
-  electronVersion: process.env.A_STOCK_ELECTRON_VERSION || packageManifest.devDependencies.electron,
-  ...(process.env.A_STOCK_ELECTRON_DIST ? { electronDist: process.env.A_STOCK_ELECTRON_DIST } : {}),
-  copyright: 'Copyright © mystocktracer contributors; portions © jundizhou (easy-stock)',
-  directories: { output: outputDirectory, buildResources: path.join(desktopRoot, 'assets') },
-  files: [
-    'main.cjs',
-    'preload.cjs',
-    'backend-process.cjs',
-    'runtime-logger.cjs',
-    'data-protection.cjs',
-    'hermes-runtime-root.cjs',
-    'update-feed.cjs',
-    'update-manager.cjs',
-    'user-data.cjs',
-    'subscription-ai-url.cjs',
-    'package.json',
-    '!dist{,/**/*}',
-    '!resources{,/**/*}',
-    '!scripts{,/**/*}',
-    '!test{,/**/*}',
-  ],
-  extraResources: [{ from: packageResourcesDir, to: 'resources' }],
-  asar: true,
-  publish: [updatePublishTarget],
-  mac: {
-    category: 'public.app-category.finance',
-    icon: path.join(desktopRoot, 'assets', 'easy-stock.icns'),
-    target: mode === 'dir' ? [{ target: 'dir', arch: [arch] }] : [{ target: 'zip', arch: [arch] }],
-    artifactName: `easy-stock-v${packageManifest.version}-macos-${arch}.\${ext}`,
-    hardenedRuntime: true,
-    gatekeeperAssess: false,
-    // Keep unsigned local builds launchable: electron-builder's `-` identity
-    // creates a complete ad-hoc signature, while `null` leaves only the
-    // Electron binary signed and produces an invalid app bundle on macOS.
-    identity: signingCertificate ? undefined : '-',
-    notarize: hasMacNotarizationCredentials,
-  },
-  dmg: { artifactName: `easy-stock-v${packageManifest.version}-macos-${arch}.dmg` },
-  win: {
-    icon: path.join(desktopRoot, 'assets', 'easy-stock.ico'),
-    target: mode === 'dir' ? [{ target: 'dir', arch: [arch] }] : [{ target: 'nsis', arch: [arch] }],
-    artifactName: `easy-stock-v${packageManifest.version}-windows-${arch}.\${ext}`,
-    ...(signingCertificate ? {} : { signAndEditExecutable: false }),
-  },
-  nsis: {
-    oneClick: true,
-    perMachine: false,
-    allowElevation: true,
-    deleteAppDataOnUninstall: false,
-    artifactName: `easy-stock-v${packageManifest.version}-windows-${arch}-setup.exe`,
-  },
-};
-
-const { Arch, build, Platform } = await import('electron-builder');
-const targetPlatform = platform === 'mac' ? Platform.MAC : Platform.WINDOWS;
-const targetArch = Arch[arch];
-await build({
-  targets: mode === 'dir'
-    ? targetPlatform.createTarget(['dir'], targetArch)
-    : targetPlatform.createTarget(platform === 'mac' ? ['zip'] : ['nsis'], targetArch),
-  config,
-  projectDir: desktopRoot,
-  publish: 'never',
+const manifest = JSON.parse(fs.readFileSync(path.join(desktopRoot,'package.json'),'utf8'));
+const [platform, mode = 'release'] = process.argv.slice(2);
+const arch = process.env.MYSTOCKTRACER_DESKTOP_ARCH || process.env.A_STOCK_DESKTOP_ARCH || process.arch;
+const certificate = process.env.CSC_LINK?.trim();
+const certificatePaths = certificate ? (certificate.startsWith('file://') ? [fileURLToPath(certificate)] : [path.resolve(certificate), path.resolve(desktopRoot,certificate), path.resolve(desktopRoot,'..',certificate)]) : [];
+const signed = Boolean(certificate && !certificatePaths.some((file) => fs.existsSync(file) && fs.statSync(file).isDirectory()));
+if (process.env.CSC_LINK !== undefined && !signed) { delete process.env.CSC_LINK; delete process.env.CSC_KEY_PASSWORD; }
+const config = desktopBuildConfig({
+  desktopRoot, resources: resolvePackageResourcesDir({ desktopRoot, repoRoot:path.dirname(desktopRoot) }),
+  version:manifest.version, electronVersion:process.env.MYSTOCKTRACER_ELECTRON_VERSION || process.env.A_STOCK_ELECTRON_VERSION || manifest.devDependencies.electron,
+  platform, arch, mode, signed,
+  notarize:Boolean(signed && ((process.env.APPLE_ID && process.env.APPLE_APP_SPECIFIC_PASSWORD && process.env.APPLE_TEAM_ID) || process.env.APPLE_API_KEY || process.env.APPLE_KEYCHAIN)),
 });
-
-function resolveSigningCertificate(value) {
-  const certificate = value?.trim();
-  if (!certificate) return '';
-  const candidates = certificate.startsWith('file://')
-    ? [fileURLToPath(certificate)]
-    : path.isAbsolute(certificate)
-      ? [certificate]
-      : [
-          path.resolve(process.cwd(), certificate),
-          path.resolve(desktopRoot, certificate),
-          path.resolve(desktopRoot, '..', certificate),
-        ];
-  if (candidates.some((candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isDirectory())) return '';
-  return certificate;
-}
+const electronDist = process.env.MYSTOCKTRACER_ELECTRON_DIST || process.env.A_STOCK_ELECTRON_DIST;
+if (electronDist) config.electronDist = electronDist;
+const target = platform === 'mac' ? Platform.MAC : Platform.WINDOWS;
+await build({ projectDir:desktopRoot, config, targets:target.createTarget(mode === 'dir' ? ['dir'] : platform === 'mac' ? ['zip'] : ['nsis'], Arch[arch]), publish:'never' });
