@@ -83,7 +83,22 @@ console.log('Packaged migration activated synthetic canonical profile');\n`);
   assert.ok(state.images.length > 0 && state.images.every(image => image.loaded), 'brand assets must render');
   await until(async () => fs.readFileSync(path.join(profile, 'logs/desktop.log'), 'utf8').includes('frontend ready'));
   assert.deepEqual(fs.readFileSync(db), originalDB, 'legacy database remains untouched');
-  console.log('PASS: exact packaged executable, canonical bridge, rendered brand assets, backend/frontend readiness and packaged migration with source preservation');
+  assert.equal(await evaluate(`localStorage.setItem('mystocktracer-smoke','persistent-synthetic-state');localStorage.getItem('mystocktracer-smoke')`), 'persistent-synthetic-state');
+  const backupScript = path.join(temporary, 'backup.cjs');
+  const backupResult = path.join(temporary, 'backup-result.json');
+  fs.writeFileSync(backupScript, `const fs=require('node:fs');
+const {createUpdateBackup}=require(${JSON.stringify(path.join(resources, 'app.asar/data-protection.cjs'))});
+const result=createUpdateBackup({userDataPath:${JSON.stringify(profile)},backupRoot:${JSON.stringify(path.join(temporary, 'backups'))},python:${JSON.stringify(python)},helper:${JSON.stringify(path.join(resources, 'state-copy.py'))},fromVersion:'0.9.2',toVersion:'0.9.3'});
+fs.writeFileSync(${JSON.stringify(backupResult)},JSON.stringify(result));\n`);
+  const backup = () => spawnSync(executable, [backupScript], { env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', windowsHide: true });
+  assert.notEqual(backup().status, 0, 'live Chromium storage must block strict backup');
+  socket.send(JSON.stringify({ id: ++id, method: 'Browser.close' }));
+  await until(async () => child.exitCode !== null);
+  const saved = backup();
+  assert.equal(saved.status, 0, saved.stderr);
+  const snapshot = JSON.parse(fs.readFileSync(backupResult, 'utf8'));
+  assert.ok(snapshot.manifest.files.some(file => file.path?.startsWith('Local Storage/')) || fs.existsSync(path.join(snapshot.path, 'data/Local Storage/leveldb')), 'persistent Chromium data must be preserved');
+  console.log('PASS: exact packaged identity, rendered brand assets, backend/frontend readiness, migration, and strict backup after live localStorage closes');
 } catch (error) {
   throw new Error(`${error.message}\n${diagnostics}`, { cause: error });
 } finally {

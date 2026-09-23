@@ -41,6 +41,14 @@ B3 `electron-updater 6.8.9` 的 `NsisUpdater.doInstall` 依 metadata 選 install
 
 `npm --workspace desktop run smoke:packaged-desktop` 使用實際封裝 EXE：確認 PE ProductName／FileDescription 為 mystocktracer，再載入 ASAR 內的 migration module，透過封裝 Python 與 state-copy.py 複製合成 settings／SQLite／未知使用者檔案並比對來源與目的 bytes。啟動隔離 profile 後，確認 canonical bridge、品牌圖片、backend／frontend readiness；結束只清理該測試的 process tree 與暫存資料。
 
-54 項桌面測試包含保留 NSIS GUID、實際已安裝 electron-updater 的 installer 呼叫參數與 NSIS KEEP_APP_DATA 契約。這是隔離 fixture 驗證，並非宣稱已在本機執行正式 installer 升級、簽章或發布。
+61 項桌面測試包含保留 NSIS GUID、實際已安裝 electron-updater 的 installer 呼叫參數與 NSIS KEEP_APP_DATA 契約。這是隔離 fixture 驗證，並非宣稱已在本機執行正式 installer 升級、簽章或發布。
 
 `smoke:packaged-runtime` 另通過封裝 backend 的兩段 streaming 回應。Windows 未簽署建置使用 `signExecutable: false`，仍寫入產品 metadata／icon；不得再用 `signAndEditExecutable: false` 把它們一併停用。
+
+## Windows 更新備份的 storage 停寫邊界
+
+GitHub Review 發現單純 flush default session 並停止 backend 仍會留下 Chromium 的 LevelDB／Cookie 寫入鎖。封裝 smoke 已實際寫入 localStorage，確認活躍程序的嚴格 COPY 會被拒絕，完整退出後相同 COPY 成功且保留 Local Storage。
+
+安裝按鈕先在備份根目錄保存一次性的版本意圖，呼叫 Electron relaunch／quit。新程序在建立 BrowserWindow、存取 default session、啟動 backend 或 updater 網路請求之前完成 verified backup；之後才重新檢查同一發布版本、透過 electron-updater 驗證下載並安裝。保留原本的檔案鎖、hash、SQLite 驗證，不改成讀取仍在寫入的資料。
+
+版本意圖只含 fromVersion／toVersion，不接受 installer 路徑或命令。重啟後消耗一次；備份失敗、離線、發布版本改變或安裝啟動錯誤時不安裝、不循環重啟，顯示錯誤並開啟原版本。此流程需要重新連線驗證 release；已下載但離線時仍保留快取與原資料，待連線後再試。

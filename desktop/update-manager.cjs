@@ -12,9 +12,9 @@ function normalizeReleaseNotes(value) {
   return (typeof value === 'string' ? value : Array.isArray(value) ? value.map((item) => item?.note || '').join('\n\n') : '').slice(0, 64000);
 }
 class UpdateManager extends EventEmitter {
-  constructor({ updater, enabled, currentVersion, platform, canInstallAutomatically, stopRuntime, createBackup, logger = console }) {
+  constructor({ updater, enabled, currentVersion, platform, canInstallAutomatically, stopRuntime, createBackup, restartForInstall, logger = console }) {
     super();
-    Object.assign(this, { updater, currentVersion, stopRuntime, createBackup, logger });
+    Object.assign(this, { updater, currentVersion, stopRuntime, createBackup, restartForInstall, logger });
     this.enabled = Boolean(enabled && updater);
     this.automatic = canInstallAutomatically ?? platform === 'win32';
     this.status = { state: this.enabled ? 'idle' : 'disabled', supported: this.enabled, installMode: this.automatic ? 'automatic' : 'manual', currentVersion, progress: 0, message: this.enabled ? '可檢查 mystocktracer 更新' : '開發環境不啟用更新' };
@@ -68,6 +68,10 @@ class UpdateManager extends EventEmitter {
     if (!this.automatic) throw new Error('未簽署 Apple Developer ID 的 macOS 版本請使用發布頁');
     if (this.status.state !== 'downloaded' || !this.latestInfo?.version) throw new Error('更新尚未下載完成');
     this.setStatus({ state: 'installing', message: '停止寫入並驗證資料備份' });
+    if (this.restartForInstall) {
+      await this.restartForInstall({ fromVersion: this.currentVersion, toVersion: this.latestInfo.version });
+      return this.getStatus();
+    }
     await this.stopRuntime();
     const backup = await this.createBackup({ fromVersion: this.currentVersion, toVersion: this.latestInfo.version });
     this.setStatus({ backupPath: backup.path, backupCreatedAt: backup.manifest?.createdAt, message: '備份完成，正在啟動安裝程式' });

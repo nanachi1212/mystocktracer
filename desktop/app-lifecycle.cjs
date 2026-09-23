@@ -14,6 +14,7 @@ const { resolveUpdateFeed, releasePageURL } = require('./update-feed.cjs');
 const { createUpdateBackup, resolveBackupRoot } = require('./data-protection.cjs');
 const { validateSubscriptionAIURL } = require('./subscription-ai-url.cjs');
 const { externalWindowHandler } = require('./external-links.cjs');
+const { scheduleUpdateRestart, resumeUpdateAfterRestart, awaitNativeInstall } = require('./update-restart.cjs');
 
 const compat = (name) => process.env[`MYSTOCKTRACER_${name}`] || process.env[`A_STOCK_${name}`] || '';
 
@@ -27,7 +28,7 @@ async function startDesktop() {
   const copyHelper = app.isPackaged ? path.join(process.resourcesPath, 'state-copy.py') : path.join(__dirname, 'state-copy.py');
   const stop = () => stopped ||= (async () => {
     clearInterval(timer);
-    if (app.isReady()) await session.defaultSession.flushStorageData();
+    if (app.isReady() && window) await session.defaultSession.flushStorageData();
     await stopBackend(child);
     child = undefined;
   })();
@@ -52,6 +53,22 @@ async function startDesktop() {
     process.on('uncaughtExceptionMonitor', (error) => logger.error(error));
     process.on('unhandledRejection', (error) => logger.error(error));
     await app.whenReady();
+
+    const enabled = app.isPackaged && ['win32', 'darwin'].includes(process.platform);
+    autoUpdater.logger = logger;
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = false;
+    if (enabled) autoUpdater.setFeedURL(resolveUpdateFeed());
+    const requestPath = path.join(resolveBackupRoot(data.path), 'pending-install.json');
+    if (enabled && process.platform === 'win32' && fs.existsSync(requestPath)) {
+      try {
+        await resumeUpdateAfterRestart({ requestPath, currentVersion: app.getVersion(), updater: autoUpdater, createBackup: (versions) => createUpdateBackup({ userDataPath: data.path, python, helper: copyHelper, ...versions }), install: () => awaitNativeInstall({ updater: autoUpdater, app }) });
+        return;
+      } catch (error) {
+        logger.error(error);
+        dialog.showErrorBox('更新未安裝', '無法驗證發布版本或建立完整備份。原資料已保留，應用程式將正常啟動；請連線後重新檢查更新。');
+      }
+    }
 
     const backendDir = app.isPackaged ? path.join(resources, 'backend') : path.resolve(__dirname, '..', 'backend');
     const candidates = [compat('BACKEND_BIN'), path.join(app.isPackaged ? backendDir : path.join(__dirname, 'bin'), identity.backendName())];
@@ -80,10 +97,7 @@ async function startDesktop() {
     child.on('error', (error) => logger.error(error));
     await waitForHealth(backendUrl, 20000, child);
     logger.info('backend ready');
-    const enabled = app.isPackaged && ['win32', 'darwin'].includes(process.platform);
-    autoUpdater.logger = logger;
-    if (enabled) autoUpdater.setFeedURL(resolveUpdateFeed());
-    const updates = new UpdateManager({ updater: autoUpdater, enabled, platform: process.platform, currentVersion: app.getVersion(), stopRuntime: stop, createBackup: (versions) => createUpdateBackup({ userDataPath: data.path, python, helper: copyHelper, ...versions }), logger });
+    const updates = new UpdateManager({ updater: autoUpdater, enabled, platform: process.platform, currentVersion: app.getVersion(), stopRuntime: stop, createBackup: (versions) => createUpdateBackup({ userDataPath: data.path, python, helper: copyHelper, ...versions }), restartForInstall: process.platform === 'win32' ? (versions) => scheduleUpdateRestart({ requestPath, versions, app }) : undefined, logger });
     const frontendFile = app.isPackaged ? path.join(resources, 'frontend', 'dist', 'index.html') : path.resolve(__dirname, '..', 'frontend', 'dist', 'index.html');
     const frontendURL = !app.isPackaged && process.env.ELECTRON_RENDERER_URL ? process.env.ELECTRON_RENDERER_URL : pathToFileURL(frontendFile).href;
     const page = new URL(frontendURL);
