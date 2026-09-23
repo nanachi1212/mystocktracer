@@ -21,7 +21,7 @@ export function desktopBuildConfig({ desktopRoot, resources, version, electronVe
     asar: true, publish: [resolveUpdateFeed()],
     mac: { category:'public.app-category.finance', icon:path.join(desktopRoot,'assets/mystocktracer.icns'), artifactName:`${stem}-macos-${arch}.\${ext}`, hardenedRuntime:true, gatekeeperAssess:false, identity:signed ? undefined : '-', notarize },
     dmg: { artifactName:`${stem}-macos-${arch}.dmg` },
-    win: { icon:path.join(desktopRoot,'assets/mystocktracer.ico'), artifactName:`${stem}-windows-${arch}.\${ext}`, ...(signed ? {} : { signAndEditExecutable:false }) },
+    win: { icon:path.join(desktopRoot,'assets/mystocktracer.ico'), artifactName:`${stem}-windows-${arch}.\${ext}`, ...(signed ? {} : { signExecutable:false }) },
     nsis: { guid:INSTALLER_GUID, oneClick:true, perMachine:false, allowElevation:true, deleteAppDataOnUninstall:false, artifactName:`${stem}-windows-${arch}-setup.exe` },
   };
 }

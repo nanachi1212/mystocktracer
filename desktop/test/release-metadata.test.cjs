@@ -18,6 +18,7 @@ test('Windows and macOS config own identity, retain B3 installer GUID and protec
     const config=desktopBuildConfig({desktopRoot:desktop,resources:path.join(desktop,'dist/test'),version:'0.9.2',electronVersion:'44.2.0',platform,arch:'x64',mode:'release'});
     assert.equal(config.appId,'com.nanachi1212.mystocktracer');assert.equal(config.productName,'mystocktracer');
     assert.equal(config.nsis.guid,INSTALLER_GUID);assert.equal(config.nsis.deleteAppDataOnUninstall,false);
+    assert.equal(config.win.signExecutable,false);assert.notEqual(config.win.signAndEditExecutable,false);
     assert.match(config.nsis.artifactName,/^mystocktracer-/);assert.match(config.mac.icon,/mystocktracer\.icns$/);
     assert.equal(config.mac.identity,'-');assert.equal(config.mac.notarize,false);
     assert.deepEqual(config.publish,[{provider:'github',owner:'nanachi1212',repo:'mystocktracer'}]);
