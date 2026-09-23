@@ -202,3 +202,38 @@ th, td { border-bottom: 1px solid var(--line-soft); }
 @media (prefers-reduced-motion: reduce) {
 	*, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Taiwan index detail: source, selection, trend and official session values. */
+.index-workspace { display: grid; gap: 18px; min-width: 0; }
+.index-picker { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.index-picker button { display: grid; gap: 4px; min-width: 150px; padding: 12px 14px; text-align: left; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; cursor: pointer; }
+.index-picker button[aria-current="true"] { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+.index-picker button span { font-size: 13px; }
+.index-picker button strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.index-summary { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+.index-summary h3 { margin: 4px 0; }
+.index-summary p { margin: 0; font-size: 12px; opacity: .72; }
+.index-summary-value { display: grid; gap: 3px; text-align: right; font-variant-numeric: tabular-nums; }
+.index-summary-value strong { font-size: 28px; }
+.index-insight-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(210px, 1fr); gap: 14px; }
+.index-trend-panel, .index-stat-grid, .index-empty { border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.index-trend, .index-trend svg { width: 100%; height: 180px; margin: 0; }
+.index-workspace .up { color: var(--up); }
+.index-workspace .down { color: var(--down); }
+.index-trend figcaption { display: flex; justify-content: space-between; font-size: 12px; opacity: .72; }
+.index-trend-empty { display: grid; place-items: center; min-height: 180px; margin: 0; opacity: .72; }
+.index-stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 0; }
+.index-stat-grid dt { font-size: 12px; opacity: .72; }
+.index-stat-grid dd { margin: 4px 0 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+.index-session-scroll { overflow-x: auto; }
+.index-session-table { width: 100%; min-width: 520px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.index-session-table caption { padding-bottom: 10px; text-align: left; font-weight: 650; }
+.index-session-table th, .index-session-table td { padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+.index-session-table th:first-child { text-align: left; }
+.index-session-table thead th { font-size: 12px; opacity: .72; }
+.index-empty { display: grid; gap: 8px; text-align: center; }
+@media (max-width: 700px) {
+  .index-insight-grid { grid-template-columns: 1fr; }
+  .index-summary { align-items: start; }
+  .index-summary-value strong { font-size: 22px; }
+}

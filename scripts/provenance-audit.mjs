@@ -150,6 +150,7 @@ export function inspect({ cwd = root, base = FORK, ref = 'WORKTREE', decisions =
     inheritedLOC: inherited.reduce((sum, file) => sum + file.codeLOC, 0),
     inheritedLegacyLOC: inherited.reduce((sum, file) => sum + file.legacyLOC, 0),
     blockingFiles: files.filter(file => file.blockingRelicensing).length,
+    technicalBlockingFiles: files.filter(file => file.replacementRequired).length,
   };
   // Reproduce the previous path-based method for an honest historical comparison.
   const legacy = { total: 0, inherited: 0, inheritedLOC: 0, unclear: 0 };
@@ -167,7 +168,8 @@ export function inspect({ cwd = root, base = FORK, ref = 'WORKTREE', decisions =
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'docs/oss-provenance-decisions.json'), 'utf8'));
-  const before = inspect({ ref: manifest.baseline, decisions: manifest.files });
+  const baselineManifest = JSON.parse(git(root, 'show', `${manifest.baseline}:docs/oss-provenance-decisions.json`).toString('utf8'));
+  const before = inspect({ ref: manifest.baseline, decisions: baselineManifest.files });
   const after = inspect({ decisions: manifest.files });
   const result = { schema: 2, auditDate: new Date().toISOString().slice(0, 10), fork: FORK, baseline: manifest.baseline, before: { summary: before.summary, legacy: before.legacy }, after: { summary: after.summary, legacy: after.legacy }, files: after.files, references: after.references };
   const staleDecisions = manifest.files.filter(item => !after.files.some(file => file.path === item.path && file.sha256 === item.sha256)).map(item => item.path);

@@ -2,55 +2,32 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { MessageContent } from './MarkdownContent';
 
-describe('MessageContent', () => {
-	it('renders assistant GFM content as semantic HTML', () => {
-		const output = renderToStaticMarkup(
-			<MessageContent
-				markdown
-				content={'## 行情结论\n\n- **趋势向上**\n- `注意风险`\n\n| 项目 | 状态 |\n| --- | --- |\n| 行情 | 正常 |'}
-			/>,
-		);
+const render = (content: string, markdown = true) => renderToStaticMarkup(<MessageContent content={content} markdown={markdown} />);
 
-		expect(output).toContain('<h2>行情结论</h2>');
-		expect(output).toContain('<ul>');
-		expect(output).toContain('<strong>趋势向上</strong>');
-		expect(output).toContain('<code>注意风险</code>');
-		expect(output).toContain('<table>');
-	});
+describe('chat message rendering boundary', () => {
+  it('formats assistant tables, lists, code and streamed line breaks', () => {
+    const html = render('## 台股摘要\n\n- **資料來源**\n- `TWSE`\n\n| 欄位 | 值 |\n| --- | --- |\n| 市場 | 臺灣 |\n\n第一行\n第二行');
+    for (const element of ['<h2>台股摘要</h2>', '<ul>', '<strong>資料來源</strong>', '<code>TWSE</code>', '<table>', '第一行<br/>']) {
+      expect(html).toContain(element);
+    }
+  });
 
-	it('keeps user content as plain text', () => {
-		const output = renderToStaticMarkup(<MessageContent content={'**不要加粗**\n- 不要转列表'} />);
+  it('keeps a user message literal', () => {
+    const html = render('**不要解析**\n- 原始內容', false);
+    expect(html).toContain('**不要解析**');
+    expect(html).toContain('- 原始內容');
+    expect(html).not.toContain('<strong>');
+    expect(html).not.toContain('<ul>');
+  });
 
-		expect(output).toContain('**不要加粗**');
-		expect(output).toContain('- 不要转列表');
-		expect(output).not.toContain('<strong>');
-		expect(output).not.toContain('<ul>');
-	});
-
-	it('preserves single line breaks in streamed assistant replies', () => {
-		const output = renderToStaticMarkup(<MessageContent markdown content={'第一行\n第二行'} />);
-
-		expect(output).toContain('第一行<br/>\n第二行');
-	});
-
-	it('drops raw HTML and protects external links', () => {
-		const output = renderToStaticMarkup(
-			<MessageContent markdown content={'<script>alert(1)</script>\n\n[查看详情](https://example.com)'} />,
-		);
-
-		expect(output).not.toContain('<script>');
-		expect(output).not.toContain('alert(1)');
-		expect(output).toContain('href="https://example.com"');
-		expect(output).toContain('target="_blank"');
-		expect(output).toContain('rel="noreferrer noopener"');
-	});
-
-	it('renders unsafe URL schemes as inert text', () => {
-		const output = renderToStaticMarkup(<MessageContent markdown content={'[script](javascript:alert(1)) [data](data:text/html,unsafe)'} />);
-
-		expect(output).not.toContain('href="javascript:');
-		expect(output).not.toContain('href="data:');
-		expect(output).toContain('script');
-		expect(output).toContain('data');
-	});
+  it('does not execute HTML or expose an unsafe URL', () => {
+    const html = render('<script>private()</script>\n\n[官方頁面](https://example.org/data) [執行](javascript:alert(1)) [嵌入](data:text/html,unsafe)');
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('private()');
+    expect(html).toContain('href="https://example.org/data"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noreferrer noopener"');
+    expect(html).not.toContain('href="javascript:');
+    expect(html).not.toContain('href="data:');
+  });
 });

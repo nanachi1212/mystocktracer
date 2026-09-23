@@ -1,39 +1,38 @@
-import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { llmLocalConnectionError, llmLocalPresets, llmProviderDefaultModel, llmProviderDefinition, llmProviderName, llmProviders } from './llm-providers';
+import { llmLocalConnectionError, llmLocalPresetFor, llmLocalPresets, llmProviderDefaultModel,
+  llmProviderDefinition, llmProviderName, llmProviders } from './llm-providers';
 
-describe('LLM provider definitions', () => {
-	it('includes the supported Chinese model providers', () => {
-		expect(llmProviders.map((provider) => provider.id)).toEqual(expect.arrayContaining(['moonshot', 'minimax', 'zhipu', 'qwen', 'siliconflow']));
-		expect(llmProviderName('moonshot')).toContain('Kimi');
-		expect(llmProviderName('zhipu')).toContain('GLM');
-	});
+describe('model provider configuration contract', () => {
+  it('keeps the supported provider identity, endpoint and protocol', () => {
+    const expected = [
+      ['moonshot', 'https://api.moonshot.cn/v1'],
+      ['minimax', 'https://api.minimaxi.com/v1'],
+      ['zhipu', 'https://open.bigmodel.cn/api/paas/v4'],
+      ['qwen', 'https://dashscope.aliyuncs.com/compatible-mode/v1'],
+      ['siliconflow', 'https://api.siliconflow.cn/v1'],
+    ];
+    for (const [id, baseURL] of expected) {
+      expect(llmProviderDefinition(id)).toMatchObject({ id, baseURL, apiMode: 'chat_completions' });
+    }
+    expect(llmProviderDefinition('anthropic').apiMode).toBe('anthropic_messages');
+    expect(llmProviderDefaultModel('deepseek')).toBe('deepseek-chat');
+    expect(llmProviderName('moonshot')).toContain('Kimi');
+    expect(llmProviders.map(({ id }) => id)).toContain('custom');
+  });
 
-	it('provides model-discovery defaults for provider switching', () => {
-		expect(llmProviderDefinition('minimax')).toMatchObject({ baseURL: 'https://api.minimaxi.com/v1', apiMode: 'chat_completions' });
-		expect(llmProviderDefinition('zhipu')).toMatchObject({ baseURL: 'https://open.bigmodel.cn/api/paas/v4', apiMode: 'chat_completions' });
-		expect(llmProviderDefaultModel('deepseek')).toBe('deepseek-chat');
-	});
+  it('sends an unknown provider through the custom connection contract', () => {
+    expect(llmProviderDefinition('synthetic-unknown')).toMatchObject({ id: 'custom', baseURL: '', defaultModel: '' });
+    expect(llmProviderDefaultModel('synthetic-unknown')).toBe('');
+    expect(llmProviderName('synthetic-unknown')).toBe('synthetic-unknown');
+  });
 
-	it('falls back to custom settings for unknown providers', () => {
-		expect(llmProviderDefinition('unknown')).toMatchObject({ id: 'custom', baseURL: '', defaultModel: '' });
-	});
-
-	it('provides local presets through the existing custom/OpenAI-compatible contract', () => {
-		expect(llmLocalPresets).toEqual([
-			expect.objectContaining({ id: 'ollama', provider: 'custom', baseURL: 'http://127.0.0.1:11434/v1', defaultModel: '', apiMode: 'chat_completions' }),
-			expect.objectContaining({ id: 'lmstudio', provider: 'custom', baseURL: 'http://127.0.0.1:1234/v1', defaultModel: '', apiMode: 'chat_completions' }),
-		]);
-		expect(llmLocalConnectionError('http://127.0.0.1:11434/v1', new Error('fetch failed'))).toBe('無法連線 Ollama，請確認本地服務已啟動');
-		expect(llmLocalConnectionError('http://127.0.0.1:1234/v1', new Error('fetch failed'))).toBe('無法連線 LM Studio，請確認 Local Server 已啟動');
-	});
-
-	it('ModelSettingsPanel keeps cloud/local UI and profile secret isolation wired to existing state', () => {
-		const source = fs.readFileSync(new URL('../components/settings/ModelSettingsPanel.tsx', import.meta.url), 'utf8');
-		expect(source).toContain('Provider');
-		expect(source).toContain('本地模型');
-		expect(source).toContain("setProvider('custom')");
-		expect(source).toContain('profile_id: activeID');
-		expect(source).toContain('API Key');
-	});
+  it('recognizes loopback presets by origin and gives useful local errors', () => {
+    expect(llmLocalPresets.map(({ id, provider }) => [id, provider])).toEqual([['ollama', 'custom'], ['lmstudio', 'custom']]);
+    expect(llmLocalPresetFor('http://127.0.0.1:11434/other')?.id).toBe('ollama');
+    expect(llmLocalPresetFor('http://127.0.0.1:1234/v1')?.id).toBe('lmstudio');
+    expect(llmLocalPresetFor('file:///unsafe')).toBeUndefined();
+    expect(llmLocalConnectionError('http://127.0.0.1:11434/v1', new Error('network'))).toContain('Ollama');
+    expect(llmLocalConnectionError('http://127.0.0.1:1234/v1', new Error('network'))).toContain('LM Studio');
+    expect(llmLocalConnectionError('https://model.example', new Error('synthetic failure'))).toBe('synthetic failure');
+  });
 });

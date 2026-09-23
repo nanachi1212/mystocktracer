@@ -1,94 +1,9 @@
-# Hermes AI 底座集成
+# AI runtime 與 Hermes adapter
 
-## 目标
+mystocktracer 的後端產品契約位於 `backend/internal/agent`。`hermesadapter` 將該契約接到封裝的 Hermes Agent；前端對話只見 `/api/v1/ai/ws` 的版本化事件，不直接讀寫 Hermes JSON-RPC。模型連線測試與使用者明確啟動的台股 AI 研究也走同一產品邊界。詳細事件及隔離要求見 [AI runtime 契約](../../docs/ai-runtime-contract.md)。
 
-项目内所有需要大模型推理的能力统一经过 Hermes：
+桌面啟動時會先確定使用者資料目錄，再啟動 backend。canonical 環境變數使用 `MYSTOCKTRACER_HERMES_RUNTIME_ROOT`、`MYSTOCKTRACER_HERMES_HOME`、`MYSTOCKTRACER_HERMES_WORKDIR` 與 `MYSTOCKTRACER_SETTINGS_PATH`；`A_STOCK_*` 只保留對舊環境的讀取相容。安裝包提供獨立 Python/Hermes runtime，個人設定與工作目錄留在 userData。桌面身份與遷移先後順序見 [桌面資料遷移](../../docs/desktop-identity-migration.md)。
 
-- 侧边栏 AI 对话；
-- 设置页真实模型连接探针；
-- 台股 AI Research。
+模型 provider、base URL、model、API mode 與回應逾時沿用既有設定 schema。一般 `settings.json` 不應保存模型密鑰；adapter 將 `MODEL_API_KEY` 及各 profile 密鑰保存於 Hermes Home。讀取 API 只顯示 configured/masked 狀態。清除金鑰時，子程序不可繼續使用宿主環境中的舊值。profile 切換保留各自密鑰及全域回應逾時，預設 300 秒、允許 30–3600 秒。
 
-Go 后端和浏览器不再直接拼装 OpenAI、DeepSeek、Anthropic 等厂商请求。服务商、模型、Base URL 与接口协议仍由用户选择，但它们被转换成 Hermes 的运行配置。
-
-## 运行链路
-
-```text
-React AI 对话
-  -> GET /api/v1/ai/ws（WebSocket）
-  -> Go 后端启动随安装包分发的 Python
-  -> python -m tui_gateway.entry
-  -> Hermes JSON-RPC
-       session.create / session.resume
-       prompt.submit
-       message.delta / message.complete
-       session.interrupt
-  -> 用户配置的模型服务
-```
-
-每次前端生成请求建立一条本地 WebSocket，并启动一个 Hermes TUI gateway 子进程。前端保存 Hermes 的 `stored_session_id`，下一轮用 `session.resume` 恢复上下文；停止生成时发送 `session.interrupt`。
-
-台股 AI Research 和連線探針使用同一個 Hermes Runtime 的一次性 Prompt 介面，因此不會回退到模型廠商直連。
-
-## 配置与密钥
-
-桌面模式下，Electron 为后端注入：
-
-- `A_STOCK_HERMES_RUNTIME_ROOT`：安装包内的 `resources/hermes-runtime`；
-- `A_STOCK_HERMES_HOME`：Electron `userData/hermes-home`；
-- `A_STOCK_HERMES_WORKDIR`：Electron `userData/hermes-workspace`；
-- `A_STOCK_SETTINGS_PATH`：Electron `userData` 內的應用設定。
-
-保存模型设置时：
-
-- 服务商、模型、Base URL、协议写入 `hermes-home/config.yaml`；
-- “模型响应等待时间”写入当前 Hermes Provider 的 `stale_timeout_seconds`，并同步写入 `HERMES_API_CALL_STALE_TIMEOUT` 兼容自定义 Provider，默认 300 秒，可在设置中调整为 30–3600 秒；
-- 模型 API Key 只写入 `hermes-home/.env` 的 `MODEL_API_KEY`；
-- 应用通用 `settings.json` 不保存模型 API Key；
-- Hermes 文件权限设置为仅当前用户可读写。
-
-启动 TUI gateway 时，Go 后端安全读取 `hermes-home/.env`，仅把 `MODEL_API_KEY` 注入 Hermes 子进程，并覆盖同名的宿主 shell 变量。这样清除设置后不会意外继续使用开发机环境中的旧密钥，页面和日志也不会获得密钥原文。
-
-旧版本若曾在 `settings.json` 保存模型密钥，后端启动时会把它迁移到 Hermes `.env`，随后清除通用设置中的副本。
-
-## 开发模式
-
-准备好 Hermes Runtime 后可直接指定：
-
-```bash
-export A_STOCK_HERMES_RUNTIME_ROOT=/path/to/hermes-runtime
-export A_STOCK_HERMES_HOME="$PWD/.runtime/hermes-home"
-npm run restart
-```
-
-Electron 开发模式同样读取这两个变量。若 `desktop/resources/hermes-runtime` 已存在，桌面主进程会自动使用它。
-
-## 安装包
-
-运行时准备脚本支持两种来源：
-
-1. `HERMES_RUNTIME_SOURCE=/path/to/hermes-runtime`：复制一套已验证的 Runtime，并从已安装包读取真实 Hermes 版本；
-2. 未指定来源：使用 `uv` 创建 Python 3.11 构建环境并安装 `hermes-agent[all]==0.18.2`。
-
-macOS 准备脚本会复制 uv 托管的基础 Python，并把 Runtime 内的符号链接实体化；Windows 准备脚本会复制完整的 uv 托管 Python 到 `hermes-runtime/python`，再把构建用 venv 的 `site-packages` 合并进去并删除带有构建机绝对路径的 venv。两个平台都会拒绝指向 Runtime 目录之外的链接，安装后的应用不依赖 GitHub Actions runner 或开发机上的 Python。
-
-發布包生成前還會直接呼叫包內 Python，以隔離模式匯入 `hermes_cli` 與 `tui_gateway`。只有真實的獨立運行時通過檢查後才允許生成歸檔；`runtime-manifest.json` 記錄實際安裝版本，而非腳本期望版本。
-
-生成 macOS 应用：
-
-```bash
-HERMES_RUNTIME_SOURCE=/path/to/hermes-runtime npm run package:mac
-```
-
-生成 DMG 安装包：
-
-```bash
-HERMES_RUNTIME_SOURCE=/path/to/hermes-runtime npm run installer:mac
-```
-
-Hermes Runtime、Go 后端和前端静态文件都被放入 Electron 的 `Resources/resources`，安装后的应用不依赖开发目录。
-
-## 安全边界
-
-- 后端仅监听 loopback，并由 Electron 随机 token 保护；WebSocket token 通过查询参数传递。
-- Hermes Home 与安装包只包含本机配置，不提交密钥、会话数据库或生成运行时。
-- 模型输出仍需核对，特别是实时行情、交易判断和收益相关内容。
+開發與封裝方式見 [開發文件](../../docs/development.md) 與 [桌面 runtime 契約](../../docs/desktop-runtime-contract.md)。第三方 Hermes Agent 固定版本與授權聲明見 [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)。

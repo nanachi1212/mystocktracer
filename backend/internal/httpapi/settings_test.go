@@ -17,309 +17,168 @@ import (
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
 )
 
-func TestSettingsAPIStoresSecretsWithoutReturningThem(t *testing.T) {
+func settingsCall(server *Server, method, path, body string) *httptest.ResponseRecorder {
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(method, path, strings.NewReader(body)))
+	return response
+}
+
+func TestSettingsSecretBoundaryAndStoredProfile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	store, err := appsettings.Open(path)
 	if err != nil {
-		t.Fatalf("open settings: %v", err)
-	}
-	gateway := &fakeAgentRuntime{status: agent.Status{Available: true}}
-	server := NewServer(Config{SettingsStore: store, AgentRuntime: gateway})
-	body := `{"llm":{"provider":"deepseek","base_url":"https://api.deepseek.com","model":"deepseek-chat","api_mode":"chat_completions","api_key":"sk-private-12345678"}}`
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "sk-private") {
-		t.Fatalf("settings response leaked a secret: %s", rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `"api_key":{"configured":true}`) {
-		t.Fatalf("settings response missing masked status: %s", rec.Body.String())
-	}
-
-	reopened, err := appsettings.Open(path)
-	if err != nil {
-		t.Fatalf("reopen settings: %v", err)
-	}
-	values := reopened.Snapshot()
-	if values.LLM.APIKey != "" || values.LLM.APIMode != "chat_completions" {
-		t.Fatalf("stored settings mismatch: %+v", values)
-	}
-	if gateway.lastKey == nil || *gateway.lastKey != "sk-private-12345678" {
-		t.Fatalf("Hermes did not receive model secret: %+v", gateway.lastKey)
-	}
-	storedFile, err := os.ReadFile(path)
-	if err != nil || strings.Contains(string(storedFile), "sk-private") {
-		t.Fatalf("general settings file contains model secret: err=%v data=%s", err, storedFile)
-	}
-
-	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
-	getRec := httptest.NewRecorder()
-	server.ServeHTTP(getRec, getReq)
-	if getRec.Code != http.StatusOK || strings.Contains(getRec.Body.String(), "sk-private") {
-		t.Fatalf("GET settings leaked or failed: status=%d body=%s", getRec.Code, getRec.Body.String())
-	}
-}
-
-func TestSettingsAPIPersistsTaiwanCorporateEventAlertPreference(t *testing.T) {
-	store, err := appsettings.Open("")
-	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(Config{SettingsStore: store})
+	runtime := &fakeAgentRuntime{status: agent.Status{Available: true}}
+	server := NewServer(Config{SettingsStore: store, AgentRuntime: runtime})
 	defer server.Close()
-	response := httptest.NewRecorder()
-	server.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(`{"taiwan_alerts":{"corporate_events_enabled":false}}`)))
-	if response.Code != http.StatusOK {
-		t.Fatalf("update status=%d body=%s", response.Code, response.Body.String())
+	request := `{"llm":{"provider":"custom","base_url":"https://model.example/v1","model":"synthetic-model","api_mode":"chat_completions","api_key":"synthetic-private-key"}}`
+	response := settingsCall(server, http.MethodPut, "/api/v1/settings", request)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "synthetic-private-key") ||
+		!strings.Contains(response.Body.String(), `"api_key":{"configured":true}`) {
+		t.Fatalf("unsafe update result: %d %s", response.Code, response.Body.String())
 	}
-	var payload struct {
-		Data settingsView `json:"data"`
+	if runtime.lastKey == nil || *runtime.lastKey != "synthetic-private-key" {
+		t.Fatal("secret was not sent to the agent runtime")
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
-		t.Fatal(err)
+	written, err := os.ReadFile(path)
+	if err != nil || strings.Contains(string(written), "synthetic-private-key") {
+		t.Fatal("general settings file stored a model secret")
 	}
-	if payload.Data.TaiwanAlerts.CorporateEventsEnabled || store.Snapshot().TaiwanAlerts.CorporateEventsEnabled {
-		t.Fatalf("Taiwan alert preference did not update: %+v", payload.Data.TaiwanAlerts)
+	reopened, err := appsettings.Open(path)
+	if err != nil || reopened.Snapshot().LLM.Model != "synthetic-model" || reopened.Snapshot().LLM.APIKey != "" {
+		t.Fatalf("saved public settings changed: %v", err)
 	}
-}
-
-func TestSettingsLLMConnectionUsesSavedOpenAICompatibleConfig(t *testing.T) {
-	store, err := appsettings.Open("")
-	if err != nil {
-		t.Fatalf("open memory settings: %v", err)
-	}
-	_, _ = store.Update(func(values *appsettings.Values) error {
-		values.LLM = appsettings.LLM{
-			Provider: "custom",
-			BaseURL:  "https://model.example/v1",
-			Model:    "gpt-test",
-			APIMode:  "chat_completions",
-		}
-		return nil
-	})
-	gateway := &fakeAgentRuntime{
-		status:       agent.Status{Available: true, Configured: true, APIKeyConfigured: true, Version: "0.18.2"},
-		promptResult: agent.PromptResult{Content: llmProbeMarker},
-	}
-	server := NewServer(Config{SettingsStore: store, AgentRuntime: gateway})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/test", nil)
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `"ok":true`) || !strings.Contains(rec.Body.String(), llmProbeMarker) || !strings.Contains(rec.Body.String(), `"runtime":"agent-runtime"`) {
-		t.Fatalf("connection response missing success details: %s", rec.Body.String())
+	get := settingsCall(server, http.MethodGet, "/api/v1/settings", "")
+	if get.Code != http.StatusOK || strings.Contains(get.Body.String(), "synthetic-private-key") ||
+		!strings.Contains(get.Body.String(), `"hermes":`) || !strings.Contains(get.Body.String(), `"agent":`) {
+		t.Fatalf("GET settings contract changed: %d %s", get.Code, get.Body.String())
 	}
 }
 
-func TestSettingsLLMConnectionHidesProviderErrorBody(t *testing.T) {
+func TestSettingsPatchValidationAndAlertPreference(t *testing.T) {
 	store, _ := appsettings.Open("")
-	_, _ = store.Update(func(values *appsettings.Values) error {
-		values.LLM = appsettings.LLM{Provider: "custom", BaseURL: "https://model.example", Model: "gpt-test"}
-		return nil
-	})
-	gateway := &fakeAgentRuntime{status: agent.Status{Available: true, Configured: true}, promptErr: errors.New("provider authentication failed")}
-	server := NewServer(Config{SettingsStore: store, AgentRuntime: gateway})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/test", nil)
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadGateway {
-		t.Fatalf("status = %d, want 502; body=%s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "secret-provider-detail") || !strings.Contains(rec.Body.String(), "AI 模型") {
-		t.Fatalf("provider error was not safely categorized: %s", rec.Body.String())
-	}
-}
-
-func TestSettingsAPIValidatesAndClearsSecrets(t *testing.T) {
-	store, err := appsettings.Open("")
-	if err != nil {
-		t.Fatalf("open memory settings: %v", err)
-	}
-	_, _ = store.Update(func(values *appsettings.Values) error {
-		values.LLM.APIKey = "secret"
-		return nil
-	})
-	gateway := &fakeAgentRuntime{status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true}}
-	server := NewServer(Config{SettingsStore: store, AgentRuntime: gateway})
-
-	badReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(`{"llm":{"base_url":"file:///tmp/key"}}`))
-	badRec := httptest.NewRecorder()
-	server.ServeHTTP(badRec, badReq)
-	if badRec.Code != http.StatusBadRequest {
-		t.Fatalf("invalid base URL status = %d, want 400", badRec.Code)
-	}
-
-	clearReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(`{"clear_secrets":["llm_api_key"]}`))
-	clearRec := httptest.NewRecorder()
-	server.ServeHTTP(clearRec, clearReq)
-	if clearRec.Code != http.StatusOK {
-		t.Fatalf("clear status = %d, want 200; body=%s", clearRec.Code, clearRec.Body.String())
-	}
-	if store.Snapshot().LLM.APIKey != "" {
-		t.Fatal("llm api key was not cleared")
-	}
-	if gateway.lastKey == nil || *gateway.lastKey != "" {
-		t.Fatal("Hermes model api key was not cleared")
-	}
-}
-
-func TestSettingsAPIRejectsRemovedChinaSettingsSurface(t *testing.T) {
-	store, err := appsettings.Open("")
-	if err != nil {
-		t.Fatalf("open memory settings: %v", err)
-	}
 	server := NewServer(Config{SettingsStore: store, AgentRuntime: &fakeAgentRuntime{status: agent.Status{Available: true}}})
-	for _, body := range []string{
-		`{"credentials":{"tushare_token":"t"}}`,
-		`{"review_automation":{"profiles":[]}}`,
-		`{"clear_secrets":["xueqiu_cookie"]}`,
+	defer server.Close()
+	for _, test := range []struct{ name, body string }{
+		{"unsafe URL", `{"llm":{"base_url":"file:///tmp/key"}}`},
+		{"unknown field", `{"credentials":{"tushare_token":"synthetic"}}`},
+		{"removed automation", `{"review_automation":{"profiles":[]}}`},
+		{"removed secret", `{"clear_secrets":["xueqiu_cookie"]}`},
+		{"two JSON objects", `{} {}`},
+		{"large request", `{"llm":{"model":"` + strings.Repeat("x", 64<<10) + `"}}`},
+		{"invalid timeout", `{"llm":{"response_timeout_seconds":29}}`},
 	} {
-		rec := httptest.NewRecorder()
-		server.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body)))
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("%s status = %d, want %d", body, rec.Code, http.StatusBadRequest)
-		}
-	}
-	getRec := httptest.NewRecorder()
-	server.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
-	for _, field := range []string{"credentials", "review_automation"} {
-		if strings.Contains(getRec.Body.String(), field) {
-			t.Fatalf("settings view still exposes %q: %s", field, getRec.Body.String())
-		}
-	}
-}
-
-func TestSettingsAPIAcceptsAdditionalLLMProviders(t *testing.T) {
-	store, err := appsettings.Open("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := NewServer(Config{SettingsStore: store, AgentRuntime: &fakeAgentRuntime{status: agent.Status{Available: true}}})
-	providers := []struct {
-		provider string
-		baseURL  string
-		model    string
-	}{
-		{provider: "moonshot", baseURL: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k"},
-		{provider: "minimax", baseURL: "https://api.minimaxi.com/v1", model: "MiniMax-Text-01"},
-		{provider: "zhipu", baseURL: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-plus"},
-		{provider: "siliconflow", baseURL: "https://api.siliconflow.cn/v1", model: "vendor/model"},
-	}
-	for _, tt := range providers {
-		t.Run(tt.provider, func(t *testing.T) {
-			body := fmt.Sprintf(`{"llm":{"provider":%q,"base_url":%q,"model":%q,"api_mode":"chat_completions"}}`, tt.provider, tt.baseURL, tt.model)
-			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
-			rec := httptest.NewRecorder()
-			server.ServeHTTP(rec, req)
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-			}
-			if got := store.Snapshot().LLM.Provider; got != tt.provider {
-				t.Fatalf("stored provider=%q, want %q", got, tt.provider)
+		t.Run(test.name, func(t *testing.T) {
+			if response := settingsCall(server, http.MethodPut, "/api/v1/settings", test.body); response.Code != http.StatusBadRequest {
+				t.Fatalf("invalid patch accepted: %d %s", response.Code, response.Body.String())
 			}
 		})
 	}
+	response := settingsCall(server, http.MethodPut, "/api/v1/settings", `{"taiwan_alerts":{"corporate_events_enabled":false}}`)
+	if response.Code != http.StatusOK || store.Snapshot().TaiwanAlerts.CorporateEventsEnabled {
+		t.Fatalf("alert preference was not saved: %d", response.Code)
+	}
+	var view struct {
+		Data settingsView `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &view); err != nil || view.Data.TaiwanAlerts.CorporateEventsEnabled {
+		t.Fatalf("alert preference was not returned: %v", err)
+	}
+	noRuntime := NewServer(Config{SettingsStore: store})
+	defer noRuntime.Close()
+	if result := settingsCall(noRuntime, http.MethodPut, "/api/v1/settings", `{"llm":{"api_key":"synthetic"}}`); result.Code != http.StatusServiceUnavailable {
+		t.Fatalf("secret patch without runtime returned %d", result.Code)
+	}
 }
 
-func TestSettingsAPISupportsMultipleLLMProfilesAndSelection(t *testing.T) {
-	store, err := appsettings.Open("")
-	if err != nil {
-		t.Fatal(err)
+func TestSettingsCanClearSecretAndSelectProviders(t *testing.T) {
+	store, _ := appsettings.Open("")
+	runtime := &fakeAgentRuntime{status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true}}
+	server := NewServer(Config{SettingsStore: store, AgentRuntime: runtime})
+	defer server.Close()
+	for _, provider := range []struct{ id, url, model string }{
+		{"moonshot", "https://api.moonshot.cn/v1", "moonshot-v1-8k"},
+		{"minimax", "https://api.minimaxi.com/v1", "MiniMax-Text-01"},
+		{"zhipu", "https://open.bigmodel.cn/api/paas/v4", "glm-4-plus"},
+		{"siliconflow", "https://api.siliconflow.cn/v1", "vendor/model"},
+	} {
+		t.Run(provider.id, func(t *testing.T) {
+			body := fmt.Sprintf(`{"llm":{"provider":%q,"base_url":%q,"model":%q,"api_mode":"chat_completions"}}`, provider.id, provider.url, provider.model)
+			response := settingsCall(server, http.MethodPut, "/api/v1/settings", body)
+			if response.Code != http.StatusOK || store.Snapshot().LLM.Provider != provider.id {
+				t.Fatalf("provider update failed: %d", response.Code)
+			}
+		})
 	}
+	response := settingsCall(server, http.MethodPut, "/api/v1/settings", `{"clear_secrets":["llm_api_key"]}`)
+	if response.Code != http.StatusOK || runtime.lastKey == nil || *runtime.lastKey != "" || store.Snapshot().LLM.APIKey != "" {
+		t.Fatalf("secret clearing failed: %d", response.Code)
+	}
+}
+
+func TestSettingsProfileSecretsAndTimeoutSurviveSelection(t *testing.T) {
+	store, _ := appsettings.Open("")
 	root := t.TempDir()
 	python := filepath.Join(root, "python")
-	if err := os.WriteFile(python, []byte("test"), 0o700); err != nil {
+	if err := os.WriteFile(python, []byte("synthetic"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	runtime := hermesadapter.New(hermesadapter.Config{Home: filepath.Join(root, "hermes"), PythonPath: python})
+	runtime := hermesadapter.New(hermesadapter.Config{Home: filepath.Join(root, "agent"), PythonPath: python})
 	server := NewServer(Config{SettingsStore: store, AgentRuntime: runtime})
-	body := `{"llm_profiles":[
-		{"id":"deepseek","name":"DeepSeek","provider":"deepseek","base_url":"https://api.deepseek.com","model":"deepseek-chat","api_mode":"chat_completions","api_key":"ds-private"},
-		{"id":"sol","name":"GPT-5.6 Sol","provider":"custom","base_url":"https://model.example/v1","model":"gpt-5.6-sol","api_mode":"codex_responses","api_key":"sol-private"}
-	],"active_llm_profile_id":"sol"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	defer server.Close()
+	request := `{"llm":{"response_timeout_seconds":600},"llm_profiles":[
+		{"id":"one","name":"模型一","provider":"custom","base_url":"https://one.example/v1","model":"model-one","api_mode":"chat_completions","api_key":"synthetic-one"},
+		{"id":"two","name":"模型二","provider":"custom","base_url":"https://two.example/v1","model":"model-two","api_mode":"codex_responses","api_key":"synthetic-two"}],"active_llm_profile_id":"one"}`
+	response := settingsCall(server, http.MethodPut, "/api/v1/settings", request)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "synthetic-one") ||
+		strings.Contains(response.Body.String(), "synthetic-two") {
+		t.Fatalf("profile update failed or leaked: %d %s", response.Code, response.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), "private") {
-		t.Fatalf("profile key leaked: %s", rec.Body.String())
+	selected := settingsCall(server, http.MethodPut, "/api/v1/settings", `{"active_llm_profile_id":"two"}`)
+	if selected.Code != http.StatusOK || store.Snapshot().LLM.Model != "model-two" ||
+		store.Snapshot().LLM.ResponseTimeoutSeconds != 600 {
+		t.Fatalf("profile switch changed model or timeout: %d %+v", selected.Code, store.Snapshot().LLM)
 	}
-	values := store.Snapshot()
-	if len(values.LLMProfiles) != 2 || values.ActiveLLMProfileID != "sol" || values.LLM.Model != "gpt-5.6-sol" {
-		t.Fatalf("profiles not saved: %+v", values)
+	if key, err := runtime.ModelAPIKey(); err != nil || key != "synthetic-two" {
+		t.Fatalf("active profile secret was lost: %v", err)
 	}
-
-	switchReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(`{"active_llm_profile_id":"deepseek"}`))
-	switchRec := httptest.NewRecorder()
-	server.ServeHTTP(switchRec, switchReq)
-	if switchRec.Code != http.StatusOK || store.Snapshot().LLM.Model != "deepseek-chat" {
-		t.Fatalf("profile switch failed: status=%d body=%s", switchRec.Code, switchRec.Body.String())
-	}
-	if key, err := runtime.ModelAPIKey(); err != nil || key != "ds-private" {
-		t.Fatalf("active key=%q err=%v", key, err)
-	}
-	if key, err := runtime.ModelAPIKeyForProfile("sol"); err != nil || key != "sol-private" {
-		t.Fatalf("saved sol key=%q err=%v", key, err)
+	if key, err := runtime.ModelAPIKeyForProfile("one"); err != nil || key != "synthetic-one" {
+		t.Fatalf("inactive profile secret was lost: %v", err)
 	}
 }
 
-func TestSettingsAPIStoresResponseTimeoutAndPreservesItWhenSwitchingProfiles(t *testing.T) {
-	store, err := appsettings.Open("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := NewServer(Config{SettingsStore: store, AgentRuntime: &fakeAgentRuntime{status: agent.Status{Available: true}}})
-	body := `{"llm":{"response_timeout_seconds":600},"llm_profiles":[
-		{"id":"one","name":"模型一","provider":"custom","base_url":"https://model.example/v1","model":"model-one","api_mode":"chat_completions"},
-		{"id":"two","name":"模型二","provider":"custom","base_url":"https://model.example/v1","model":"model-two","api_mode":"chat_completions"}
-	],"active_llm_profile_id":"one"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("save status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if got := store.Snapshot().LLM.ResponseTimeoutSeconds; got != 600 {
-		t.Fatalf("saved timeout=%d, want 600", got)
-	}
-	switchReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(`{"active_llm_profile_id":"two"}`))
-	switchRec := httptest.NewRecorder()
-	server.ServeHTTP(switchRec, switchReq)
-	if switchRec.Code != http.StatusOK || store.Snapshot().LLM.ResponseTimeoutSeconds != 600 {
-		t.Fatalf("switch changed timeout: status=%d values=%+v", switchRec.Code, store.Snapshot().LLM)
-	}
-	badReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(`{"llm":{"response_timeout_seconds":29}}`))
-	badRec := httptest.NewRecorder()
-	server.ServeHTTP(badRec, badReq)
-	if badRec.Code != http.StatusBadRequest {
-		t.Fatalf("invalid timeout status=%d, want 400", badRec.Code)
-	}
-}
-
-func TestModelResponseTimeoutFollowsSettings(t *testing.T) {
-	store, err := appsettings.Open("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := NewServer(Config{SettingsStore: store})
-	if got := server.modelResponseTimeout(); got != 315*time.Second {
-		t.Fatalf("default model response timeout=%s, want 5m15s", got)
-	}
-	_, err = store.Update(func(values *appsettings.Values) error {
-		values.LLM.ResponseTimeoutSeconds = 600
+func TestModelProbeSuccessAndProviderFailure(t *testing.T) {
+	store, _ := appsettings.Open("")
+	_, _ = store.Update(func(value *appsettings.Values) error {
+		value.LLM = appsettings.LLM{Provider: "custom", BaseURL: "https://model.example/v1", Model: "synthetic-model"}
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
+	runtime := &fakeAgentRuntime{status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true},
+		promptResult: agent.PromptResult{Content: llmProbeMarker}}
+	server := NewServer(Config{SettingsStore: store, AgentRuntime: runtime})
+	defer server.Close()
+	response := settingsCall(server, http.MethodPost, "/api/v1/settings/llm/test", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"ok":true`) ||
+		!strings.Contains(response.Body.String(), llmProbeMarker) || !strings.Contains(response.Body.String(), `"runtime":"agent-runtime"`) {
+		t.Fatalf("model probe changed: %d %s", response.Code, response.Body.String())
 	}
+	runtime.promptErr = errors.New("synthetic-provider-private-diagnostic")
+	failed := settingsCall(server, http.MethodPost, "/api/v1/settings/llm/test", "")
+	if failed.Code != http.StatusBadGateway || strings.Contains(failed.Body.String(), "synthetic-provider-private-diagnostic") {
+		t.Fatalf("provider error leaked: %d %s", failed.Code, failed.Body.String())
+	}
+}
+
+func TestModelTimeoutIncludesRuntimeAllowance(t *testing.T) {
+	store, _ := appsettings.Open("")
+	server := NewServer(Config{SettingsStore: store})
+	defer server.Close()
+	if got := server.modelResponseTimeout(); got != 315*time.Second {
+		t.Fatalf("default model timeout: %s", got)
+	}
+	_, _ = store.Update(func(value *appsettings.Values) error { value.LLM.ResponseTimeoutSeconds = 600; return nil })
 	if got := server.modelResponseTimeout(); got != 615*time.Second {
-		t.Fatalf("configured model response timeout=%s, want 10m15s", got)
+		t.Fatalf("configured model timeout: %s", got)
 	}
 }

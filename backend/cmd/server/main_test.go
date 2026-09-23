@@ -6,93 +6,82 @@ import (
 	"testing"
 )
 
-func TestPreferredDataDirUsesLegacyWhenRenamedDirectoryIsUnconfigured(t *testing.T) {
-	configDir := t.TempDir()
-	legacy := filepath.Join(configDir, "a-stock-ai")
-	if err := os.MkdirAll(legacy, 0o700); err != nil {
+func createSavedProfile(t *testing.T, root, name string) string {
+	t.Helper()
+	directory := filepath.Join(root, name)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(legacy, "settings.json"), []byte("{}"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "settings.json"), []byte(`{"llm":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := preferredDataDir(configDir); got != legacy {
-		t.Fatalf("preferredDataDir() = %q, want %q", got, legacy)
+	return directory
+}
+
+func TestProfileSelectionPreservesHistoricalDirectories(t *testing.T) {
+	cases := []struct {
+		name, expected string
+		profiles       []string
+	}{
+		{name: "fresh", expected: "mystocktracer"},
+		{name: "oldest only", profiles: []string{"a-stock-ai"}, expected: "a-stock-ai"},
+		{name: "later historical profile", profiles: []string{"a-stock-ai", "easy-stock"}, expected: "easy-stock"},
+		{name: "canonical profile", profiles: []string{"a-stock-ai", "easy-stock", "mystocktracer"}, expected: "mystocktracer"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, name := range test.profiles {
+				createSavedProfile(t, root, name)
+			}
+			if got := preferredDataDir(root); got != filepath.Join(root, test.expected) {
+				t.Fatalf("selected %q, expected %q", got, test.expected)
+			}
+			for _, name := range test.profiles {
+				if _, err := os.Stat(filepath.Join(root, name, "settings.json")); err != nil {
+					t.Fatalf("selection changed profile %s: %v", name, err)
+				}
+			}
+		})
 	}
 }
 
-func TestPreferredDataDirUsesRenamedDirectoryWhenConfigured(t *testing.T) {
-	configDir := t.TempDir()
-	current := filepath.Join(configDir, "easy-stock")
-	legacy := filepath.Join(configDir, "a-stock-ai")
-	for _, directory := range []string{current, legacy} {
-		if err := os.MkdirAll(directory, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(directory, "settings.json"), []byte("{}"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+func TestRuntimeEnvironmentPriorityAndExplicitEmptyValue(t *testing.T) {
+	t.Setenv("A_STOCK_ADDR", "127.0.0.1:21111")
+	if got := runtimeEnv("ADDR"); got != "127.0.0.1:21111" {
+		t.Fatalf("legacy fallback: %q", got)
 	}
-	if got := preferredDataDir(configDir); got != current {
-		t.Fatalf("preferredDataDir() = %q, want %q", got, current)
-	}
-}
-
-// Phase B4: a standalone backend with no existing profile must create the canonical directory
-// rather than resurrecting the upstream name.
-func TestPreferredDataDirDefaultsToCanonicalNameWhenNothingExists(t *testing.T) {
-	configDir := t.TempDir()
-	want := filepath.Join(configDir, "mystocktracer")
-	if got := preferredDataDir(configDir); got != want {
-		t.Fatalf("preferredDataDir() = %q, want %q", got, want)
-	}
-}
-
-// An existing canonical profile wins over both historical directories, and none of them is moved.
-func TestPreferredDataDirPrefersCanonicalOverHistoricalDirectories(t *testing.T) {
-	configDir := t.TempDir()
-	canonical := filepath.Join(configDir, "mystocktracer")
-	for _, directory := range []string{canonical, filepath.Join(configDir, "easy-stock"), filepath.Join(configDir, "a-stock-ai")} {
-		if err := os.MkdirAll(directory, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(directory, "settings.json"), []byte("{}"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got := preferredDataDir(configDir); got != canonical {
-		t.Fatalf("preferredDataDir() = %q, want %q", got, canonical)
-	}
-	for _, directory := range []string{filepath.Join(configDir, "easy-stock"), filepath.Join(configDir, "a-stock-ai")} {
-		if !isFile(filepath.Join(directory, "settings.json")) {
-			t.Fatalf("historical directory was mutated: %q", directory)
-		}
-	}
-}
-
-func TestRuntimeEnvPrefersMystocktracerNameAndFallsBackToLegacy(t *testing.T) {
-	t.Setenv("A_STOCK_ADDR", "127.0.0.1:21001")
-	if got := runtimeEnv("ADDR"); got != "127.0.0.1:21001" {
-		t.Fatalf("legacy fallback = %q", got)
-	}
-	t.Setenv("MYSTOCKTRACER_ADDR", "127.0.0.1:22001")
-	if got := runtimeEnv("ADDR"); got != "127.0.0.1:22001" {
-		t.Fatalf("canonical env did not win: %q", got)
+	t.Setenv("MYSTOCKTRACER_ADDR", "127.0.0.1:22222")
+	if got := runtimeEnv("ADDR"); got != "127.0.0.1:22222" {
+		t.Fatalf("canonical precedence: %q", got)
 	}
 	t.Setenv("MYSTOCKTRACER_ADDR", "")
 	if got := runtimeEnv("ADDR"); got != "" {
-		t.Fatalf("explicit empty canonical env must not fall back: %q", got)
+		t.Fatalf("explicit empty canonical value was ignored: %q", got)
 	}
 }
 
-func TestLoadRuntimeConfigKeepsPersistedDataFilenames(t *testing.T) {
-	configDirectory := t.TempDir()
-	t.Setenv("MYSTOCKTRACER_SETTINGS_PATH", filepath.Join(configDirectory, "settings.json"))
-	t.Setenv("MYSTOCKTRACER_TAIWAN_WATCHLIST_DB", filepath.Join(configDirectory, "taiwan-watchlist.db"))
-	t.Setenv("MYSTOCKTRACER_TAIWAN_PORTFOLIO_DB", filepath.Join(configDirectory, "taiwan-portfolio.db"))
-	config := loadRuntimeConfig()
-	if filepath.Base(config.settingsPath) != "settings.json" ||
-		filepath.Base(config.watchlistDBPath) != "taiwan-watchlist.db" ||
-		filepath.Base(config.portfolioDBPath) != "taiwan-portfolio.db" {
-		t.Fatalf("persisted paths changed: %+v", config)
+func TestRuntimeStorageNamesRemainStable(t *testing.T) {
+	root := t.TempDir()
+	paths := map[string]string{
+		"MYSTOCKTRACER_SETTINGS_PATH":       "settings.json",
+		"MYSTOCKTRACER_TAIWAN_WATCHLIST_DB": "taiwan-watchlist.db",
+		"MYSTOCKTRACER_TAIWAN_PORTFOLIO_DB": "taiwan-portfolio.db",
+	}
+	for key, name := range paths {
+		t.Setenv(key, filepath.Join(root, name))
+	}
+	got := loadRuntimeConfig()
+	for field, path := range map[string]string{
+		"settings": got.settingsPath, "watchlist": got.watchlistDBPath, "portfolio": got.portfolioDBPath,
+	} {
+		if filepath.Dir(path) != root {
+			t.Fatalf("%s path escaped configured directory: %q", field, path)
+		}
+	}
+	if filepath.Base(got.settingsPath) != paths["MYSTOCKTRACER_SETTINGS_PATH"] ||
+		filepath.Base(got.watchlistDBPath) != paths["MYSTOCKTRACER_TAIWAN_WATCHLIST_DB"] ||
+		filepath.Base(got.portfolioDBPath) != paths["MYSTOCKTRACER_TAIWAN_PORTFOLIO_DB"] {
+		t.Fatalf("storage filenames changed: %+v", got)
 	}
 }
