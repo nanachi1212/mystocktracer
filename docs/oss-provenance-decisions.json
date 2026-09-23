@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "baseline": "a20c872c28d5648655536aa8624a716393967506",
+  "baseline": "8282cd47fb3ef2b2b289a84aa539b8b108ffa67f",
   "scope": "Engineering provenance attestations bound to content, not legal ownership or clean-room certification",
   "files": [
     {
@@ -295,13 +295,278 @@
     },
     {
       "path": "frontend/src/styles.css",
-      "sha256": "381e62bc0d04486891ffedc997b802ebb73018a90ee14ca3a2b43553adde27b7",
-      "evidence": "B2/B3 behavioral replacement reviewed against fork; docs/runtime-contract.md and docs/ai-runtime-contract.md; full Go/frontend regression suites. Split DTO/handler fragments are not covered by this attestation."
+      "sha256": "a28850f7239a794a1bc9e5ab7c1b00d5a9bd530e313341f19e5f5634f1c6ea02",
+      "evidence": "B6 behavior-contract replacement or original B2 styling extended by original B6 index UI; docs/oss-b6-contract.md records API, data, state and compatibility boundaries. New synthetic behavior tests and full Go/frontend regression gates verify the replacement."
     },
     {
       "path": "scripts/rebuild-restart.sh",
       "sha256": "40bf9cc61217975e64fe55814e5683ad5735f4810db44233ff54912186fb2e16",
       "evidence": "B5 authored maintenance/test/package replacement; docs/oss-cleanup-contract.md maps retained behavior and added negative cases; full suites preserve migration, IPC, update, redaction and runtime scenarios."
+    },
+    {
+      "path": "backend/internal/agent/types.go",
+      "sha256": "741a010e2a454b4dfb745dcddbd7eb305d9a4bcb04457d0a70ef5bf533098798",
+      "evidence": "B6 reviewed as necessary product JSON/persisted/interface contract and trivial compatibility mapping, not substantive provider or handler implementation; field/default/secret behavior recorded in docs/oss-b6-contract.md and covered by Go HTTP, appsettings and Taiwan provider regression tests."
+    },
+    {
+      "path": "backend/internal/appsettings/model.go",
+      "sha256": "ff76a21ac01e87a5edcadb1e8c49a23a2a285316ff46bfc8eb72f2e6e8c94ec7",
+      "evidence": "B6 reviewed as necessary product JSON/persisted/interface contract and trivial compatibility mapping, not substantive provider or handler implementation; field/default/secret behavior recorded in docs/oss-b6-contract.md and covered by Go HTTP, appsettings and Taiwan provider regression tests."
+    },
+    {
+      "path": "backend/internal/foundation/market_data.go",
+      "sha256": "117b2848dcfd59e17641b72a0c5546945eb2c1cf93414dbb3045b46cc8357b08",
+      "evidence": "B6 reviewed as necessary product JSON/persisted/interface contract and trivial compatibility mapping, not substantive provider or handler implementation; field/default/secret behavior recorded in docs/oss-b6-contract.md and covered by Go HTTP, appsettings and Taiwan provider regression tests."
+    },
+    {
+      "path": "backend/internal/foundation/market_index.go",
+      "sha256": "9df8a46a8bf1a0529bba3f61308e5b44271c70c77d2957fd99d71749c19e146e",
+      "evidence": "B6 reviewed as necessary product JSON/persisted/interface contract and trivial compatibility mapping, not substantive provider or handler implementation; field/default/secret behavior recorded in docs/oss-b6-contract.md and covered by Go HTTP, appsettings and Taiwan provider regression tests."
+    },
+    {
+      "path": "backend/internal/foundation/source.go",
+      "sha256": "b76139e55fa3030806bce505eee95a116bf4af93eb4676e5031125f39a3c8487",
+      "evidence": "B6 reviewed as necessary product JSON/persisted/interface contract and trivial compatibility mapping, not substantive provider or handler implementation; field/default/secret behavior recorded in docs/oss-b6-contract.md and covered by Go HTTP, appsettings and Taiwan provider regression tests."
+    },
+    {
+      "path": "backend/internal/httpapi/agent_settings_contract.go",
+      "sha256": "3ce949ea15148615e51949286558beab7859c91ef5f70d8eb51d20eb37849589",
+      "evidence": "B6 reviewed as necessary product JSON/persisted/interface contract and trivial compatibility mapping, not substantive provider or handler implementation; field/default/secret behavior recorded in docs/oss-b6-contract.md and covered by Go HTTP, appsettings and Taiwan provider regression tests."
+    },
+    {
+      "path": "backend/internal/httpapi/settings_contract.go",
+      "sha256": "221c85dd6cc40283eb1ff00e5d6016ba16d683b12d16f2c031fa0d9ba71dc67a",
+      "evidence": "B6 reviewed as necessary product JSON/persisted/interface contract and trivial compatibility mapping, not substantive provider or handler implementation; field/default/secret behavior recorded in docs/oss-b6-contract.md and covered by Go HTTP, appsettings and Taiwan provider regression tests."
+    },
+    {
+      "path": "frontend/src/lib/llm-providers.ts",
+      "sha256": "3f756cf6d00f062110549ebbf631a8009dd90d200bff3ebfd656d82f44d48616",
+      "evidence": "B6 reviewed as functional provider interoperability constants (IDs, public endpoints, model defaults and API modes) with mystocktracer labels and local presets; behavior and negative cases covered by frontend/src/lib/llm-providers.test.ts and docs/oss-b6-contract.md."
+    },
+    {
+      "path": "frontend/index.html",
+      "sha256": "219071b6206535babd59b4b3b0fc98b970d55a6b1fb31601c58c1e6ba43c8e34",
+      "evidence": "B6 reviewed Vite/React required bootstrap and tool declarations: HTML root/module, React root, relative asset base, React plugin and loopback dev server; mystocktracer metadata/logger are product-specific. Frontend build and docs/oss-b6-contract.md provide evidence."
+    },
+    {
+      "path": "frontend/src/main.tsx",
+      "sha256": "ad4e1510ecda4b4d27b60045d2f07fd416ac8bfa496d79a793e1f500ca344e00",
+      "evidence": "B6 reviewed Vite/React required bootstrap and tool declarations: HTML root/module, React root, relative asset base, React plugin and loopback dev server; mystocktracer metadata/logger are product-specific. Frontend build and docs/oss-b6-contract.md provide evidence."
+    },
+    {
+      "path": "frontend/vite.config.ts",
+      "sha256": "1ac8e78d0db1a64a5eca8806fcbddcbcb17480110ac071f88d6c95645cbdb4e9",
+      "evidence": "B6 reviewed Vite/React required bootstrap and tool declarations: HTML root/module, React root, relative asset base, React plugin and loopback dev server; mystocktracer metadata/logger are product-specific. Frontend build and docs/oss-b6-contract.md provide evidence."
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "10e72f445d478cd5bd350c40d3441b474e42234e4ec5deb3ecf82f80e5d5c4ff",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+    },
+    {
+      "path": "backend/go.mod",
+      "sha256": "98fc7af27baf82cb08f2f3f5113177c6fc00ec806e2fe77edb1f77496d09f06c",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+    },
+    {
+      "path": "desktop/package.json",
+      "sha256": "673103eb14da7b1d2a97f17caab799238e90058e113d982be1e7162756813ecb",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+    },
+    {
+      "path": "frontend/package.json",
+      "sha256": "c8554fc9a141473ba284cfa78cf19c4d7279947efbbc0408e8204e5e6aa175ba",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+    },
+    {
+      "path": "frontend/src/global.d.ts",
+      "sha256": "a85d23c0ef7ae89a2c4ae15514d590affc2e24bf3562de2f017ba891b221465f",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+    },
+    {
+      "path": "frontend/tsconfig.json",
+      "sha256": "83efc1798334967d5a907f26b8cba31fa213f16b5ac0ed5c02fd38e7cf0ceb66",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+    },
+    {
+      "path": "package.json",
+      "sha256": "2cfeae3825f65d8c8527f70ea465c71fea5d2796d7f49937f2e7ad8bb95cf448",
+      "evidence": "B6 reviewed as Git/Go/TypeScript/npm/Electron functional declarations, current dependencies and build/test script metadata; no substantive upstream implementation. Existing compiler/package behavior retained; docs/oss-b6-contract.md and full build/tooling/package gates."
+    },
+    {
+      "path": "backend/internal/httpapi/settings_handler.go",
+      "sha256": "343ef51f9201432330d0b8155817143abfeda5edecc4f8817b8db19753d25e11",
+      "evidence": "B6 behavior-contract replacement or original B2 styling extended by original B6 index UI; docs/oss-b6-contract.md records API, data, state and compatibility boundaries. New synthetic behavior tests and full Go/frontend regression gates verify the replacement."
+    },
+    {
+      "path": "backend/internal/httpapi/agent_settings_handler.go",
+      "sha256": "802df9d9df2b6474c149589d7a4420ec926733f1bf42fd8a66bd9b3b8e91856d",
+      "evidence": "B6 behavior-contract replacement or original B2 styling extended by original B6 index UI; docs/oss-b6-contract.md records API, data, state and compatibility boundaries. New synthetic behavior tests and full Go/frontend regression gates verify the replacement."
+    },
+    {
+      "path": "backend/internal/httpapi/agent_settings_model.go",
+      "sha256": "162758d474278cfe3db48fd75f75bffd3face1df9796134387f75eab24999ed8",
+      "evidence": "B6 behavior-contract replacement or original B2 styling extended by original B6 index UI; docs/oss-b6-contract.md records API, data, state and compatibility boundaries. New synthetic behavior tests and full Go/frontend regression gates verify the replacement."
+    },
+    {
+      "path": "backend/internal/httpapi/settings_view.go",
+      "sha256": "e8612223e7dc34b12d97462dd69a54a8c5c266117a991e52e80f9ad93fc6bbba",
+      "evidence": "B6 behavior-contract replacement or original B2 styling extended by original B6 index UI; docs/oss-b6-contract.md records API, data, state and compatibility boundaries. New synthetic behavior tests and full Go/frontend regression gates verify the replacement."
+    },
+    {
+      "path": "backend/internal/httpapi/response.go",
+      "sha256": "0849ea7055abbf866754d5748a102780f181813042a34e27fe638d886d0b7048",
+      "evidence": "B6 behavior-contract replacement or original B2 styling extended by original B6 index UI; docs/oss-b6-contract.md records API, data, state and compatibility boundaries. New synthetic behavior tests and full Go/frontend regression gates verify the replacement."
+    },
+    {
+      "path": "frontend/src/components/market/MarketDataViews.tsx",
+      "sha256": "1f5b43d2d59050535a8ee9be6a05a2d896a2daab845e2b28387ebcc4746281e4",
+      "evidence": "B6 behavior-contract replacement or original B2 styling extended by original B6 index UI; docs/oss-b6-contract.md records API, data, state and compatibility boundaries. New synthetic behavior tests and full Go/frontend regression gates verify the replacement."
+    },
+    {
+      "path": "frontend/src/lib/chat.ts",
+      "sha256": "69a4da1f42715a9a1b45cd526a470fcd7768675927f7fe712a644c22b6cc0a14",
+      "evidence": "B6 behavior-contract replacement or original B2 styling extended by original B6 index UI; docs/oss-b6-contract.md records API, data, state and compatibility boundaries. New synthetic behavior tests and full Go/frontend regression gates verify the replacement."
+    },
+    {
+      "path": "frontend/src/lib/runtime-log.ts",
+      "sha256": "c5f63353d79f568aa1fd635867ffe9c6c9047cceb75cdfabfb7a59e27131f1fa",
+      "evidence": "B6 behavior-contract replacement or original B2 styling extended by original B6 index UI; docs/oss-b6-contract.md records API, data, state and compatibility boundaries. New synthetic behavior tests and full Go/frontend regression gates verify the replacement."
+    },
+    {
+      "path": "backend/cmd/server/main_test.go",
+      "sha256": "205aa00ef9c285e873893d43edd11666c8e2537b068b929e0e3dff9925b81486",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "backend/internal/appsettings/store_test.go",
+      "sha256": "f3ff80951076ab33834deca32c7ac0f6b1e404dbe17d8b1fb6ce68487484bc5d",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "backend/internal/httpapi/ai_chat_test.go",
+      "sha256": "c7594b92019c65775e9e536bcac4d60320344f03df27716e1c06805ef5105de8",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "backend/internal/httpapi/hermes_test.go",
+      "sha256": "074b3a74aaddff884342fa0408c21885763f466c318ce2e41c4fda99ccb81fcc",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "backend/internal/httpapi/llm_models_test.go",
+      "sha256": "a457f25ae9a9713173a327cc2dabce446eada3b68e8df9cf5a399f8f8157b25e",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "backend/internal/httpapi/persistence_test.go",
+      "sha256": "b92da403dabadc4773a80d2dd8068480e4fc9ec6dc4b7417c88483e9dede34de",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "backend/internal/httpapi/server_test.go",
+      "sha256": "2fc798350d53a8d179119bf93d47add8574afa9aab31a813060cd60e6151d49a",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "backend/internal/httpapi/settings_agent_test.go",
+      "sha256": "c6d0549856406c087fc5ff05a6931203d22b86cc65c100faa1e672a995e48c53",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "backend/internal/httpapi/settings_test.go",
+      "sha256": "2485dc6f2bd3488bd87ea0d38eb1c1bac64ed8c7a1a914fd8c01bf7c7dbcd1bd",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "frontend/src/components/MarkdownContent.test.tsx",
+      "sha256": "57387c43da26a8a43c7b86d344441e1e8db406a1781cf30f441604922f10147f",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "frontend/src/lib/backend.test.ts",
+      "sha256": "4514418664e35b61ec6193bd92a22adb7bd9a101d235efc5e4ff1441ed18b77d",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "frontend/src/lib/chat.test.ts",
+      "sha256": "d2b5bb8b9ccb566f07f81c99bc689e8d7347bc2b611b8f8d6720567da1584661",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "frontend/src/lib/llm-providers.test.ts",
+      "sha256": "67a903378c9ae0e7edb382beceae07d333799c2319eb7ccf64612942ba8529c7",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": "frontend/src/lib/runtime-log.test.ts",
+      "sha256": "87107444e5e769ded6f59de37bf264aafa08901e1aa88c80e1d16d8377855ddf",
+      "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+      "sha256": "4c57b1f36950380ddff531b158e1160773ad68825e10f0713e30308cba3ae56b",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "sha256": "ec69038d7899d10a93788c83523e4c442b27d088ca573951f5a03b8125b9c055",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+      "sha256": "fe1c18709ee02e1302f371de89389a8662c45c91843653d8bd70b3040dba9228",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE.md",
+      "sha256": "af30431d3726cc3a2affaa83a77b2ed2b96b1e21bd588c269384fcabe928d02f",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "1777abe3a379b6a1e9f1a266f3f0062073769412cc29f345d27176417dbdba2f",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "README.md",
+      "sha256": "fb4c8d035dfaa92d71cea81f272aa0a8877803631947a6ff20fc52fe8fb87495",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "ROADMAP.md",
+      "sha256": "77d79cc5da5ba8e453edadc6d824230e905466955a5eaf67de43303b7f475460",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "7cb58a96648eb8ab2918476f5ad55bf0551732d5b281c5f9d0c3e8c2c07e9688",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "backend/docs/api-routes.md",
+      "sha256": "2c0c3a2da6665161de56007d2495f5b9aee39ce57f98e76af43828bc1add0219",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "backend/docs/data-sources.md",
+      "sha256": "4bd2084a5612681403291d4a86b83c08b20f809fdb5e0d17a924e343fc874de8",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "backend/docs/hermes-integration.md",
+      "sha256": "1f1c360a9917ce3a5b36148e911873bf393a1591d91b078f38cadaf71e5de0bc",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "backend/docs/live-tests.md",
+      "sha256": "4b49588b625f36eafcd9ce97b0de7e3ee0b7ffbe5bcd031d72756ae15fa5b0da",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
+    },
+    {
+      "path": "docs/user-guide.md",
+      "sha256": "3d91ce2867661cd767a22d2e35f9143c3f7e6fae9bbb45bc2392c7f50e4af638",
+      "evidence": "B6 reauthored for current mystocktracer Taiwan product, maintenance scope and correct runtime names; docs/oss-b6-contract.md records scope. Required links, legal attribution and user migration cautions retained."
     }
   ]
 }

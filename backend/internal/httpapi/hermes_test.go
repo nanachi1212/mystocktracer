@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"io"
@@ -11,6 +10,8 @@ import (
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
 )
 
+// This product-facing fixture implements only the capabilities exercised by HTTP tests.
+// The scripted process below supplies synthetic adapter frames through pipes.
 type fakeAgentRuntime struct {
 	status        agent.Status
 	promptResult  agent.PromptResult
@@ -23,95 +24,85 @@ type fakeAgentRuntime struct {
 	agentSettings agent.Settings
 }
 
-func (g *fakeAgentRuntime) Status() agent.Status { return g.status }
-func (g *fakeAgentRuntime) ModelAPIKey() (string, error) {
-	return g.modelAPIKey, g.modelKeyErr
+func (runtime *fakeAgentRuntime) Status() agent.Status { return runtime.status }
+func (runtime *fakeAgentRuntime) ModelAPIKey() (string, error) {
+	return runtime.modelAPIKey, runtime.modelKeyErr
 }
-func (g *fakeAgentRuntime) Prompt(context.Context, string) (agent.PromptResult, error) {
-	return g.promptResult, g.promptErr
+func (runtime *fakeAgentRuntime) Prompt(context.Context, string) (agent.PromptResult, error) {
+	return runtime.promptResult, runtime.promptErr
 }
-func (g *fakeAgentRuntime) Start(ctx context.Context) (agent.Process, error) {
-	if g.start != nil {
-		return g.start(ctx)
+func (runtime *fakeAgentRuntime) Start(ctx context.Context) (agent.Process, error) {
+	if runtime.start != nil {
+		return runtime.start(ctx)
 	}
-	return newScriptedHermesProcess(), nil
+	return newScriptedAgentProcess(), nil
 }
-func (g *fakeAgentRuntime) SyncLLM(cfg appsettings.LLM, key *string) error {
-	g.lastLLM = cfg
-	if cfg.Model == "" && cfg.BaseURL == "" && key == nil {
+func (runtime *fakeAgentRuntime) SyncLLM(model appsettings.LLM, key *string) error {
+	runtime.lastLLM = model
+	if model.Model == "" && model.BaseURL == "" && key == nil {
 		return nil
 	}
-	if key == nil {
-		g.lastKey = nil
-	} else {
-		value := *key
-		g.lastKey = &value
-		g.modelAPIKey = value
-		g.status.APIKeyConfigured = value != ""
+	runtime.lastKey = nil
+	if key != nil {
+		copy := *key
+		runtime.lastKey = &copy
+		runtime.modelAPIKey = copy
+		runtime.status.APIKeyConfigured = copy != ""
 	}
-	g.status.Configured = stringsConfigured(cfg, g.status.APIKeyConfigured)
+	runtime.status.Configured = model.Model != "" && model.BaseURL != "" &&
+		(model.Provider == "custom" || runtime.status.APIKeyConfigured)
 	return nil
 }
-func (g *fakeAgentRuntime) AgentSettings() (agent.Settings, error) {
-	return g.agentSettings, nil
+func (runtime *fakeAgentRuntime) AgentSettings() (agent.Settings, error) {
+	return runtime.agentSettings, nil
 }
-func (g *fakeAgentRuntime) SyncAgentSettings(settings agent.Settings) error {
-	g.agentSettings = settings
+func (runtime *fakeAgentRuntime) SyncAgentSettings(value agent.Settings) error {
+	runtime.agentSettings = value
 	return nil
 }
 
-func stringsConfigured(cfg appsettings.LLM, hasKey bool) bool {
-	return cfg.Model != "" && cfg.BaseURL != "" && (cfg.Provider == "custom" || hasKey)
+type scriptedAgentProcess struct {
+	input   *io.PipeWriter
+	output  *io.PipeReader
+	errors  *io.PipeReader
+	closed  chan struct{}
+	stopper sync.Once
+	stop    func()
 }
 
-type scriptedHermesProcess struct {
-	inputWriter  *io.PipeWriter
-	outputReader *io.PipeReader
-	errorReader  *io.PipeReader
-	done         chan struct{}
-	stopOnce     sync.Once
-	stop         func()
-}
-
-func newScriptedHermesProcess() *scriptedHermesProcess {
-	inputReader, inputWriter := io.Pipe()
-	outputReader, outputWriter := io.Pipe()
-	errorReader, errorWriter := io.Pipe()
-	done := make(chan struct{})
-	process := &scriptedHermesProcess{
-		inputWriter:  inputWriter,
-		outputReader: outputReader,
-		errorReader:  errorReader,
-		done:         done,
-	}
+func newScriptedAgentProcess() *scriptedAgentProcess {
+	incoming, input := io.Pipe()
+	output, outgoing := io.Pipe()
+	errors, errorWriter := io.Pipe()
+	process := &scriptedAgentProcess{input: input, output: output, errors: errors, closed: make(chan struct{})}
 	process.stop = func() {
-		_ = inputReader.Close()
-		_ = inputWriter.Close()
-		_ = outputReader.Close()
-		_ = outputWriter.Close()
-		_ = errorReader.Close()
-		_ = errorWriter.Close()
+		for _, closer := range []io.Closer{incoming, input, output, outgoing, errors, errorWriter} {
+			_ = closer.Close()
+		}
 	}
 	go func() {
-		defer close(done)
-		defer outputWriter.Close()
-		defer errorWriter.Close()
-		writeTestFrame(outputWriter, map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "gateway.ready", "payload": map[string]any{}}})
-		scanner := bufio.NewScanner(inputReader)
-		for scanner.Scan() {
+		defer close(process.closed)
+		defer process.stopper.Do(process.stop)
+		writer := json.NewEncoder(outgoing)
+		reader := json.NewDecoder(incoming)
+		_ = writer.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "gateway.ready", "payload": map[string]any{}}})
+		for {
 			var request struct {
 				ID     string `json:"id"`
 				Method string `json:"method"`
 			}
-			if json.Unmarshal(scanner.Bytes(), &request) != nil {
-				continue
+			if err := reader.Decode(&request); err != nil {
+				return
 			}
 			switch request.Method {
 			case "session.create":
-				writeTestFrame(outputWriter, map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": map[string]any{"session_id": "live-1", "stored_session_id": "stored-1"}})
+				_ = writer.Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID,
+					"result": map[string]any{"session_id": "synthetic-live", "stored_session_id": "synthetic-stored"}})
 			case "prompt.submit":
-				writeTestFrame(outputWriter, map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.delta", "payload": map[string]any{"text": "Hermes "}}})
-				writeTestFrame(outputWriter, map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "payload": map[string]any{"content": "Hermes 回复"}}})
+				_ = writer.Encode(map[string]any{"jsonrpc": "2.0", "method": "event",
+					"params": map[string]any{"type": "message.delta", "payload": map[string]any{"text": "台灣"}}})
+				_ = writer.Encode(map[string]any{"jsonrpc": "2.0", "method": "event",
+					"params": map[string]any{"type": "message.complete", "payload": map[string]any{"content": "台灣資料"}}})
 				return
 			}
 		}
@@ -119,19 +110,8 @@ func newScriptedHermesProcess() *scriptedHermesProcess {
 	return process
 }
 
-func writeTestFrame(writer io.Writer, frame any) {
-	data, _ := json.Marshal(frame)
-	_, _ = writer.Write(append(data, '\n'))
-}
-
-func (p *scriptedHermesProcess) Input() io.WriteCloser { return p.inputWriter }
-func (p *scriptedHermesProcess) Output() io.ReadCloser { return p.outputReader }
-func (p *scriptedHermesProcess) Errors() io.ReadCloser { return p.errorReader }
-func (p *scriptedHermesProcess) Wait() error {
-	<-p.done
-	return nil
-}
-func (p *scriptedHermesProcess) Stop() error {
-	p.stopOnce.Do(p.stop)
-	return nil
-}
+func (process *scriptedAgentProcess) Input() io.WriteCloser { return process.input }
+func (process *scriptedAgentProcess) Output() io.ReadCloser { return process.output }
+func (process *scriptedAgentProcess) Errors() io.ReadCloser { return process.errors }
+func (process *scriptedAgentProcess) Wait() error           { <-process.closed; return nil }
+func (process *scriptedAgentProcess) Stop() error           { process.stopper.Do(process.stop); return nil }

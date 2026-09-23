@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-	"io"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,127 +11,100 @@ import (
 	"github.com/nanachi1212/mystocktracer/backend/internal/appsettings"
 )
 
-func TestSettingsLLMModelsUsesSavedKeyAndNormalizesResults(t *testing.T) {
-	var gotPath, gotAuthorization string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotAuthorization = r.Header.Get("Authorization")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"z-model","owned_by":"vendor"},{"id":"a-model"},{"id":"a-model"},{"id":""}]}`)
-	}))
-	defer upstream.Close()
-
-	store, _ := appsettings.Open("")
-	gateway := &fakeAgentRuntime{status: agent.Status{Available: true, APIKeyConfigured: true}, modelAPIKey: "saved-private-key"}
-	server := NewServer(Config{SettingsStore: store, AgentRuntime: gateway})
-	body := `{"provider":"custom","base_url":"` + upstream.URL + `/v1"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if gotPath != "/v1/models" || gotAuthorization != "Bearer saved-private-key" {
-		t.Fatalf("upstream request path=%q authorization=%q", gotPath, gotAuthorization)
-	}
-	if strings.Index(rec.Body.String(), "a-model") > strings.Index(rec.Body.String(), "z-model") || strings.Count(rec.Body.String(), "a-model") != 1 {
-		t.Fatalf("models were not sorted and deduplicated: %s", rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "saved-private-key") {
-		t.Fatalf("response leaked API key: %s", rec.Body.String())
-	}
-}
-
-func TestSettingsLLMModelsUsesUnsavedKeyAndAnthropicHeaders(t *testing.T) {
-	var gotPath, gotKey, gotBearer, gotVersion string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotKey = r.Header.Get("x-api-key")
-		gotBearer = r.Header.Get("Authorization")
-		gotVersion = r.Header.Get("anthropic-version")
-		_, _ = io.WriteString(w, `{"data":[{"id":"claude-test","display_name":"Claude Test"}]}`)
-	}))
-	defer upstream.Close()
-
-	store, _ := appsettings.Open("")
-	server := NewServer(Config{SettingsStore: store})
-	body := `{"provider":"anthropic","base_url":"` + upstream.URL + `","api_key":"new-private-key"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if gotPath != "/v1/models" || gotKey != "new-private-key" || gotBearer != "" || gotVersion == "" {
-		t.Fatalf("anthropic request path=%q key=%q bearer=%q version=%q", gotPath, gotKey, gotBearer, gotVersion)
-	}
-	if strings.Contains(rec.Body.String(), "new-private-key") {
-		t.Fatalf("response leaked API key: %s", rec.Body.String())
-	}
-}
-
-func TestSettingsLLMModelsDoesNotExposeUpstreamErrorBody(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = io.WriteString(w, `{"error":"secret-provider-debug-body"}`)
-	}))
-	defer upstream.Close()
-
-	store, _ := appsettings.Open("")
-	server := NewServer(Config{SettingsStore: store})
-	body := `{"provider":"custom","base_url":"` + upstream.URL + `","api_key":"private-key"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), "secret-provider-debug-body") || strings.Contains(rec.Body.String(), "private-key") {
-		t.Fatalf("unsafe upstream error: status=%d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestSettingsLLMModelsValidatesURLAndRequiresOfficialProviderKey(t *testing.T) {
-	store, _ := appsettings.Open("")
-	server := NewServer(Config{SettingsStore: store})
-
-	badURL := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(`{"provider":"custom","base_url":"file:///tmp/models"}`))
-	badURLRec := httptest.NewRecorder()
-	server.ServeHTTP(badURLRec, badURL)
-	if badURLRec.Code != http.StatusBadRequest {
-		t.Fatalf("bad URL status=%d body=%s", badURLRec.Code, badURLRec.Body.String())
-	}
-
-	missingKey := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(`{"provider":"openai","base_url":"https://api.openai.com/v1","api_key":""}`))
-	missingKeyRec := httptest.NewRecorder()
-	server.ServeHTTP(missingKeyRec, missingKey)
-	if missingKeyRec.Code != http.StatusPreconditionFailed {
-		t.Fatalf("missing key status=%d body=%s", missingKeyRec.Code, missingKeyRec.Body.String())
-	}
-}
-
-func TestSupportedLLMProvidersBuildTheirOfficialModelsURLs(t *testing.T) {
-	tests := []struct {
-		provider string
-		baseURL  string
-		wantURL  string
+func TestModelDiscoveryKeepsCredentialsOutOfResults(t *testing.T) {
+	cases := []struct {
+		name, provider, requestKey, savedKey string
+		wantHeader, otherHeader              string
 	}{
-		{provider: "moonshot", baseURL: "https://api.moonshot.cn/v1", wantURL: "https://api.moonshot.cn/v1/models"},
-		{provider: "minimax", baseURL: "https://api.minimaxi.com/v1", wantURL: "https://api.minimaxi.com/v1/models"},
-		{provider: "zhipu", baseURL: "https://open.bigmodel.cn/api/paas/v4", wantURL: "https://open.bigmodel.cn/api/paas/v4/models"},
-		{provider: "siliconflow", baseURL: "https://api.siliconflow.cn/v1", wantURL: "https://api.siliconflow.cn/v1/models"},
+		{name: "saved compatible key", provider: "custom", savedKey: "synthetic-saved-key",
+			wantHeader: "Authorization", otherHeader: "x-api-key"},
+		{name: "new Anthropic key", provider: "anthropic", requestKey: "synthetic-request-key",
+			wantHeader: "x-api-key", otherHeader: "Authorization"},
 	}
-	for _, tt := range tests {
-		t.Run(tt.provider, func(t *testing.T) {
-			if !agent.SupportedModelProvider(tt.provider) {
-				t.Fatalf("provider %q is not supported", tt.provider)
-			}
-			got, err := agent.ModelsURL(tt.provider, tt.baseURL)
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			var path, credential, unwanted, version string
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path, credential = r.URL.Path, r.Header.Get(test.wantHeader)
+				unwanted, version = r.Header.Get(test.otherHeader), r.Header.Get("anthropic-version")
+				_, _ = w.Write([]byte(`{"data":[{"id":"zeta"},{"id":"alpha"},{"id":"alpha"},{"id":""}]}`))
+			}))
+			defer provider.Close()
+			store, err := appsettings.Open("")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got != tt.wantURL {
-				t.Fatalf("models URL = %q, want %q", got, tt.wantURL)
+			runtime := &fakeAgentRuntime{status: agent.Status{Available: true, APIKeyConfigured: test.savedKey != ""}, modelAPIKey: test.savedKey}
+			server := NewServer(Config{SettingsStore: store, AgentRuntime: runtime})
+			baseURL := provider.URL
+			if test.provider == "custom" {
+				baseURL += "/v1"
+			}
+			requestBody := fmt.Sprintf(`{"provider":%q,"base_url":%q}`, test.provider, baseURL)
+			if test.requestKey != "" {
+				requestBody = fmt.Sprintf(`{"provider":%q,"base_url":%q,"api_key":%q}`, test.provider, baseURL, test.requestKey)
+			}
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(requestBody)))
+			if response.Code != http.StatusOK || path != "/v1/models" || unwanted != "" {
+				t.Fatalf("discovery failed: status=%d path=%q payload=%s", response.Code, path, response.Body.String())
+			}
+			key := test.requestKey
+			if key == "" {
+				key = test.savedKey
+			}
+			if test.provider == "custom" {
+				key = "Bearer " + key
+			} else if version == "" {
+				t.Fatal("Anthropic version header missing")
+			}
+			if credential != key || strings.Contains(response.Body.String(), key) ||
+				strings.Count(response.Body.String(), `"id":"alpha"`) != 1 ||
+				strings.Index(response.Body.String(), "alpha") > strings.Index(response.Body.String(), "zeta") {
+				t.Fatalf("credential or normalized result mismatch: %s", response.Body.String())
+			}
+		})
+	}
+}
+
+func TestModelDiscoveryRejectsUnsafeInputsAndProviderFailures(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"debug":"synthetic-provider-secret"}`))
+	}))
+	defer provider.Close()
+	store, _ := appsettings.Open("")
+	server := NewServer(Config{SettingsStore: store})
+	for _, test := range []struct {
+		name, body string
+		status     int
+	}{
+		{name: "non-http URL", body: `{"provider":"custom","base_url":"file:///private"}`, status: http.StatusBadRequest},
+		{name: "missing hosted key", body: `{"provider":"openai","base_url":"https://api.openai.com/v1","api_key":""}`, status: http.StatusPreconditionFailed},
+		{name: "provider rejection", body: fmt.Sprintf(`{"provider":"custom","base_url":%q,"api_key":"synthetic-key"}`, provider.URL), status: http.StatusBadGateway},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(test.body)))
+			if response.Code != test.status || strings.Contains(response.Body.String(), "synthetic-provider-secret") ||
+				strings.Contains(response.Body.String(), "synthetic-key") {
+				t.Fatalf("unsafe discovery response %d: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestOfficialProviderModelRoutes(t *testing.T) {
+	for _, row := range []struct{ provider, base string }{
+		{"moonshot", "https://api.moonshot.cn/v1"},
+		{"minimax", "https://api.minimaxi.com/v1"},
+		{"zhipu", "https://open.bigmodel.cn/api/paas/v4"},
+		{"siliconflow", "https://api.siliconflow.cn/v1"},
+	} {
+		t.Run(row.provider, func(t *testing.T) {
+			url, err := agent.ModelsURL(row.provider, row.base)
+			if !agent.SupportedModelProvider(row.provider) || err != nil || url != row.base+"/models" {
+				t.Fatalf("model route for %s: %q, %v", row.provider, url, err)
 			}
 		})
 	}

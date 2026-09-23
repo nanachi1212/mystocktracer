@@ -1,115 +1,16 @@
-# mystocktracer 產品路線圖
+# mystocktracer 維護路線圖
 
-mystocktracer 現採 OSS transition / maintenance 模式：維護既有安裝、修復問題並完成來源整理。`TWstockfor_tick-stock-panel` 是唯一長期台股主產品，新台股核心功能移往該專案規劃；此 repository 不再作為平行功能主線。來源獨立化仍有 blocker，見 [OSS 來源稽核](./docs/oss-provenance-audit.md)，尚未變更 LICENSE。
+本專案目前以既有使用者資料、桌面相容、回歸修復與來源獨立化為範圍。新台股核心能力由 `TWstockfor_tick-stock-panel` 規劃。以下是已落地的工程階段；具體來源結果以 [稽核文件](docs/oss-provenance-audit.md) 為準。
 
-本專案由 [jundizhou/easy-stock](https://github.com/jundizhou/easy-stock) 衍生。舊版 A 股 runtime 已於 Phase B1 移除；上游署名、歷史與目前授權仍保留。
-
----
-
-## 已完成（台股產品）
-
-| 能力 | 狀態 |
+| 階段 | 已完成工作 |
 | --- | --- |
-| Pull Request 品質 CI（後端／前端／桌面測試與建置） | 已完成 |
-| 台股官方資料基礎（TWSE／TPEx 目錄、行情、指數、法人、融資融券、基本面） | 已完成 |
-| 市場廣度、市場情緒、產業雷達 | 已完成 |
-| 台股個股研究與確定性解讀 | 已完成 |
-| 台股公司事件（corporate event）資料整合 | 已完成 |
-| 事件提醒中心（Event Alert Center） | 已完成 |
-| AI Research v2（使用者明確啟動、grounded） | 已完成 |
-| 研究歷史（Research History） | 已完成 |
-| 前次研究比較（Previous Research Comparison） | 已完成 |
-| 台股自選股（Watchlist） | 已完成 |
-| 台股持倉（Portfolio） | 已完成 |
-| 台股每日總覽 Dashboard | 已完成 |
-| 資料新鮮度語意（available／stale／partial／unavailable／未查詢） | 已完成 |
+| B1 | 移除舊 A 股 runtime 與不再使用的入口，保留台股功能及更新相容。 |
+| B2 | 建立獨立的後端啟動、資料邊界與前端傳輸，確認 `MYSTOCKTRACER_*` 優先。 |
+| B3 | 將 AI 能力收斂到產品自有契約，Hermes 作為受隔離的第三方 adapter。 |
+| B4 | 建立桌面身份、品牌素材與可驗證、保留來源的使用者資料遷移。 |
+| B5 | 清理封裝、測試與來源稽核工具，保留 release 與 migration 相容。 |
+| B6 | 完成已知實作、測試與文件來源替換；法律／授權決策仍由維護者處理。 |
 
----
+台股正式資料保持官方／共用資料層權責，研究畫面必須呈現來源、時間、缺漏與新鮮度。既有自選股、持倉、提醒與研究歷史的資料格式不因 OSS 整理而任意更動。
 
-## 歷史產品方向（保留紀錄，非目前開發承諾）
-
-### 資料可信度
-
-- 持續強化資料來源健康檢查、快取、降級與交易日判斷；
-- 為關鍵指標補上更新時間、來源、覆蓋率與異常說明；
-- 減少第三方頁面或介面變動造成的靜默錯誤；
-- 需要歷史研究的資料逐步補上 Point-in-Time 與 revision 語意。
-
-### 研究閉環
-
-- 強化個股證據、事件提醒與研究歷史之間的關聯；
-- 讓歷史判斷、驗證結果與使用者研究方法可以長期累積；
-- 改善 AI 研究的證據樹與結論驗證邊界。
-
-### 桌面體驗
-
-- 改善 Windows 與 macOS 的安裝、更新與故障診斷；
-- 完善模型與資料來源狀態的可觀察性；
-- 保持敏感設定、本機資料庫與研究紀錄的本機隔離。
-
----
-
-## OSS Independence / Licensing Transition
-
-本階段的目標是讓 mystocktracer 具備獨立維護的 repository identity，並為未來可能切換到 OSI 相容授權做好準備。授權條款在稽核與替換完成前不會變更。
-
-### Phase A：來源稽核與 repository hygiene（已完成）
-
-- 完整盤點仍繼承自上游 easy-stock 的程式碼、素材與文件；
-- 分離「原創 mystocktracer 實作」與「仍依賴上游框架的部分」；
-- 修正 repository identity（package 名稱、支援連結、貢獻文件、Issue／PR 模板）；
-- 建立 [OSS 來源稽核文件](./docs/oss-provenance-audit.md)。
-
-### Phase B1：Legacy A-share 與 supply-chain independence（已完成）
-
-- 已移除 legacy A-share runtime、舊登入 bridges、上游 A 股文件／素材與 AGPL-only WeChat 元件；
-- updater 已切換為 mystocktracer GitHub Releases。
-
-### Phase B2：Core Runtime Independence（本輪完成）
-
-- Go module、backend bootstrap、settings persistence、HTTP boundary 與 foundation 已原創替換；
-- frontend API transport、Taiwan-only app shell 與 global styling foundation 已原創替換；
-- `MYSTOCKTRACER_*` 成為 canonical runtime env，`A_STOCK_*` 僅保留 deprecated read fallback；
-- Hermes AI 核心與 desktop identity 刻意留待後續階段。
-
-### Phase B3：AI Runtime Independence（下一階段）
-
-- 原創替換 Hermes model runtime、AI transport／chat UI 與高度相依的 settings UI；
-- 保持既有 AI Research schema、tool behavior 與歷史資料相容。
-
-### Phase B4：Desktop Identity Independence（後續）
-
-- 原創替換 desktop shell、封裝 identity 與共用 logger；
-- 先完成可回復的 userData migration，再評估 `app.setName`、`appId`、`productName`；
-- 原創替換圖示與 favicon。
-
-詳細清單、難度與相依順序見 [OSS 來源稽核 — Phase B replacement plan](./docs/oss-provenance-audit.md#phase-b-replacement-plan)。
-
-### Phase C：授權評估
-
-- 在 Phase B 完成後重新評估 HEAD 是否可切換授權；
-- 保留必要的上游歷史署名。
-
----
-
-## 舊版 A 股能力（Phase B1 已移除）
-
-下列上游能力已不在目前 runtime tree：
-
-- A 股行情總覽、指數、資金、產業、題材；
-- 趨勢題材雷達、漲停梯隊、超短情緒；
-- 雪球、淘股吧與微信公眾號文章收集與大 V 複盤；
-- A 股持倉巡檢（portfolio inspection）；
-- 游資心法資料庫（trading mastery）。
-
-這些模組的處置方式（保留／替換／移除／待調查）記錄於 [OSS 來源稽核](./docs/oss-provenance-audit.md)。
-
----
-
-## 如何參與
-
-- Bug 與資料異常：使用 [Issue 模板](https://github.com/nanachi1212/mystocktracer/issues/new/choose) 提交可重現資訊；
-- 功能建議：描述真實研究情境、目前阻礙與期望結果；
-- 程式碼與文件：閱讀 [貢獻指南](./CONTRIBUTING.md) 後提交 Pull Request。
-
-後端 API 路由見 [Backend API Routes](./backend/docs/api-routes.md)；台股化細節進度見 [台股化 Roadmap](./docs/taiwan-roadmap.md)。
+目前授權仍是 [PolyForm Noncommercial License 1.0.0](LICENSE)。技術替換完成與否，和 LICENSE 可否更改，是兩個獨立決策；不會只根據 inherited 檔案數字修改授權。

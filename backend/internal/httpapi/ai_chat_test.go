@@ -1,64 +1,74 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/nanachi1212/mystocktracer/backend/internal/agent"
 )
 
-func TestAIChatUsesProductProtocolOverWebSocket(t *testing.T) {
-	gateway := &fakeAgentRuntime{status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true}}
-	httpServer := httptest.NewServer(NewServer(Config{AgentRuntime: gateway}))
-	defer httpServer.Close()
-
-	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/v1/ai/ws"
-	connection, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+func TestChatSocketTranslatesAdapterFramesToProductEvents(t *testing.T) {
+	runtime := &fakeAgentRuntime{status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true}}
+	server := httptest.NewServer(NewServer(Config{AgentRuntime: runtime}))
+	defer server.Close()
+	connection, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/api/v1/ai/ws", nil)
 	if err != nil {
-		t.Fatalf("dial websocket: %v", err)
+		t.Fatal(err)
 	}
 	defer connection.Close()
-
-	readFrame := func() map[string]any {
-		_, payload, readErr := connection.ReadMessage()
-		if readErr != nil {
-			t.Fatalf("read websocket frame: %v", readErr)
+	_ = connection.SetReadDeadline(time.Now().Add(5 * time.Second))
+	read := func(expected string) agentEvent {
+		t.Helper()
+		var event agentEvent
+		if err := connection.ReadJSON(&event); err != nil {
+			t.Fatal(err)
 		}
-		var frame map[string]any
-		if json.Unmarshal(payload, &frame) != nil {
-			t.Fatalf("invalid frame: %s", payload)
+		if event.Version != agentProtocolVersion || event.Type != expected {
+			t.Fatalf("received %+v, expected %s v%d", event, expected, agentProtocolVersion)
 		}
-		return frame
+		return event
 	}
-	if frame := readFrame(); frame["type"] != "runtime.ready" || frame["version"] != float64(1) {
-		t.Fatalf("first frame = %+v, want product runtime.ready event", frame)
-	}
-	if err := connection.WriteJSON(map[string]any{"version": 1, "type": "session.start", "payload": map[string]any{}}); err != nil {
+	read("runtime.ready")
+	if err := connection.WriteJSON(agentClientEvent{Version: agentProtocolVersion, Type: "session.start", Payload: []byte(`{}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if frame := readFrame(); frame["type"] != "session.ready" {
-		t.Fatalf("session response = %+v", frame)
+	ready := read("session.ready")
+	id, ok := ready.Payload["session_id"].(string)
+	if !ok || id == "" {
+		t.Fatalf("session ID missing: %+v", ready)
 	}
-	if err := connection.WriteJSON(map[string]any{"version": 1, "type": "prompt.submit", "payload": map[string]any{"session_id": "stored-1", "text": "你好"}}); err != nil {
+	if err := connection.WriteJSON(map[string]any{"version": agentProtocolVersion, "type": "prompt.submit",
+		"payload": map[string]any{"session_id": id, "text": "分析合成台股資料"}}); err != nil {
 		t.Fatal(err)
 	}
-	_ = readFrame()
-	complete := readFrame()
-	if complete["type"] != "message.complete" {
-		t.Fatalf("complete frame = %+v", complete)
+	if delta := read("message.delta"); delta.Payload["content"] != "台灣" {
+		t.Fatalf("streamed content changed: %+v", delta)
+	}
+	if complete := read("message.complete"); complete.Payload["content"] != "台灣資料" {
+		t.Fatalf("final content changed: %+v", complete)
 	}
 }
 
-func TestAIChatRequiresAvailableRuntime(t *testing.T) {
-	server := NewServer(Config{AgentRuntime: &fakeAgentRuntime{status: agent.Status{Message: "AI 執行環境不可用"}}})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/ai/ws", nil)
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "AI 執行環境") {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+func TestChatSocketRejectsUnavailableAndUnconfiguredRuntimes(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		status   agent.Status
+		expected int
+	}{
+		{name: "unavailable", status: agent.Status{Message: "執行環境不可用"}, expected: http.StatusServiceUnavailable},
+		{name: "unconfigured", status: agent.Status{Available: true}, expected: http.StatusPreconditionFailed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := NewServer(Config{AgentRuntime: &fakeAgentRuntime{status: test.status}})
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/ws", nil))
+			if response.Code != test.expected || !strings.Contains(response.Body.String(), "error") {
+				t.Fatalf("status=%d payload=%s", response.Code, response.Body.String())
+			}
+		})
 	}
 }

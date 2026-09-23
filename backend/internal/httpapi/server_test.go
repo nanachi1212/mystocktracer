@@ -9,135 +9,93 @@ import (
 	"testing"
 )
 
-func TestServerRequiresConfiguredTokenForPrivateRoutes(t *testing.T) {
-	server := NewServer(Config{Token: "secret"})
-
-	healthReq := httptest.NewRequest(http.MethodGet, "/api/health", nil)
-	healthRec := httptest.NewRecorder()
-	server.ServeHTTP(healthRec, healthReq)
-	if healthRec.Code != http.StatusOK {
-		t.Fatalf("health status = %d, want %d", healthRec.Code, http.StatusOK)
-	}
-
-	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
-	unauthorizedRec := httptest.NewRecorder()
-	server.ServeHTTP(unauthorizedRec, unauthorizedReq)
-	if unauthorizedRec.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthorized status = %d, want %d", unauthorizedRec.Code, http.StatusUnauthorized)
-	}
-
-	headerReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
-	headerReq.Header.Set("Authorization", "Bearer secret")
-	headerRec := httptest.NewRecorder()
-	server.ServeHTTP(headerRec, headerReq)
-	if headerRec.Code != http.StatusOK {
-		t.Fatalf("header authorized status = %d, want %d", headerRec.Code, http.StatusOK)
-	}
-
-	queryReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings?token=secret", nil)
-	queryRec := httptest.NewRecorder()
-	server.ServeHTTP(queryRec, queryReq)
-	if queryRec.Code != http.StatusOK {
-		t.Fatalf("query authorized status = %d, want %d", queryRec.Code, http.StatusOK)
-	}
+func serveRequest(server *Server, method, path string, headers http.Header) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, path, nil)
+	request.Header = headers
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	return response
 }
 
-func TestServerLogsSanitizedFeatureRequestWithCorrelationID(t *testing.T) {
-	var logs bytes.Buffer
-	server := NewServer(Config{
-		Token:  "secret-token",
-		Logger: log.New(&logs, "", 0),
-	})
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/settings?token=secret-token", nil)
-	request.Header.Set("X-Request-ID", "support-123")
-	recorder := httptest.NewRecorder()
-
-	server.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK || recorder.Header().Get("X-Request-ID") != "support-123" {
-		t.Fatalf("unexpected response: status=%d request_id=%q", recorder.Code, recorder.Header().Get("X-Request-ID"))
-	}
-	content := logs.String()
-	if !strings.Contains(content, `feature="settings"`) || !strings.Contains(content, `request_id="support-123"`) || !strings.Contains(content, `path="/api/v1/settings"`) {
-		t.Fatalf("missing request diagnostics: %s", content)
-	}
-	if strings.Contains(content, "secret-token") || strings.Contains(content, "?token=") {
-		t.Fatalf("request log leaked query credentials: %s", content)
-	}
-}
-
-// Taiwan routes must carry their own feature label now that the legacy A-share prefixes are gone;
-// otherwise every Taiwan request would log as the generic "http" bucket.
-func TestServerLabelsTaiwanRequestsWithTaiwanFeature(t *testing.T) {
-	if feature := requestFeature("/api/v1/tw/dashboard"); feature != "taiwan" {
-		t.Fatalf("taiwan feature = %q, want %q", feature, "taiwan")
-	}
-	if feature := requestFeature("/api/v1/tw/stocks/2330.TWSE/research-history"); feature != "taiwan" {
-		t.Fatalf("taiwan research-history feature = %q, want %q", feature, "taiwan")
-	}
-}
-
-func TestServerCORSPreflightAllowsDelete(t *testing.T) {
-	server := NewServer(Config{Token: "secret"})
-	request := httptest.NewRequest(http.MethodOptions, "/api/v1/tw/watchlist/2330.TWSE", nil)
-	request.Header.Set("Origin", "http://127.0.0.1:20073")
-	request.Header.Set("Access-Control-Request-Method", http.MethodDelete)
-	request.Header.Set("Access-Control-Request-Headers", "authorization")
-	recorder := httptest.NewRecorder()
-
-	server.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusNoContent {
-		t.Fatalf("preflight status = %d, want %d", recorder.Code, http.StatusNoContent)
-	}
-	if recorder.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:20073" {
-		t.Fatalf("allow origin = %q", recorder.Header().Get("Access-Control-Allow-Origin"))
-	}
-	if !strings.Contains(recorder.Header().Get("Access-Control-Allow-Methods"), http.MethodDelete) {
-		t.Fatalf("allow methods = %q", recorder.Header().Get("Access-Control-Allow-Methods"))
-	}
-	if !strings.Contains(strings.ToLower(recorder.Header().Get("Access-Control-Allow-Headers")), "authorization") {
-		t.Fatalf("allow headers = %q", recorder.Header().Get("Access-Control-Allow-Headers"))
-	}
-}
-
-func TestServerCORSDoesNotReflectUntrustedOrigin(t *testing.T) {
-	server := NewServer(Config{})
-	request := httptest.NewRequest(http.MethodOptions, "/api/v1/settings", nil)
-	request.Header.Set("Origin", "https://attacker.example")
-	recorder := httptest.NewRecorder()
-
-	server.ServeHTTP(recorder, request)
-
-	if origin := recorder.Header().Get("Access-Control-Allow-Origin"); origin != "" {
-		t.Fatalf("untrusted origin was reflected: %q", origin)
-	}
-}
-
-// The legacy A-share surface was removed in Phase B1; these routes must stay gone so a future
-// refactor cannot quietly re-register a China-market endpoint.
-func TestServerNoLongerServesLegacyAShareRoutes(t *testing.T) {
-	server := NewServer(Config{})
-	for _, path := range []string{
-		"/api/v1/sources",
-		"/api/v1/quotes/realtime",
-		"/api/v1/market/indexes",
-		"/api/v1/themes/overview",
-		"/api/v1/sector-map",
-		"/api/v1/short-term/limit-up-ladder",
-		"/api/v1/short-term/mastery",
-		"/api/v1/stocks/ai-analysis",
-		"/api/v1/stocks/directory",
-		"/api/v1/stocks/hot-ranks",
-		"/api/v1/portfolio-inspections",
-		"/api/v1/reviews/posts",
-		"/api/v1/strategy/inflections/evaluate",
-		"/api/v1/ws/stream",
+func TestPrivateRoutesRequireProductToken(t *testing.T) {
+	server := NewServer(Config{Token: "synthetic-token"})
+	defer server.Close()
+	for _, test := range []struct {
+		name, path string
+		headers    http.Header
+		status     int
+	}{
+		{name: "public health", path: "/api/health", status: http.StatusOK},
+		{name: "missing token", path: "/api/v1/settings", status: http.StatusUnauthorized},
+		{name: "wrong token", path: "/api/v1/settings", headers: http.Header{"Authorization": {"Bearer wrong"}}, status: http.StatusUnauthorized},
+		{name: "bearer token", path: "/api/v1/settings", headers: http.Header{"Authorization": {"Bearer synthetic-token"}}, status: http.StatusOK},
+		{name: "legacy query compatibility", path: "/api/v1/settings?token=synthetic-token", status: http.StatusOK},
 	} {
-		recorder := httptest.NewRecorder()
-		server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
-		if recorder.Code != http.StatusNotFound {
-			t.Fatalf("%s status = %d, want %d", path, recorder.Code, http.StatusNotFound)
+		t.Run(test.name, func(t *testing.T) {
+			response := serveRequest(server, http.MethodGet, test.path, test.headers)
+			if response.Code != test.status {
+				t.Fatalf("%s returned %d: %s", test.path, response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestRequestLogPreservesCorrelationWithoutCredential(t *testing.T) {
+	var output bytes.Buffer
+	server := NewServer(Config{Token: "synthetic-token", Logger: log.New(&output, "", 0)})
+	defer server.Close()
+	response := serveRequest(server, http.MethodGet, "/api/v1/settings?token=synthetic-token",
+		http.Header{"X-Request-Id": {"trace-synthetic"}})
+	if response.Code != http.StatusOK || response.Header().Get("X-Request-ID") != "trace-synthetic" {
+		t.Fatalf("correlation response: %d %q", response.Code, response.Header().Get("X-Request-ID"))
+	}
+	logText := output.String()
+	for _, part := range []string{`feature="settings"`, `request_id="trace-synthetic"`, `path="/api/v1/settings"`} {
+		if !strings.Contains(logText, part) {
+			t.Fatalf("request log omitted %s: %s", part, logText)
+		}
+	}
+	if strings.Contains(logText, "synthetic-token") || strings.Contains(logText, "?token=") {
+		t.Fatal("request log included credential or query")
+	}
+	for _, path := range []string{"/api/v1/tw/dashboard", "/api/v1/tw/stocks/2330.TWSE/research-history"} {
+		if requestFeature(path) != "taiwan" {
+			t.Fatalf("Taiwan route lost its log category: %s", path)
+		}
+	}
+}
+
+func TestCORSAllowsLocalDeleteAndRejectsRemoteOrigin(t *testing.T) {
+	server := NewServer(Config{Token: "synthetic-token"})
+	defer server.Close()
+	local := serveRequest(server, http.MethodOptions, "/api/v1/tw/watchlist/2330.TWSE", http.Header{
+		"Origin": {"http://127.0.0.1:20073"}, "Access-Control-Request-Method": {http.MethodDelete},
+		"Access-Control-Request-Headers": {"authorization"},
+	})
+	if local.Code != http.StatusNoContent || local.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:20073" ||
+		!strings.Contains(local.Header().Get("Access-Control-Allow-Methods"), http.MethodDelete) ||
+		!strings.Contains(strings.ToLower(local.Header().Get("Access-Control-Allow-Headers")), "authorization") {
+		t.Fatalf("local preflight changed: %d %+v", local.Code, local.Header())
+	}
+	remote := serveRequest(server, http.MethodOptions, "/api/v1/settings", http.Header{"Origin": {"https://remote.example"}})
+	if remote.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("remote origin was reflected")
+	}
+}
+
+func TestRemovedMarketEndpointsRemainUnavailable(t *testing.T) {
+	server := NewServer(Config{})
+	defer server.Close()
+	retired := []string{
+		"/api/v1/sources", "/api/v1/quotes/realtime", "/api/v1/market/indexes", "/api/v1/themes/overview",
+		"/api/v1/sector-map", "/api/v1/short-term/limit-up-ladder", "/api/v1/short-term/mastery",
+		"/api/v1/stocks/ai-analysis", "/api/v1/stocks/directory", "/api/v1/stocks/hot-ranks",
+		"/api/v1/portfolio-inspections", "/api/v1/reviews/posts", "/api/v1/strategy/inflections/evaluate",
+		"/api/v1/ws/stream",
+	}
+	for _, path := range retired {
+		if response := serveRequest(server, http.MethodGet, path, nil); response.Code != http.StatusNotFound {
+			t.Errorf("retired route %s responded with %d", path, response.Code)
 		}
 	}
 }

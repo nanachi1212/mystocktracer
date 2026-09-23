@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,66 +16,67 @@ import (
 )
 
 func ensureJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); err == io.EOF {
+	var trailing json.RawMessage
+	switch err := decoder.Decode(&trailing); {
+	case errors.Is(err, io.EOF):
 		return nil
-	} else if err != nil {
+	case err != nil:
 		return err
+	default:
+		return errors.New("unexpected data after JSON value")
 	}
-	return io.ErrUnexpectedEOF
 }
 
-func contextWithTimeout(r *http.Request, timeout time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(r.Context(), timeout)
+func contextWithTimeout(request *http.Request, duration time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(request.Context(), duration)
 }
 
-func marketLimitQuery(r *http.Request, fallback, maximum int) (int, error) {
-	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
-	if raw == "" {
+func marketLimitQuery(request *http.Request, fallback, maximum int) (int, error) {
+	input := strings.TrimSpace(request.URL.Query().Get("limit"))
+	if input == "" {
 		return fallback, nil
 	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value <= 0 || value > maximum {
-		return 0, fmt.Errorf("limit must be between 1 and %d", maximum)
+	limit, err := strconv.Atoi(input)
+	if err == nil && limit >= 1 && limit <= maximum {
+		return limit, nil
 	}
-	return value, nil
+	return 0, fmt.Errorf("limit must be between 1 and %d", maximum)
 }
 
-func writeError(w http.ResponseWriter, status int, message string) {
+func writeJSON(writer http.ResponseWriter, status int, payload any) {
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.WriteHeader(status)
+	_ = json.NewEncoder(writer).Encode(payload)
+}
+
+func writeError(writer http.ResponseWriter, status int, message string) {
 	if status >= http.StatusInternalServerError {
 		log.Printf("level=error event=http_error status=%d message=%q", status, runtimelog.Redact(message))
 	}
-	writeJSON(w, status, map[string]string{"error": message})
+	writeJSON(writer, status, map[string]string{"error": message})
 }
 
-func writeInternalError(w http.ResponseWriter, event, message string, err error) {
+func writeInternalError(writer http.ResponseWriter, event, message string, cause error) {
+	writeLoggedFailure(writer, http.StatusInternalServerError, event, message, cause)
+}
+
+func writeUpstreamError(writer http.ResponseWriter, event, message string, cause error) {
+	writeLoggedFailure(writer, http.StatusBadGateway, event, message, cause)
+}
+
+func writeLoggedFailure(writer http.ResponseWriter, status int, event, message string, cause error) {
 	detail := ""
-	if err != nil {
-		detail = runtimelog.Redact(err.Error())
+	if cause != nil {
+		detail = runtimelog.Redact(cause.Error())
 	}
 	log.Printf("level=error event=%s detail=%q", event, detail)
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": message})
-}
-
-func writeUpstreamError(w http.ResponseWriter, event, message string, err error) {
-	detail := ""
-	if err != nil {
-		detail = runtimelog.Redact(err.Error())
-	}
-	log.Printf("level=error event=%s detail=%q", event, detail)
-	writeJSON(w, http.StatusBadGateway, map[string]string{"error": message})
-}
-
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	writeJSON(writer, status, map[string]string{"error": message})
 }
 
 func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
+	for _, candidate := range values {
+		if strings.TrimSpace(candidate) != "" {
+			return candidate
 		}
 	}
 	return ""

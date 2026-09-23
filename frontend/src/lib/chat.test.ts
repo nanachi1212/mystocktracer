@@ -1,39 +1,47 @@
 import { describe, expect, it } from 'vitest';
-import { clearAgentSessionIDs, deriveChatTitle, parseStoredConversations, storeableConversations, type ChatConversation } from './chat';
+import { clearAgentSessionIDs, createChatConversation, deriveChatTitle, parseStoredConversations, storeableConversations, type ChatConversation } from './chat';
 
-describe('AI chat history helpers', () => {
-	it('derives a compact title from the first message', () => {
-		expect(deriveChatTitle('  分析\n这套交易体系的核心拐点  ')).toBe('分析 这套交易体系的核心拐点');
-		expect(Array.from(deriveChatTitle('这是一个超过二十四个字符并且应该被截断的会话标题测试内容')).length).toBeLessThanOrEqual(25);
-	});
+const conversation = (id: number): ChatConversation => ({ id: String(id), title: `對話 ${id}`, messages: [],
+  created_at: '2026-09-01T00:00:00Z', updated_at: new Date(Date.UTC(2026, 8, 1, 0, id)).toISOString() });
 
-	it('ignores invalid stored data and sorts valid conversations', () => {
-		const raw = JSON.stringify([
-			conversation('old', '2026-08-01T00:00:00.000Z'),
-			{ broken: true },
-			conversation('new', '2026-08-02T00:00:00.000Z'),
-		]);
-		expect(parseStoredConversations(raw).map((item) => item.id)).toEqual(['new', 'old']);
-		expect(parseStoredConversations('{')).toEqual([]);
-	});
+describe('local conversation storage contract', () => {
+  it('creates a fresh conversation and bounds Unicode titles', () => {
+    const fresh = createChatConversation('2026-09-23T00:00:00Z');
+    expect(fresh.id).toMatch(/^conversation-/);
+    expect(fresh.messages).toEqual([]);
+    expect(deriveChatTitle(' \n ')).toBe('新對話');
+    expect(deriveChatTitle('  台股\n 研究  ')).toBe('台股 研究');
+    expect(Array.from(deriveChatTitle('測'.repeat(35)))).toHaveLength(25);
+  });
 
-	it('limits local history to the newest thirty conversations', () => {
-		const values = Array.from({ length: 35 }, (_, index) => conversation(String(index), `2026-08-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`));
-		expect(storeableConversations(values)).toHaveLength(30);
-	});
+  it('accepts old session IDs while rejecting malformed saved entries', () => {
+    const raw = JSON.stringify([{ ...conversation(1), hermes_session_id: 'historical-session' },
+      { ...conversation(2), messages: [{ id: 'bad', role: 'system', content: 'x', created_at: 'now' }] },
+      { ...conversation(3), session_id: 17 }, conversation(4)]);
+    expect(parseStoredConversations(raw).map(({ id }) => id)).toEqual(['4', '1']);
+    expect(parseStoredConversations(raw)[1].session_id).toBe('historical-session');
+    expect(parseStoredConversations('{broken')).toEqual([]);
+    expect(parseStoredConversations(null)).toEqual([]);
+  });
 
-	it('clears runtime sessions after changing the global chat model without removing messages', () => {
-		const current = conversation('current', '2026-08-07T00:00:00.000Z');
-		current.session_id = 'previous-runtime-session';
-		current.messages = [{ id: 'message-1', role: 'user', content: '保留这条消息', created_at: current.created_at }];
+  it('stores the newest thirty histories and newest hundred messages without mutating the input', () => {
+    const oldest = conversation(0);
+    oldest.messages = Array.from({ length: 110 }, (_, id) => ({ id: String(id), role: 'user' as const,
+      content: `合成內容 ${id}`, created_at: oldest.created_at }));
+    const input = [oldest, ...Array.from({ length: 34 }, (_, id) => conversation(id + 1))];
+    const retained = storeableConversations(input);
+    expect(retained).toHaveLength(30);
+    expect(retained[0].id).toBe('34');
+    const [bounded] = storeableConversations([oldest]);
+    expect(bounded.messages).toHaveLength(100);
+    expect(bounded.messages[0].id).toBe('10');
+    expect(oldest.messages).toHaveLength(110);
+  });
 
-		const [next] = clearAgentSessionIDs([current]);
-
-		expect(next.session_id).toBeUndefined();
-		expect(next.messages).toEqual(current.messages);
-	});
+  it('drops runtime sessions without touching saved messages', () => {
+    const current = { ...conversation(1), session_id: 'stale-session', messages: [{ id: 'message', role: 'assistant' as const,
+      content: '保留資料', created_at: '2026-09-01T00:00:00Z' }] };
+    expect(clearAgentSessionIDs([current])).toEqual([{ ...conversation(1), messages: current.messages }]);
+    expect(current.session_id).toBe('stale-session');
+  });
 });
-
-function conversation(id: string, updatedAt: string): ChatConversation {
-	return { id, title: id, messages: [], created_at: updatedAt, updated_at: updatedAt };
-}

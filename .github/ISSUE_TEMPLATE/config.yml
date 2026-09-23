@@ -1,14 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 使用交流與研究方法討論
+  - name: 私密安全回報
+    url: https://github.com/nanachi1212/mystocktracer/security/advisories/new
+    about: 憑證、本機資料或更新機制的安全問題請從這裡提交。
+  - name: 使用討論
     url: https://github.com/nanachi1212/mystocktracer/discussions
-    about: 提問、討論台股研究方法或分享使用案例
-  - name: 安全問題
-    url: https://github.com/nanachi1212/mystocktracer/security
-    about: 涉及金鑰、登入狀態或本機資料的安全問題請私下回報
-  - name: 使用與開發文件
+    about: 一般操作或研究方法問題。
+  - name: 開發與測試說明
     url: https://github.com/nanachi1212/mystocktracer/blob/main/docs/development.md
-    about: 原始碼執行、測試、打包與故障排除說明
-  - name: 貢獻指南
-    url: https://github.com/nanachi1212/mystocktracer/blob/main/CONTRIBUTING.md
-    about: 開發流程、資料來源要求、AI 協助開發與授權聲明
+    about: 本機啟動、測試及打包步驟。

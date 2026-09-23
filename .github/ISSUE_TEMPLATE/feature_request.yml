@@ -1,85 +1,44 @@
-name: 功能建議
-description: 提議一個明確的台股研究、資料或產品能力
-title: "[Feature] "
-labels:
-  - enhancement
+name: 維護與改進建議
+description: 說明現有台股研究流程中的具體阻礙
+title: "[Proposal] "
+labels: [enhancement]
 body:
   - type: markdown
     attributes:
       value: |
-        ⚠️ 請勿在建議中附上 API Key、Cookie、Token、帳號或持倉資料。
+        mystocktracer 目前以維護和來源整理為主。請先描述現有功能遇到的問題，避免提交任何私人帳戶或持倉資料。
   - type: textarea
-    id: problem
+    id: workflow
     attributes:
-      label: 問題
-      description: 你在什麼研究流程中遇到什麼問題？
+      label: 目前的研究流程與阻礙
+      description: 何時發生、會影響哪個判斷或操作？
     validations:
       required: true
   - type: textarea
-    id: usecase
+    id: outcome
     attributes:
-      label: 使用情境
-      description: 誰會用、什麼時候用、目前如何替代？
-    validations:
-      required: true
-  - type: textarea
-    id: result
-    attributes:
-      label: 期望結果
-      description: 描述完成後的行為，不必限定實作方式。
+      label: 希望看見的行為
+      description: 描述可驗收的結果，不需要指定程式架構。
     validations:
       required: true
   - type: dropdown
-    id: area
+    id: surface
     attributes:
-      label: 功能領域
-      options:
-        - 每日總覽 Dashboard
-        - 自選股 / 持倉
-        - 事件提醒中心
-        - 個股研究 / AI 研究 / 研究歷史
-        - 市場廣度 / 市場情緒 / 產業雷達
-        - 台股資料來源與正確性
-        - 桌面端、安裝與更新
-        - 文件、貢獻流程與授權
-        - 其他
+      label: 相關介面
+      options: [每日總覽, 自選股或持倉, 事件提醒, 個股或 AI 研究, 資料來源, 桌面安裝或更新, 文件, 其他]
     validations:
       required: true
   - type: textarea
-    id: data_impact
+    id: contracts
     attributes:
-      label: 對台股資料的影響
-      description: 是否改變既有欄位語意、單位、交易日判斷、新鮮度或 Point-in-Time 行為？沒有請填「無」。
+      label: 資料與相容性影響
+      description: 說明是否涉及來源、單位、交易日、Point-in-Time、既有本機資料或第三方服務；沒有請填「無」。
     validations:
       required: true
   - type: textarea
-    id: provider
+    id: provenance
     attributes:
-      label: 是否需要新的資料來源
-      description: 若需要，請說明來源名稱、是否為官方、是否需要登入、請求頻率限制與降級方案。沒有請填「無」。
+      label: 外部來源與授權
+      description: 若附上外部程式碼或素材，提供來源連結與授權資訊；沒有請填「無」。
     validations:
       required: true
-  - type: textarea
-    id: source_docs
-    attributes:
-      label: 來源文件
-      description: 官方或公開文件連結、欄位說明、使用條款。
-  - type: textarea
-    id: licensing
-    attributes:
-      label: 授權 / 來源（provenance）影響
-      description: 是否涉及引用外部程式碼、素材或文件文字？若有，請說明來源 repository 與其授權條款。沒有請填「無」。
-    validations:
-      required: true
-  - type: textarea
-    id: ai
-    attributes:
-      label: 是否需要 AI 能力
-      description: 若需要呼叫模型，請說明觸發方式（必須由使用者明確啟動）、輸入資料範圍與輸出邊界。沒有請填「無」。
-  - type: checkboxes
-    id: checks
-    attributes:
-      label: 提交前檢查
-      options:
-        - label: 我已搜尋現有 Issue，未發現相同建議
-          required: true
