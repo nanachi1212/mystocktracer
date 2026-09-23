@@ -31,7 +31,7 @@
 - 保留 `settings.json`、`taiwan-watchlist.db`（研究歷史／alerts 等表）、`taiwan-portfolio.db`、Hermes home/workspace 與 Electron Local Storage 中的 AI chat state；保留未知一般檔案及 logs。
 - 所有新 executable、ZIP、installer、mac app bundle、icon 名稱使用 mystocktracer。
 - 封裝包含 frontend、獨立 backend、Hermes 0.18.2、Hermes LICENSE 及 THIRD_PARTY_NOTICES。不得包含使用者資料、測試 fixture、DB、secret、logs 或 migration staging。
-- root LICENSE 及歷史 attribution 不變；工程替換證據不等於法律重新授權權利。
+- B4 當時保留 root LICENSE 及歷史 attribution；後續維護者已依 [授權決策](oss-provenance-audit.md) 將現行程式碼改採 MIT，原 PolyForm 文件與歷史 attribution 依 [NOTICE](../NOTICE.md) 保留。封裝須攜帶現行 LICENSE、NOTICE、原 PolyForm 文件與既有第三方通知。
 
 ## 驗收
 

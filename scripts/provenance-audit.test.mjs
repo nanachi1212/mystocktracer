@@ -85,3 +85,26 @@ test('a stale artwork decision does not approve changed binary pixels', t => {
   f.write('brand.png', Buffer.from([137, 80, 78, 71, 0, 254]));
   assert.equal(inspect({ ...f, decisions }).files.find(file => file.path === 'brand.png').category, 'unclear');
 });
+
+test('archived upstream license retains provenance without hiding substantive code', t => {
+  const f = repository(t);
+  const license = 'Required Notice: synthetic upstream copyright\nHistorical license terms\n';
+  f.write('LICENSE', license);
+  f.git('add', '.'); f.git('commit', '-qm', 'synthetic upstream license');
+  f.base = f.git('rev-parse', 'HEAD').trim();
+  f.write('LICENSES/upstream.txt', license);
+  f.write('LICENSE', 'MIT License\nSynthetic current project notice\n');
+  f.write('NOTICE.md', 'Historical content retains its original license.\n');
+  f.write('LICENSES/copied.py', 'print("synthetic original")\n');
+  const result = inspect(f);
+  const archived = result.files.find(file => file.path === 'LICENSES/upstream.txt');
+  assert.equal(archived.area, 'legal');
+  assert.equal(archived.category, 'confirmed-inherited');
+  assert.equal(archived.upstreamPath, 'LICENSE');
+  assert.equal(archived.blockingRelicensing, true);
+  assert.equal(archived.replacementRequired, false);
+  assert.equal(result.files.find(file => file.path === 'NOTICE.md').area, 'legal');
+  assert.equal(result.files.find(file => file.path === 'LICENSES/copied.py').replacementRequired, true);
+  // Changing a legal path alone cannot attest to its replacement or rights.
+  assert.equal(result.files.find(file => file.path === 'LICENSE').category, 'likely-inherited');
+});

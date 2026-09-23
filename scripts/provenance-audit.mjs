@@ -51,7 +51,7 @@ function renames(cwd, base, ref) {
   return results;
 }
 function area(name) {
-  if (/^(LICENSE|THIRD_PARTY_NOTICES.md)$/.test(name)) return 'legal';
+  if (/^(LICENSE|NOTICE\.md|THIRD_PARTY_NOTICES\.md)$/.test(name) || /^LICENSES\/[^/]+\.txt$/.test(name)) return 'legal';
   if (name.startsWith('.github/release-notes/')) return 'historical-document';
   if (/\.(png|svg|ico|icns|jpg|woff2?|ttf)$/.test(name)) return 'asset';
   if (/(?:^|\/)(?:test|testdata)\//.test(name) || /(?:\.test\.|_test\.go$)/.test(name)) return 'test';

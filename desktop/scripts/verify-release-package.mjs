@@ -48,6 +48,7 @@ export function verifyReleasePackage(root,platform) {
     path.join(content,'backend',windows?'mystocktracer-backend.exe':'mystocktracer-backend'),
     path.join(content,'frontend/dist/index.html'),path.join(content,'hermes-runtime/runtime-manifest.json'),
     path.join(content,'hermes-runtime/LICENSE'),path.join(content,'THIRD_PARTY_NOTICES.md'),path.join(resources,'state-copy.py'),python,
+    path.join(content,'LICENSE'),path.join(content,'NOTICE.md'),path.join(content,'LICENSES/easy-stock-PolyForm-Noncommercial-1.0.0.txt'),
   ]);
   for(const file of required) if(!fs.statSync(file,{throwIfNoEntry:false})?.isFile()) throw new Error('Missing package member: '+path.relative(root,file));
   const queue=[root];

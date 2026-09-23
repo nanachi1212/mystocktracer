@@ -3,6 +3,7 @@
   "description": "mystocktracer Taiwan stock research desktop application",
   "author": "mystocktracer contributors",
   "private": true,
+  "license": "MIT",
   "version": "0.9.2",
   "main": "main.cjs",
   "scripts": {
