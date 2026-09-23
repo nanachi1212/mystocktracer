@@ -20,8 +20,8 @@ var masks = []struct {
 	replacement string
 }{
 	{regexp.MustCompile("(?i)\\bBearer\\s+[^\\s\"',;}]+"), "Bearer <redacted>"},
-	{regexp.MustCompile("(?i)([?&](?:key|token|api[_-]?key|authorization|cookie|credential|password|secret)=)[^&\\s\"']*"), "1<redacted>"},
-	{regexp.MustCompile("(?i)([\"']?\\b(?:[\\w-]*[_-])?(?:api[_-]?key|token|authorization|cookie|credential|password|secret)[\"']?\\s*[:=]\\s*)(?:\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s,;&}]+)"), "1<redacted>"},
+	{regexp.MustCompile("(?i)([?&](?:key|token|api[_-]?key|authorization|cookie|credential|password|secret)=)[^&\\s\"']*"), "${1}<redacted>"},
+	{regexp.MustCompile("(?i)([\"']?\\b(?:[\\w-]*[_-])?(?:api[_-]?key|token|authorization|cookie|credential|password|secret)[\"']?\\s*[:=]\\s*)(?:\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s,;&}]+)"), "${1}<redacted>"},
 }
 
 func Redact(message string) string {

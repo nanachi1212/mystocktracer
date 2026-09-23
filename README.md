@@ -1,5 +1,5 @@
 <p align="center">
- <img src="./desktop/assets/easy-stock.png" width="112" height="112" alt="mystocktracer Logo" />
+ <img src="./desktop/assets/mystocktracer.png" width="112" height="112" alt="mystocktracer Logo" />
 </p>
 
 <h1 align="center">mystocktracer：台灣股票研究工作台</h1>

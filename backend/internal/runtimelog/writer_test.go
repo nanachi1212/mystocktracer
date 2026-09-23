@@ -60,3 +60,16 @@ func TestWriterRedactsBeforePersisting(t *testing.T) {
 		t.Fatalf("runtime log leaked a secret: %q", content)
 	}
 }
+
+func TestRedactPreservesDiagnosticPrefixes(t *testing.T) {
+	cases := map[string]string{
+		"GET /api?token=synthetic&mode=test": "GET /api?token=<redacted>&mode=test",
+		`api_key:synthetic next=value`:       `api_key:<redacted> next=value`,
+		`{"credential":"synthetic"}`:         `{"credential":<redacted>}`,
+	}
+	for input, want := range cases {
+		if got := Redact(input); got != want {
+			t.Errorf("Redact(%q)=%q, want %q", input, got, want)
+		}
+	}
+}

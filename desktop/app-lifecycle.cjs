@@ -13,6 +13,7 @@ const { UpdateManager } = require('./update-manager.cjs');
 const { resolveUpdateFeed, releasePageURL } = require('./update-feed.cjs');
 const { createUpdateBackup, resolveBackupRoot } = require('./data-protection.cjs');
 const { validateSubscriptionAIURL } = require('./subscription-ai-url.cjs');
+const { externalWindowHandler } = require('./external-links.cjs');
 
 const compat = (name) => process.env[`MYSTOCKTRACER_${name}`] || process.env[`A_STOCK_${name}`] || '';
 
@@ -88,7 +89,7 @@ async function startDesktop() {
     const page = new URL(frontendURL);
     if (page.protocol !== 'file:' && !(page.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(page.hostname))) throw new Error('Renderer must be bundled or local development content');
     window = new BrowserWindow({ width: 1280, height: 860, minWidth: 980, minHeight: 680, title: 'mystocktracer · 台股研究工作台', icon: path.join(__dirname, 'assets', 'mystocktracer.png'), webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, webviewTag: false, sandbox: true } });
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    window.webContents.setWindowOpenHandler(externalWindowHandler((url) => shell.openExternal(url), (error) => logger.warn(error)));
     window.webContents.on('will-attach-webview', (event) => event.preventDefault());
     window.webContents.on('will-navigate', (event, url) => { if (url !== frontendURL) event.preventDefault(); });
     const openDirectory = async (directory) => { fs.mkdirSync(directory, { recursive: true, mode: 0o700 }); if (await shell.openPath(directory)) throw new Error('無法開啟目錄'); };

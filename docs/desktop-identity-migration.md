@@ -41,6 +41,6 @@ B3 `electron-updater 6.8.9` 的 `NsisUpdater.doInstall` 依 metadata 選 install
 
 `npm --workspace desktop run smoke:packaged-desktop` 使用實際封裝 EXE：確認 PE ProductName／FileDescription 為 mystocktracer，再載入 ASAR 內的 migration module，透過封裝 Python 與 state-copy.py 複製合成 settings／SQLite／未知使用者檔案並比對來源與目的 bytes。啟動隔離 profile 後，確認 canonical bridge、品牌圖片、backend／frontend readiness；結束只清理該測試的 process tree 與暫存資料。
 
-52 項桌面測試包含保留 NSIS GUID、實際已安裝 electron-updater 的 installer 呼叫參數與 NSIS KEEP_APP_DATA 契約。這是隔離 fixture 驗證，並非宣稱已在本機執行正式 installer 升級、簽章或發布。
+54 項桌面測試包含保留 NSIS GUID、實際已安裝 electron-updater 的 installer 呼叫參數與 NSIS KEEP_APP_DATA 契約。這是隔離 fixture 驗證，並非宣稱已在本機執行正式 installer 升級、簽章或發布。
 
 `smoke:packaged-runtime` 另通過封裝 backend 的兩段 streaming 回應。Windows 未簽署建置使用 `signExecutable: false`，仍寫入產品 metadata／icon；不得再用 `signAndEditExecutable: false` 把它們一併停用。
