@@ -275,4 +275,4 @@ B5 依 [cleanup 契約](oss-cleanup-contract.md) 重寫以下 13 個原 inherite
 
 ## 驗證紀錄
 
-B4 已完成 PR #12 的 CI、GitHub Codex Review 與 squash merge。B5 本機 Go build/vet/tests、frontend 840 tests + production build、desktop 69 tests（含 migration/asset/update）、tooling 21 tests 均通過。品牌重建無 tracked 內容差異；workflow YAML 已解析驗證。Windows package preparation（複用已驗證 Hermes runtime）、成品 verifier、實際 EXE migration/storage smoke 與兩段 streaming smoke 均通過；GitHub CI/Review 狀態以本輪 PR 的最終記錄為準，未執行的正式 release、macOS installer、Authenticode/notarization 不列為 PASS。
+B4 已完成 PR #12 的 CI、GitHub Codex Review 與 squash merge。B5 本機 Go build/vet/tests、frontend 840 tests + production build、desktop 69 tests（含 migration/asset/update）、tooling 22 tests 均通過。品牌重建無 tracked 內容差異；workflow YAML 已解析驗證。Windows package preparation（複用已驗證 Hermes runtime）、成品 verifier、實際 EXE migration/storage smoke 與兩段 streaming smoke 均通過；GitHub CI/Review 狀態以本輪 PR 的最終記錄為準，未執行的正式 release、macOS installer、Authenticode/notarization 不列為 PASS。

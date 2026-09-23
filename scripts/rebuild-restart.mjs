@@ -66,11 +66,12 @@ export function getBrowserLaunchPlan(targetUrl, mode = resolveBrowserMode()) {
 
 export function findChromeBinary({
   env = process.env,
+  platform = process.platform,
   existsSync: exists = existsSync,
   whereLookup = () => capture("where.exe", ["chrome.exe"]),
 } = {}) {
   const candidates = [];
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     if (env.ProgramFiles) {
       candidates.push(path.join(env.ProgramFiles, "Google", "Chrome", "Application", "chrome.exe"));
     }
@@ -88,7 +89,7 @@ export function findChromeBinary({
     }
   }
 
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     try {
       const whereResult = whereLookup();
       if (whereResult) {
