@@ -340,7 +340,7 @@
     },
     {
       "path": "frontend/src/lib/llm-providers.ts",
-      "sha256": "3f756cf6d00f062110549ebbf631a8009dd90d200bff3ebfd656d82f44d48616",
+      "sha256": "16a4fcf7a418712db920d51c30541db72b597e1d87dfc090b68333776c253c89",
       "evidence": "B6 reviewed as functional provider interoperability constants (IDs, public endpoints, model defaults and API modes) with mystocktracer labels and local presets; behavior and negative cases covered by frontend/src/lib/llm-providers.test.ts and docs/oss-b6-contract.md."
     },
     {
@@ -440,7 +440,7 @@
     },
     {
       "path": "backend/internal/appsettings/store_test.go",
-      "sha256": "f3ff80951076ab33834deca32c7ac0f6b1e404dbe17d8b1fb6ce68487484bc5d",
+      "sha256": "28917e10e753cf0e48f4c1578b580336e8b1418f6bbb906e8cf2d28546c29fa0",
       "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
     },
     {
