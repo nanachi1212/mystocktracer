@@ -2,7 +2,7 @@ export type LLMAPIMode = 'chat_completions' | 'codex_responses' | 'anthropic_mes
 export type LLMProviderDefinition = { id: string; label: string; baseURL: string; defaultModel: string; apiMode: LLMAPIMode };
 export type LLMLocalPreset = LLMProviderDefinition & { provider: 'custom' };
 
-// Configuration values preserve the B3 provider contract; no model version update is implied.
+// Default model per provider; refresh the Anthropic default when its model retires.
 const catalog: [string, string, string, string][] = [
   ['openai', 'OpenAI', 'https://api.openai.com/v1', 'gpt-4o-mini'],
   ['deepseek', 'DeepSeek', 'https://api.deepseek.com', 'deepseek-chat'],
@@ -11,7 +11,7 @@ const catalog: [string, string, string, string][] = [
   ['zhipu', '智譜 GLM', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4-plus'],
   ['qwen', '通義千問（百煉）', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus'],
   ['siliconflow', '矽基流動', 'https://api.siliconflow.cn/v1', ''],
-  ['anthropic', 'Anthropic', 'https://api.anthropic.com', 'claude-3-5-haiku-latest'],
+  ['anthropic', 'Anthropic', 'https://api.anthropic.com', 'claude-haiku-4-5'],
   ['custom', 'OpenAI 相容介面', '', ''],
 ];
 export const llmProviders: LLMProviderDefinition[] = catalog.map(([id, label, baseURL, defaultModel]) => ({ id, label, baseURL, defaultModel, apiMode: id === 'anthropic' ? 'anthropic_messages' : 'chat_completions' }));

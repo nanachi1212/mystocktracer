@@ -87,6 +87,22 @@ func TestHistoricalSettingsReadAndWriteCompatibility(t *testing.T) {
 	}
 }
 
+func TestRetiredAnthropicDefaultModelIsUpgraded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	oldFile := []byte(`{"llm":{"provider":"anthropic","base_url":"https://api.anthropic.com","model":"claude-3-5-haiku-latest","api_mode":"anthropic_messages"},"llm_profiles":[{"id":"p1","name":"a","provider":"anthropic","base_url":"https://api.anthropic.com","model":"claude-3-5-haiku-latest","api_mode":"anthropic_messages"},{"id":"p2","name":"b","provider":"custom","base_url":"https://model.example/v1","model":"claude-3-5-haiku-latest","api_mode":"chat_completions"}],"active_llm_profile_id":"p1"}`)
+	if err := os.WriteFile(path, oldFile, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := store.Snapshot()
+	if got.LLM.Model != "claude-haiku-4-5" || got.LLMProfiles[0].Model != "claude-haiku-4-5" || got.LLMProfiles[1].Model != "claude-3-5-haiku-latest" {
+		t.Fatalf("retired default model not upgraded: %+v", got)
+	}
+}
+
 func TestUnreadableSettingsDoNotChangeOnOpen(t *testing.T) {
 	for _, input := range []string{"", `{"llm":`} {
 		t.Run(input, func(t *testing.T) {

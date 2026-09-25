@@ -23,9 +23,9 @@ repeat general security, Git, testing, communication, or Windows rules.
 - TWstock owns canonical Taiwan market truth and deterministic market data.
 - mystocktracer owns product UX, Watchlist, Screener, Alerts, Notifications,
   AI Research presentation, and research workflows.
-- Before modifying Taiwan market data, normalization, Point-in-Time (PIT)
-  behavior, or provenance, read
-  `docs/TAIWAN_DEVELOPMENT_OWNERSHIP.md`.
+- Before modifying Taiwan market data acquisition, normalization, Point-in-Time (PIT)
+  behavior, provenance, or authoritative calculation ownership, read
+  `docs/TAIWAN_DEVELOPMENT_OWNERSHIP.md`. Pure UI changes do not require it.
 
 ## Reuse-First and Migration Safety
 
