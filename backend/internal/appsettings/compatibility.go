@@ -2,7 +2,24 @@ package appsettings
 
 import "strings"
 
+const (
+	retiredAnthropicHaikuModel = "claude-3-5-haiku-latest"
+	currentAnthropicHaikuModel = "claude-haiku-4-5"
+)
+
+// upgradeRetiredModel replaces the retired Anthropic default that earlier versions saved.
+func upgradeRetiredModel(model string) string {
+	if strings.TrimSpace(model) == retiredAnthropicHaikuModel {
+		return currentAnthropicHaikuModel
+	}
+	return model
+}
+
 func compatibleValues(values Values) Values {
+	values.LLM.Model = upgradeRetiredModel(values.LLM.Model)
+	for i := range values.LLMProfiles {
+		values.LLMProfiles[i].Model = upgradeRetiredModel(values.LLMProfiles[i].Model)
+	}
 	if len(values.LLMProfiles) == 0 {
 		values.LLMProfiles = []LLMProfile{profileFromLLM(values.LLM)}
 	}
