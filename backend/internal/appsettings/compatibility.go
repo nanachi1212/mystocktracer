@@ -8,17 +8,18 @@ const (
 )
 
 // upgradeRetiredModel replaces the retired Anthropic default that earlier versions saved.
-func upgradeRetiredModel(model string) string {
-	if strings.TrimSpace(model) == retiredAnthropicHaikuModel {
+// Other providers may legitimately use the same identifier, so only Anthropic is migrated.
+func upgradeRetiredModel(provider, model string) string {
+	if strings.TrimSpace(provider) == "anthropic" && strings.TrimSpace(model) == retiredAnthropicHaikuModel {
 		return currentAnthropicHaikuModel
 	}
 	return model
 }
 
 func compatibleValues(values Values) Values {
-	values.LLM.Model = upgradeRetiredModel(values.LLM.Model)
+	values.LLM.Model = upgradeRetiredModel(values.LLM.Provider, values.LLM.Model)
 	for i := range values.LLMProfiles {
-		values.LLMProfiles[i].Model = upgradeRetiredModel(values.LLMProfiles[i].Model)
+		values.LLMProfiles[i].Model = upgradeRetiredModel(values.LLMProfiles[i].Provider, values.LLMProfiles[i].Model)
 	}
 	if len(values.LLMProfiles) == 0 {
 		values.LLMProfiles = []LLMProfile{profileFromLLM(values.LLM)}

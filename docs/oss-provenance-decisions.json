@@ -440,7 +440,7 @@
     },
     {
       "path": "backend/internal/appsettings/store_test.go",
-      "sha256": "28917e10e753cf0e48f4c1578b580336e8b1418f6bbb906e8cf2d28546c29fa0",
+      "sha256": "cfd083360cb0617a9159960190d13d3fe58788bc39bd53196715deed021fab8b",
       "evidence": "B6 behavior-oriented replacement with synthetic inputs and negative/boundary coverage; docs/oss-b6-contract.md maps protected behavior. Full Go/frontend suites verify retained API, settings, protocol, security and storage contracts."
     },
     {
